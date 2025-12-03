@@ -7,7 +7,7 @@ import {
   timestamp,
   numeric,
 } from "drizzle-orm/pg-core";
-import { sql } from "drizzle-orm";
+import { sql, relations } from "drizzle-orm";
 
 // ----------------------------
 // PROJECTS
@@ -35,29 +35,35 @@ export const projects = pgTable("projects", {
 // ----------------------------
 // WBS NODES
 // ----------------------------
+
+
+
 export const wbsNodes = pgTable("wbs_nodes", {
   id: serial("id").primaryKey(),
-
-  projectId: integer("project_id")
-    .notNull()
-    .references(() => projects.id, { onDelete: "cascade" }),
-
-  code: varchar("code", { length: 32 }).notNull(),          // e.g. FD.1
+  projectId: integer("project_id").notNull(),
+  code: varchar("code", { length: 32 }).notNull(),
   name: varchar("name", { length: 255 }).notNull(),
+  parentId: integer("parent_id"),
+  sortOrder: integer("sort_order").default(0).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).default(sql`now()`),
+});
 
-  parentId: integer("parent_id").references(() => wbsNodes.id, {
-    onDelete: "cascade",
+export type WbsNode = typeof wbsNodes.$inferSelect;
+
+
+export const wbsNodesRelations = relations(wbsNodes, ({ one, many }) => ({
+  // each node’s parent (nullable)
+  parent: one(wbsNodes, {
+    fields: [wbsNodes.parentId],
+    references: [wbsNodes.id],
+    relationName: "children", // 👈 tie to the "children" side
   }),
 
-  sortOrder: integer("sort_order").default(0).notNull(),
-
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .default(sql`now()`)
-    .notNull(),
-  updatedAt: timestamp("updated_at", { withTimezone: true })
-    .default(sql`now()`)
-    .notNull(),
-});
+  // each node’s children (the inverse of the relation above)
+  children: many(wbsNodes, {
+    relationName: "children",
+  }),
+}));
 
 // ----------------------------
 // ACTIVITIES (TASKS)

@@ -2,11 +2,11 @@ import { NextResponse } from "next/server";
 import {
   db,
   projects,
-  wbsNodes,
   activities,
   resources,
   resourceAssignments,
 } from "@/db";
+import { wbsNodes, type WbsNode } from "@/db/schema";
 
 export async function GET() {
   try {
@@ -22,20 +22,22 @@ export async function GET() {
       .insert(projects)
       .values({
         code: "KFX-2025",
-        name: "Koufax 137 – 2025 Portfolio",
+        name: "Koufax 137 - 2025 Portfolio",
         bank: "Citizens",
         startDate: "2025-01-01",
       })
       .returning();
 
     // 2) WBS node
-    const wbs = await db.insert(wbsNodes).values({
+    const [wbsNode] = (await db
+      .insert(wbsNodes)
+      .values({
         projectId: project.id,
         code: "FD.1",
         name: "Financial Dashboards",
         sortOrder: 10,
       })
-      .returning();
+      .returning()) as WbsNode[];
 
     // 3) Activities
     const [act1, act2] = await db
@@ -43,7 +45,7 @@ export async function GET() {
       .values([
         {
           projectId: project.id,
-          wbsId: wbs.id,
+          wbsId: wbsNode.id,
           code: "FD.1.1",
           name: "Rent roll dashboard (monthly)",
           bucket: "Dashboards",
@@ -58,7 +60,7 @@ export async function GET() {
         },
         {
           projectId: project.id,
-          wbsId: wbs.id,
+          wbsId: wbsNode.id,
           code: "FD.1.2",
           name: "Project cost management dashboard",
           bucket: "Dashboards",
