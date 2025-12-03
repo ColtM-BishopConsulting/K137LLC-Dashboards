@@ -29,9 +29,7 @@ export async function GET() {
       .returning();
 
     // 2) WBS node
-    const [wbs] = await db
-      .insert(wbsNodes)
-      .values({
+    const wbs = await db.insert(wbsNodes).values({
         projectId: project.id,
         code: "FD.1",
         name: "Financial Dashboards",
