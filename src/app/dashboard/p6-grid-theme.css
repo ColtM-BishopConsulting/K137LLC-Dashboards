@@ -1,0 +1,68 @@
+/* ----------------------------------------------
+   P6 Dark Mode Theme for AG-Grid
+   ---------------------------------------------- */
+
+.ag-theme-p6-dark {
+  --ag-foreground-color: #e5ecf6;
+  --ag-background-color: #1a1f2b;
+  --ag-header-background-color: #2a3142;
+  --ag-header-foreground-color: #d7dce7;
+  --ag-header-column-resize-handle-color: #8892a6;
+
+  --ag-row-border-color: #2f3644;
+  --ag-borders: none;
+  --ag-border-radius: 0px;
+
+  --ag-odd-row-background-color: #212837;
+  --ag-even-row-background-color: #1b2230;
+
+  --ag-selected-row-background-color: #2b3750;
+  --ag-selected-row-border-color: #4cc3ff;
+
+  --ag-font-size: 11px;
+  --ag-grid-size: 4px;
+  --ag-header-height: 28px;
+
+  --ag-row-hover-color: #283144;
+
+  /* WBS Header Row */
+  --ag-row-wbs-background: #183454;
+  --ag-row-wbs-text: #ffffff;
+}
+
+/* Make WBS rows bold & blue */
+.ag-row-wbs {
+  background-color: var(--ag-row-wbs-background) !important;
+  color: var(--ag-row-wbs-text) !important;
+  font-weight: 600 !important;
+}
+
+/* Cell padding adjustment */
+.ag-cell {
+  padding-left: 6px !important;
+  display: flex;
+  align-items: center;
+}
+
+/* Header separators */
+.ag-header-cell {
+  border-right: 1px solid #3a4254 !important;
+}
+
+/* Header hover */
+.ag-header-cell:hover {
+  background-color: #323a48 !important;
+}
+
+/* Scrollbars */
+.ag-body-horizontal-scroll-viewport::-webkit-scrollbar,
+.ag-body-vertical-scroll-viewport::-webkit-scrollbar {
+  height: 6px;
+  width: 6px;
+}
+
+.ag-body-horizontal-scroll-viewport::-webkit-scrollbar-thumb,
+.ag-body-vertical-scroll-viewport::-webkit-scrollbar-thumb {
+  background: #4b5568;
+  border-radius: 5px;
+}
