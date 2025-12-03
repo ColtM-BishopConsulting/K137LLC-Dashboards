@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import React from "react";
 import { useTheme } from "next-themes";
 
@@ -55,6 +55,8 @@ interface Activity {
   budget: number;
   revenue: number;
   resources: ActivityResource[];
+  predecessors?: string[];
+  successor?: string;
 }
 
 interface Transaction {
@@ -693,6 +695,37 @@ const calculateResourceCost = (
     if (!resource) return total;
     return total + (resource.rate * ar.quantity);
   }, 0);
+};
+
+// ---------------------------------------------------------------------------
+// DATE HELPERS
+// ---------------------------------------------------------------------------
+const DAY_MS = 24 * 60 * 60 * 1000;
+const getCentralDateParts = () => {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Chicago",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const year = Number(parts.find((p) => p.type === "year")?.value);
+  const month = Number(parts.find((p) => p.type === "month")?.value);
+  const day = Number(parts.find((p) => p.type === "day")?.value);
+  return { year, month, day };
+};
+const getCentralTodayMs = () => {
+  const { year, month, day } = getCentralDateParts();
+  // Midnight in Central converted to absolute ms via UTC (central midnight = 06:00 UTC in CST/05:00 in CDT)
+  return Date.UTC(year, month - 1, day);
+};
+const toDateMs = (date: string) => {
+  const [year, month, day] = date.split("-").map(Number);
+  return Date.UTC(year, (month || 1) - 1, day || 1);
+};
+const toDateString = (ms: number) => {
+  const d = new Date(ms);
+  const iso = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate())).toISOString();
+  return iso.slice(0, 10);
 };
 
 // ---------------------------------------------------------------------------
@@ -1996,6 +2029,8 @@ interface ProjectLedgerProps {
   onAddTransaction: (transaction: Omit<Transaction, "id">) => void;
   isOpen: boolean;
   setIsOpen: (open: boolean) => void;
+  draftActivityId?: string | null;
+  setDraftActivityId?: (id: string | null) => void;
 }
 
 const ProjectLedger: React.FC<ProjectLedgerProps> = ({
@@ -2005,6 +2040,8 @@ const ProjectLedger: React.FC<ProjectLedgerProps> = ({
   onAddTransaction,
   isOpen,
   setIsOpen,
+  draftActivityId,
+  setDraftActivityId,
 }) => {
   const [form, setForm] = useState<LedgerFormState>({
     date: new Date().toISOString().split("T")[0],
@@ -2014,6 +2051,12 @@ const ProjectLedger: React.FC<ProjectLedgerProps> = ({
     amount: 0,
     activityId: "",
   });
+
+  useEffect(() => {
+    if (draftActivityId) {
+      setForm(prev => ({ ...prev, activityId: draftActivityId }));
+    }
+  }, [draftActivityId]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -2041,6 +2084,7 @@ const ProjectLedger: React.FC<ProjectLedgerProps> = ({
       description: "",
       amount: 0,
     }));
+    if (setDraftActivityId) setDraftActivityId(null);
   };
 
   const categories = ["Labor", "Materials", "Equipment", "Client Payment", "Other"];
@@ -2185,6 +2229,429 @@ const ProjectLedger: React.FC<ProjectLedgerProps> = ({
           </div>
         </div>
       )}
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------------------
+// GANTT CHART COMPONENT
+// ---------------------------------------------------------------------------
+interface GanttChartProps {
+  activities: Activity[];
+  onUpdateDates: (id: string, start: string, finish: string) => void;
+  onOpenContextMenu: (activity: Activity, x: number, y: number) => void;
+  selectedId: string | null;
+  onSelect: (id: string) => void;
+  dragging: {
+    id: string;
+    mode: "move" | "resize-start" | "resize-end";
+    startMs: number;
+    finishMs: number;
+    grabOffsetMs: number;
+  } | null;
+  setDragging: React.Dispatch<React.SetStateAction<GanttChartProps["dragging"]>>;
+}
+
+const GanttChart: React.FC<GanttChartProps> = ({
+  activities,
+  onUpdateDates,
+  onOpenContextMenu,
+  selectedId,
+  onSelect,
+  dragging,
+  setDragging
+}) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [chartWidth, setChartWidth] = useState(1000);
+
+  const timeline = useMemo(() => {
+    const todayLocalMs = getCentralTodayMs();
+    if (activities.length === 0) {
+      return { start: todayLocalMs - 7 * DAY_MS, end: todayLocalMs + 21 * DAY_MS };
+    }
+    const minStart = Math.min(...activities.map(a => toDateMs(a.start)));
+    const maxFinish = Math.max(...activities.map(a => toDateMs(a.finish)));
+    const padding = 7 * DAY_MS;
+    return {
+      start: Math.min(minStart - padding, todayLocalMs - 7 * DAY_MS),
+      end: Math.max(maxFinish + padding, todayLocalMs + 7 * DAY_MS),
+    };
+  }, [activities]);
+
+  const totalSpan = Math.max(DAY_MS, timeline.end - timeline.start);
+  const dayWidthPct = (DAY_MS / totalSpan) * 100;
+
+  const days = useMemo(() => {
+    const arr: { ms: number; label: string; weekday: string }[] = [];
+    for (let d = timeline.start; d <= timeline.end; d += DAY_MS) {
+      const date = new Date(d);
+      arr.push({
+        ms: d,
+        label: date.toLocaleDateString("en-US", { day: "2-digit", timeZone: "UTC" }),
+        weekday: date.toLocaleDateString("en-US", { weekday: "short", timeZone: "UTC" }),
+      });
+    }
+    return arr;
+  }, [timeline.start, timeline.end]);
+
+  const months = useMemo(() => {
+    const items: { startIndex: number; endIndex: number; label: string }[] = [];
+    let cursor = new Date(timeline.start);
+    cursor.setUTCHours(0, 0, 0, 0);
+    cursor.setUTCDate(1);
+    while (cursor.getTime() < timeline.end) {
+      const startMs = cursor.getTime();
+      const next = Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth() + 1, 1);
+      const endMs = Math.min(next, timeline.end);
+      const startIndex = Math.max(0, Math.floor((startMs - timeline.start) / DAY_MS));
+      const endIndex = Math.min(days.length, Math.floor((endMs - timeline.start) / DAY_MS));
+      items.push({
+        startIndex,
+        endIndex,
+        label: new Date(startMs).toLocaleString("en-US", { month: "short", year: "numeric", timeZone: "UTC" }),
+      });
+      cursor = new Date(next);
+    }
+    return items;
+  }, [days.length, timeline.start, timeline.end]);
+
+  const dateToX = useCallback((ms: number) => {
+    return ((ms - timeline.start) / totalSpan) * 100;
+  }, [timeline.start, totalSpan]);
+
+  const clampToTimeline = useCallback((ms: number) => {
+    return Math.min(Math.max(ms, timeline.start), timeline.end);
+  }, [timeline.start, timeline.end]);
+
+  const handlePointerDown = (
+    e: React.PointerEvent,
+    activity: Activity,
+    mode: "move" | "resize-start" | "resize-end"
+  ) => {
+    if (e.button === 2) {
+      onSelect(activity.id);
+      return;
+    }
+    onSelect(activity.id);
+    if (!containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const ratio = (e.clientX - rect.left) / rect.width;
+    const grabMs = timeline.start + ratio * totalSpan;
+    setDragging({
+      id: activity.id,
+      mode,
+      startMs: toDateMs(activity.start),
+      finishMs: toDateMs(activity.finish),
+      grabOffsetMs: grabMs - toDateMs(activity.start),
+    });
+  };
+
+  const handlePointerMove = useCallback((e: PointerEvent) => {
+    if (!dragging || !containerRef.current) return;
+    e.preventDefault();
+    const rect = containerRef.current.getBoundingClientRect();
+    const ratio = (e.clientX - rect.left) / rect.width;
+    const currentMs = clampToTimeline(timeline.start + ratio * totalSpan);
+
+    let newStart = dragging.startMs;
+    let newFinish = dragging.finishMs;
+
+    if (dragging.mode === "move") {
+      const delta = currentMs - (dragging.startMs + dragging.grabOffsetMs);
+      newStart = dragging.startMs + delta;
+      newFinish = dragging.finishMs + delta;
+    } else if (dragging.mode === "resize-start") {
+      newStart = Math.min(currentMs, dragging.finishMs - DAY_MS);
+    } else if (dragging.mode === "resize-end") {
+      newFinish = Math.max(currentMs, dragging.startMs + DAY_MS);
+    }
+
+    setDragging(d => d ? { ...d, startMs: newStart, finishMs: newFinish } : null);
+  }, [clampToTimeline, dragging, setDragging, timeline.start, totalSpan]);
+
+  const handlePointerUp = useCallback(() => {
+    if (!dragging) return;
+    const newStart = toDateString(dragging.startMs);
+    const newFinish = toDateString(dragging.finishMs);
+    onUpdateDates(dragging.id, newStart, newFinish);
+    setDragging(null);
+  }, [dragging, onUpdateDates, setDragging]);
+
+  useEffect(() => {
+    if (!dragging) return;
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerUp);
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerUp);
+    };
+  }, [dragging, handlePointerMove, handlePointerUp]);
+
+  useEffect(() => {
+    const updateWidth = () => {
+      if (containerRef.current) {
+        setChartWidth(containerRef.current.clientWidth || 1000);
+      }
+    };
+    updateWidth();
+    if (typeof ResizeObserver !== "undefined") {
+      const ro = new ResizeObserver(updateWidth);
+      if (containerRef.current) ro.observe(containerRef.current);
+      return () => ro.disconnect();
+    }
+    window.addEventListener("resize", updateWidth);
+    return () => window.removeEventListener("resize", updateWidth);
+  }, []);
+
+  const chartHeight = Math.max(activities.length * 36 + 80, 220);
+  const dateToXPx = useCallback((ms: number) => ((ms - timeline.start) / totalSpan) * chartWidth, [timeline.start, totalSpan, chartWidth]);
+  const projectStartMs = activities.length ? Math.min(...activities.map(a => toDateMs(a.start))) : timeline.start;
+  const projectEndMs = activities.length ? Math.max(...activities.map(a => toDateMs(a.finish))) : timeline.end;
+  const todayMs = getCentralTodayMs();
+  const barYOffset = 24;
+
+  const renderTicks = () => {
+    const ticks = [];
+    const daysSpan = Math.ceil(totalSpan / DAY_MS);
+    const step = daysSpan > 120 ? 14 : daysSpan > 60 ? 7 : 1;
+    for (let d = timeline.start; d <= timeline.end; d += step * DAY_MS) {
+      ticks.push(
+        <div key={d} className="absolute top-0 bottom-0 border-l border-slate-200/60 dark:border-slate-700/60" style={{ left: `${dateToX(d)}%` }} />
+      );
+    }
+    return ticks;
+  };
+
+  const renderMonths = () => {
+    const months = [];
+    let cursor = new Date(timeline.start);
+    cursor.setUTCDate(1);
+    while (cursor.getTime() < timeline.end) {
+      const startMs = cursor.getTime();
+      const next = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth() + 1, 1)).getTime();
+      const endMs = Math.min(next, timeline.end);
+      const width = ((endMs - startMs) / totalSpan) * 100;
+      months.push(
+        <div key={startMs} className="absolute top-0 left-0 h-6 border-r border-slate-300/60 dark:border-slate-600/60 text-[11px] flex items-center px-2 text-slate-600 dark:text-slate-300 font-semibold"
+          style={{ width: `${width}%`, transform: `translateX(${dateToX(startMs)}%)` }}>
+          {cursor.toLocaleString("en-US", { month: "short", year: "numeric" })}
+        </div>
+      );
+      cursor = new Date(next);
+    }
+    return months;
+  };
+
+  return (
+    <div className="flex-1 flex flex-col gap-3">
+      <div className="flex items-center text-xs text-slate-500 dark:text-slate-400 gap-3">
+        <div className="flex items-center gap-1">
+          <span className="inline-block w-3 h-3 rounded bg-blue-500" />
+          <span>Planned</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <span className="inline-block w-3 h-3 rounded bg-amber-500" />
+          <span>Dragging</span>
+        </div>
+      </div>
+      <div className="relative">
+        <div className="relative h-16 border border-slate-400/50 dark:border-slate-700 rounded-t bg-slate-900/80 overflow-hidden select-none">
+          <div
+            className="absolute top-0 left-0 right-0 h-16 text-slate-100 grid"
+            style={{ gridTemplateColumns: `repeat(${days.length}, 1fr)` }}
+          >
+            {/* Month row */}
+            {months.map((m, idx) => (
+              <div
+                key={`${m.label}-${idx}`}
+                className="col-start-1 col-end-1 h-8 flex items-center justify-center font-semibold uppercase tracking-wide bg-slate-900/70 border-r border-slate-500/40"
+                style={{ gridColumn: `${m.startIndex + 1} / ${m.endIndex + 1}` }}
+              >
+                {m.label}
+              </div>
+            ))}
+
+            {/* Day row */}
+            {days.map((d, idx) => {
+              const isWeekend = new Date(d.ms).getUTCDay() % 6 === 0;
+              return (
+                <div
+                  key={d.ms}
+                  className={`h-8 flex flex-col items-center justify-center border-r border-slate-700/40 ${isWeekend ? "bg-slate-800/60" : "bg-slate-900/60"}`}
+                  style={{ gridColumn: `${idx + 1} / ${idx + 2}`, gridRow: "2" }}
+                >
+                  <span className="leading-tight text-[10px]">{d.label}</span>
+                  <span className="text-[9px] text-slate-400 leading-tight">{d.weekday[0]}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+        <div
+          ref={containerRef}
+          className="relative flex-1 border-x border-b border-slate-200 dark:border-slate-700 rounded-b bg-slate-50 dark:bg-slate-900 overflow-hidden select-none"
+          style={{ minHeight: chartHeight }}
+        >
+          <div className="absolute inset-0">{renderTicks()}</div>
+
+          {/* Project span bar */}
+          <div
+            className="absolute h-2 bg-amber-400/90"
+            style={{
+              top: 6,
+              left: `${dateToXPx(projectStartMs)}px`,
+              width: `${Math.max(4, dateToXPx(projectEndMs) - dateToXPx(projectStartMs))}px`,
+              borderRadius: "1px",
+            }}
+          />
+          <svg
+            className="absolute pointer-events-none"
+            style={{ top: 8, left: 0, right: 0, height: chartHeight }}
+            viewBox={`0 0 ${Math.max(chartWidth, 1)} ${chartHeight}`}
+            preserveAspectRatio="none"
+          >
+            <defs>
+              <marker id="spanArrow" markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto">
+                <polygon points="0 0, 6 3, 0 6" fill="#fbbf24" />
+              </marker>
+            </defs>
+            <line
+              x1={dateToXPx(projectStartMs)}
+              y1={8}
+              x2={dateToXPx(projectStartMs)}
+              y2={barYOffset}
+              stroke="#fbbf24"
+              strokeWidth="1"
+              markerEnd="url(#spanArrow)"
+            />
+            <line
+              x1={dateToXPx(projectEndMs)}
+              y1={8}
+              x2={dateToXPx(projectEndMs)}
+              y2={barYOffset}
+              stroke="#fbbf24"
+              strokeWidth="1"
+              markerEnd="url(#spanArrow)"
+            />
+          </svg>
+
+          {/* Today line */}
+          {todayMs >= timeline.start && todayMs <= timeline.end && (
+            <div
+              className="absolute top-0 bottom-0 w-[2px] bg-red-500/50"
+              style={{ left: `${dateToXPx(todayMs)}px` }}
+            />
+          )}
+
+          <svg
+            className="absolute inset-0 pointer-events-none"
+            viewBox={`0 0 ${Math.max(chartWidth, 1)} ${chartHeight}`}
+            preserveAspectRatio="none"
+            width="100%"
+            height={chartHeight}
+          >
+            <defs>
+              <marker id="arrowhead" markerWidth="5" markerHeight="4" refX="4.5" refY="2" orient="auto">
+                <polygon points="0 0, 5 2, 0 4" fill="#22c55e" />
+              </marker>
+            </defs>
+            {activities.flatMap((a) => {
+              if (!a.predecessors || a.predecessors.length === 0) return [];
+              const succStartMs = dragging?.id === a.id ? dragging.startMs : toDateMs(a.start);
+              const succIndex = activities.findIndex(act => act.id === a.id);
+              // Match the actual rendered bar height (tailwind h-4 => 16px) so connectors anchor at center
+              const barHeightPx = 16;
+              const succTop = barYOffset + succIndex * 36;
+              const succY = succTop + barHeightPx / 2;
+              return a.predecessors.map((pid) => {
+                const pred = activities.find(act => act.id === pid);
+                if (!pred) return null;
+                const predEndMs = dragging?.id === pred.id ? dragging.finishMs : toDateMs(pred.finish);
+                const predIndex = activities.findIndex(act => act.id === pred.id);
+                const predTop = barYOffset + predIndex * 36;
+                const predY = predTop + barHeightPx / 2;
+                const x1 = dateToXPx(predEndMs);
+                const x2 = dateToXPx(succStartMs);
+                const elbowOut = 10; // small horizontal before drop
+                const bendX = x1 + elbowOut;
+                const gap = Math.max(24, Math.abs(succY - predY) / 2);
+                const midY = predY <= succY ? predY + gap : predY - gap;
+                const entryX = x2 - elbowOut;
+                const points = [
+                  `M ${x1} ${predY}`,
+                  `L ${bendX} ${predY}`,
+                  `L ${bendX} ${midY}`,
+                  `L ${entryX} ${midY}`,
+                  `L ${entryX} ${succY}`,
+                  `L ${x2} ${succY}`
+                ].join(" ");
+                return (
+                  <path
+                    key={`${a.id}-${pid}`}
+                    d={points}
+                    stroke="#22c55e"
+                    strokeWidth="0.9"
+                    fill="none"
+                    markerEnd="url(#arrowhead)"
+                  />
+                );
+              }).filter(Boolean);
+            })}
+          </svg>
+
+          <div className="absolute inset-0">
+            {activities.map((a, idx) => {
+              const startMs = dragging?.id === a.id ? dragging.startMs : toDateMs(a.start);
+              const finishMs = dragging?.id === a.id ? dragging.finishMs : toDateMs(a.finish);
+              const leftPx = dateToXPx(startMs);
+              const rightPx = dateToXPx(finishMs);
+              const widthPx = Math.max(2, rightPx - leftPx);
+              const isSelected = selectedId === a.id;
+              const color = dragging?.id === a.id
+                ? "bg-amber-500"
+                : isSelected
+                ? "bg-yellow-400"
+                : "bg-blue-500";
+
+              return (
+                <div
+                  key={a.id}
+                  className="absolute left-0 right-0"
+                  style={{ top: barYOffset + idx * 36 }}
+                >
+                  <div className="relative h-5">
+                    <div
+                      className={`absolute h-4 shadow-sm cursor-grab active:cursor-grabbing ${color}`}
+                      style={{ left: `${leftPx}px`, width: `${widthPx}px`, minWidth: "8px", borderRadius: "2px" }}
+                      onPointerDown={(e) => handlePointerDown(e, a, "move")}
+                      onContextMenu={(e) => { e.preventDefault(); onOpenContextMenu(a, e.clientX, e.clientY); }}
+                    >
+                      <div
+                        className="absolute left-0 top-0 h-full w-2 cursor-ew-resize bg-black/10"
+                        onPointerDown={(e) => { e.stopPropagation(); handlePointerDown(e, a, "resize-start"); }}
+                      />
+                      <div
+                        className="absolute right-0 top-0 h-full w-2 cursor-ew-resize bg-black/10"
+                        onPointerDown={(e) => { e.stopPropagation(); handlePointerDown(e, a, "resize-end"); }}
+                      />
+                    </div>
+                    <div
+                      className="absolute flex items-center pointer-events-none"
+                      style={{ left: `${leftPx + widthPx}px`, top: 0, bottom: 0, transform: "translateX(6px)" }}
+                    >
+                      <span className="text-[10px] font-bold text-white whitespace-nowrap">
+                        {a.wbs} - {a.name}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
     </div>
   );
 };
@@ -2447,6 +2914,7 @@ interface ProjectDetailsPanelProps {
   onUpdate: (updatedDetails: ProjectDetail[]) => void;
   onAutoPopulate: (fields: Omit<ProjectDetail, 'id'>[]) => void;
   isVisible: boolean;
+  onToggle?: () => void;
 }
 
 const ProjectDetailsPanel: React.FC<ProjectDetailsPanelProps> = ({
@@ -2454,7 +2922,8 @@ const ProjectDetailsPanel: React.FC<ProjectDetailsPanelProps> = ({
   details,
   onUpdate,
   onAutoPopulate,
-  isVisible
+  isVisible,
+  onToggle
 }) => {
   const [editingCell, setEditingCell] = useState<EditingCell | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -2492,10 +2961,18 @@ const ProjectDetailsPanel: React.FC<ProjectDetailsPanelProps> = ({
 
   return (
     <div className={`w-80 border-l border-slate-300 bg-white dark:border-slate-700 dark:bg-slate-900 flex flex-col overflow-hidden fixed right-0 top-0 bottom-0 pt-16 transform transition-transform duration-300 ease-in-out ${visibilityClasses}`}>
-      <div className="border-b border-slate-300 bg-gradient-to-r from-white to-slate-50 px-4 py-3 dark:border-slate-700 dark:from-slate-900 dark:to-slate-800">
+      <div className="border-b border-slate-300 bg-gradient-to-r from-white to-slate-50 px-4 py-3 dark:border-slate-700 dark:from-slate-900 dark:to-slate-800 flex items-center justify-between">
         <h3 className="text-sm font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400">
           Project Variables / Details
         </h3>
+        {onToggle && (
+          <button
+            onClick={onToggle}
+            className="text-xs px-2 py-1 rounded border border-slate-300 bg-white text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+          >
+            Hide
+          </button>
+        )}
       </div>
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4">
@@ -2795,8 +3272,29 @@ export default function DashboardPage() {
   const [customFormulas, setCustomFormulas] = useState<Record<number, CustomFormula[]>>(INITIAL_CUSTOM_FORMULAS);
   const [resources, setResources] = useState<Resource[]>(INITIAL_RESOURCES);
   const [isDetailsPanelVisible, setIsDetailsPanelVisible] = useState(true);
+  const [epsViewTab, setEpsViewTab] = useState<"overview" | "gantt">("overview");
   const [activityView, setActivityView] = useState<"details" | "gantt">("details");
   const [ledgerOpen, setLedgerOpen] = useState(false);
+  const [quickLedgerActivityId, setQuickLedgerActivityId] = useState<string | null>(null);
+  const [selectedActivityId, setSelectedActivityId] = useState<string | null>(null);
+  const [draggingActivity, setDraggingActivity] = useState<{
+    id: string;
+    mode: "move" | "resize-start" | "resize-end";
+    startMs: number;
+    finishMs: number;
+    grabOffsetMs: number;
+  } | null>(null);
+  const [draggingCompanySpan, setDraggingCompanySpan] = useState<{ projectId: number; anchorMs: number; grabOffsetMs: number } | null>(null);
+  const [companyDragPreview, setCompanyDragPreview] = useState<{ projectId: number; deltaMs: number } | null>(null);
+  const companyDeltaRef = useRef(0);
+  const companyGanttRef = useRef<HTMLDivElement>(null);
+  const [ganttMenu, setGanttMenu] = useState<{ x: number; y: number; activity: Activity | null }>({ x: 0, y: 0, activity: null });
+  const [dependencyModal, setDependencyModal] = useState<{ open: boolean; mode: "pred" | "succ"; activity: Activity | null; targetId: string }>({
+    open: false,
+    mode: "pred",
+    activity: null,
+    targetId: ""
+  });
 
   // Context menu state
   const [contextMenu, setContextMenu] = useState<ContextMenuState>({
@@ -2806,6 +3304,7 @@ export default function DashboardPage() {
     type: null,
     activity: null,
   });
+  const [renameTarget, setRenameTarget] = useState<EpsNode | null>(null);
 
   // Modal states
   const [modalMode, setModalMode] = useState<"add" | "rename" | null>(null);
@@ -2916,28 +3415,38 @@ export default function DashboardPage() {
 
   const handleStartRename = () => {
     if (!contextMenu.node) return;
+    setRenameTarget(contextMenu.node);
     setModalMode("rename");
     setModalValue(contextMenu.node.name);
   };
 
   const handleConfirmRename = () => {
-    if (!modalMode || modalMode !== "rename" || !contextMenu.node) {
+    if (!modalMode || modalMode !== "rename" || !renameTarget) {
       setModalMode(null);
+      setRenameTarget(null);
       return;
     }
 
     const trimmed = modalValue.trim();
-    if (!trimmed || trimmed === contextMenu.node.name) {
+    if (!trimmed || trimmed === renameTarget.name) {
       setModalMode(null);
+      setRenameTarget(null);
       return;
     }
 
     setEpsNodes((prev) =>
       prev.map((n) =>
-        n.id === contextMenu.node!.id ? { ...n, name: trimmed } : n
+        n.id === renameTarget.id ? { ...n, name: trimmed } : n
       )
     );
     setModalMode(null);
+    setRenameTarget(null);
+  };
+
+  const handleCancelEdit = () => {
+    setModalMode(null);
+    setRenameTarget(null);
+    setPendingAddConfig(null);
   };
 
   const handleDeleteNode = () => {
@@ -3095,9 +3604,18 @@ export default function DashboardPage() {
       pct: 0,
       status: 'Not Started',
       resources: [...contextMenu.activity.resources],
+      predecessors: [],
     };
     handleAddActivity(newActivity);
     setContextMenu({ x: 0, y: 0, node: null, type: null, activity: null });
+  };
+
+  const deleteActivityById = (activityId: string) => {
+    if (!activeProjectId) return;
+    setActivities(prev => ({
+      ...prev,
+      [activeProjectId]: (prev[activeProjectId] || []).filter(a => a.id !== activityId)
+    }));
   };
 
   const handleAddTransaction = (transaction: Omit<Transaction, "id">) => {
@@ -3133,6 +3651,46 @@ export default function DashboardPage() {
 
   const handleSaveAllResources = (updatedResources: Resource[]) => {
     setResources(updatedResources);
+  };
+
+  const handleUpdateActivityDates = (activityId: string, newStart: string, newFinish: string) => {
+    if (!activeProjectId) return;
+    const startMs = toDateMs(newStart);
+    const finishMs = toDateMs(newFinish);
+    const durationDays = Math.max(1, Math.round((finishMs - startMs) / DAY_MS) + 1);
+
+    setActivities(prev => ({
+      ...prev,
+      [activeProjectId]: (prev[activeProjectId] || []).map(a =>
+        a.id === activityId ? { ...a, start: newStart, finish: newFinish, duration: durationDays } : a
+      )
+    }));
+  };
+
+  const handleSetPredecessor = (activityId: string, predecessorId: string) => {
+    if (!activeProjectId) return;
+    setActivities(prev => ({
+      ...prev,
+      [activeProjectId]: (prev[activeProjectId] || []).map(a => {
+        if (a.id !== activityId) return a;
+        return { ...a, predecessors: [predecessorId] };
+      })
+    }));
+  };
+
+  const handleSetSuccessor = (activityId: string, successorId: string) => {
+    if (!activeProjectId) return;
+    setActivities(prev => ({
+      ...prev,
+      [activeProjectId]: (prev[activeProjectId] || []).map(a => {
+        if (a.id === activityId) return { ...a, successor: successorId };
+        if (a.id === successorId) {
+          // ensure reciprocal predecessor update
+          return { ...a, predecessors: [activityId] };
+        }
+        return a;
+      })
+    }));
   };
 
   // --- Project Details Operations ---
@@ -3216,10 +3774,186 @@ export default function DashboardPage() {
     setMode("Activities");
   };
 
+  const shiftProjectActivities = useCallback((projectId: number, deltaMs: number) => {
+    if (!deltaMs) return;
+    setActivities(prev => ({
+      ...prev,
+      [projectId]: (prev[projectId] || []).map(a => ({
+        ...a,
+        start: toDateString(toDateMs(a.start) + deltaMs),
+        finish: toDateString(toDateMs(a.finish) + deltaMs),
+      })),
+    }));
+  }, []);
+
   // --- RENDERING LOGIC ---
   const treeNodes = buildTree(epsNodes);
   const selectedNode = selectedNodeId ? findNode(epsNodes, selectedNodeId) : null;
   const activeProject = activeProjectId ? findNode(epsNodes, activeProjectId) : null;
+  const parentMap = useMemo(() => {
+    const map = new Map<number, number | null>();
+    epsNodes.forEach((n) => map.set(n.id, n.parentId));
+    return map;
+  }, [epsNodes]);
+  const isDescendantOf = useCallback((nodeId: number, ancestorId: number) => {
+    let current: number | null | undefined = nodeId;
+    while (current !== null && current !== undefined) {
+      const parent = parentMap.get(current);
+      if (parent === ancestorId) return true;
+      current = parent;
+    }
+    return false;
+  }, [parentMap]);
+
+  const selectedCompany = useMemo(() => {
+    if (!selectedNode) return null;
+    if (selectedNode.type === "company") return selectedNode;
+    if (selectedNode.type === "project") {
+      let current: EpsNode | undefined | null = selectedNode;
+      while (current && current.parentId !== null) {
+        const parent = findNode(epsNodes, current.parentId);
+        if (!parent) break;
+        if (parent.type === "company") return parent;
+        current = parent;
+      }
+    }
+    return null;
+  }, [selectedNode, epsNodes]);
+
+  const selectedProjectActivities = (selectedNode && activities[selectedNode.id]) || [];
+  const selectedProjectTransactions = (selectedNode && transactions[selectedNode.id]) || [];
+  const selectedProjectDetails = (selectedNode && selectedNode.type === "project" && projectDetails[selectedNode.id]) || [];
+  const selectedCustomFormulas = (selectedNode && selectedNode.type === "project" && customFormulas[selectedNode.id]) || [];
+
+  const companyProjects = useMemo(() => {
+    if (!selectedCompany) return [];
+    return epsNodes.filter((n) => n.type === "project" && isDescendantOf(n.id, selectedCompany.id));
+  }, [selectedCompany, epsNodes, isDescendantOf]);
+
+  const centralTodayMs = useMemo(() => getCentralTodayMs(), []);
+
+  const companyProjectSpans = useMemo(() => {
+    const spans = companyProjects.map((p) => {
+      const acts = activities[p.id] || [];
+      if (!acts.length) return null;
+      const start = Math.min(...acts.map((a) => toDateMs(a.start)));
+      const end = Math.max(...acts.map((a) => toDateMs(a.finish)));
+      return { id: p.id, name: p.name, start, end };
+    }).filter(Boolean) as { id: number; name: string; start: number; end: number }[];
+    return spans;
+  }, [companyProjects, activities]);
+
+  const epsGanttTimeline = useMemo(() => {
+    if (!companyProjectSpans.length) {
+      return { start: centralTodayMs - 7 * DAY_MS, end: centralTodayMs + 21 * DAY_MS };
+    }
+    const minStart = Math.min(...companyProjectSpans.map((p) => p.start));
+    const maxEnd = Math.max(...companyProjectSpans.map((p) => p.end));
+    const pad = 7 * DAY_MS;
+    return {
+      start: Math.min(minStart - pad, centralTodayMs - 7 * DAY_MS),
+      end: Math.max(maxEnd + pad, centralTodayMs + 7 * DAY_MS),
+    };
+  }, [companyProjectSpans, centralTodayMs]);
+
+  const epsTimelineSpan = Math.max(DAY_MS, epsGanttTimeline.end - epsGanttTimeline.start);
+  const epsDateToXPct = useCallback((ms: number) => ((ms - epsGanttTimeline.start) / epsTimelineSpan) * 100, [epsGanttTimeline.start, epsTimelineSpan]);
+  const epsXToMs = useCallback((clientX: number) => {
+    const rect = companyGanttRef.current?.getBoundingClientRect();
+    if (!rect || rect.width === 0) return epsGanttTimeline.start;
+    const ratio = (clientX - rect.left) / rect.width;
+    return epsGanttTimeline.start + ratio * epsTimelineSpan;
+  }, [epsGanttTimeline.start, epsTimelineSpan]);
+
+  const epsDays = useMemo(() => {
+    const arr: { ms: number; day: string; month: string; monthIndex: number; year: number }[] = [];
+    for (let d = epsGanttTimeline.start; d <= epsGanttTimeline.end; d += DAY_MS) {
+      const date = new Date(d);
+      arr.push({
+        ms: d,
+        day: date.toLocaleDateString("en-US", { day: "2-digit", timeZone: "UTC" }),
+        month: date.toLocaleDateString("en-US", { month: "short", timeZone: "UTC" }),
+        monthIndex: date.getUTCMonth(),
+        year: date.getUTCFullYear(),
+      });
+    }
+    return arr;
+  }, [epsGanttTimeline.start, epsGanttTimeline.end]);
+
+  const epsDayStep = useMemo(() => {
+    if (epsDays.length > 90) return 7;
+    if (epsDays.length > 45) return 3;
+    return 1;
+  }, [epsDays.length]);
+
+  const epsMonths = useMemo(() => {
+    if (!epsDays.length) return [];
+    const segments: { start: number; end: number; label: string }[] = [];
+    let segStart = epsDays[0].ms;
+    let currentMonth = epsDays[0].monthIndex;
+    let currentYear = epsDays[0].year;
+
+    for (let i = 1; i < epsDays.length; i++) {
+      const d = epsDays[i];
+      if (d.monthIndex !== currentMonth || d.year !== currentYear) {
+        const end = d.ms;
+        segments.push({
+          start: segStart,
+          end,
+          label: new Date(segStart).toLocaleString("en-US", { month: "short", year: "numeric", timeZone: "UTC" }),
+        });
+        segStart = d.ms;
+        currentMonth = d.monthIndex;
+        currentYear = d.year;
+      }
+    }
+    const lastEnd = epsDays[epsDays.length - 1].ms + DAY_MS;
+    segments.push({
+      start: segStart,
+      end: lastEnd,
+      label: new Date(segStart).toLocaleString("en-US", { month: "short", year: "numeric", timeZone: "UTC" }),
+    });
+    return segments;
+  }, [epsDays]);
+
+  const handleCompanyPointerDown = useCallback((projectId: number, e: React.PointerEvent) => {
+    e.preventDefault();
+    const span = companyProjectSpans.find(p => p.id === projectId);
+    if (!span) return;
+    const pointerMs = epsXToMs(e.clientX);
+    const grabOffsetMs = pointerMs - span.start;
+    setDraggingCompanySpan({ projectId, anchorMs: span.start, grabOffsetMs });
+    setCompanyDragPreview({ projectId, deltaMs: 0 });
+    companyDeltaRef.current = 0;
+    (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+  }, [companyProjectSpans, epsXToMs]);
+
+  useEffect(() => {
+    if (!draggingCompanySpan) return;
+    const handleMove = (ev: PointerEvent) => {
+      const currentMs = epsXToMs(ev.clientX);
+      const deltaRaw = currentMs - draggingCompanySpan.anchorMs - draggingCompanySpan.grabOffsetMs;
+      const snapped = Math.round(deltaRaw / DAY_MS) * DAY_MS;
+      companyDeltaRef.current = snapped;
+      setCompanyDragPreview({ projectId: draggingCompanySpan.projectId, deltaMs: snapped });
+    };
+    const handleUp = () => {
+      if (companyDeltaRef.current && draggingCompanySpan) {
+        shiftProjectActivities(draggingCompanySpan.projectId, companyDeltaRef.current);
+      }
+      setDraggingCompanySpan(null);
+      setCompanyDragPreview(null);
+      companyDeltaRef.current = 0;
+    };
+    window.addEventListener("pointermove", handleMove);
+    window.addEventListener("pointerup", handleUp);
+    window.addEventListener("pointercancel", handleUp);
+    return () => {
+      window.removeEventListener("pointermove", handleMove);
+      window.removeEventListener("pointerup", handleUp);
+      window.removeEventListener("pointercancel", handleUp);
+    };
+  }, [draggingCompanySpan, epsXToMs, shiftProjectActivities]);
 
   // ---------------------------------------------------------------------------
   // RESOURCES VIEW
@@ -3374,6 +4108,43 @@ export default function DashboardPage() {
     const { totalActualCost } = calculateProjectStats(projectActivities, projectTransactions);
     const { totalBudget, totalActualCost: totalActualCostFin, totalRevenue, profit } = calculateFinancialKPIs(projectActivities, projectTransactions);
 
+    const handleGanttMenuOpen = (activity: Activity, clientX: number, clientY: number) => {
+      setGanttMenu({ x: clientX, y: clientY, activity });
+    };
+
+    const closeGanttMenu = () => setGanttMenu({ x: 0, y: 0, activity: null });
+
+    const handleGanttDelete = () => {
+      if (ganttMenu.activity) deleteActivityById(ganttMenu.activity.id);
+      closeGanttMenu();
+    };
+
+    const handleGanttAssignResources = () => {
+      if (!ganttMenu.activity) return;
+      setActivityForResources(ganttMenu.activity);
+      setResourceAssignmentDialog(true);
+      closeGanttMenu();
+    };
+
+    const handleGanttAddExpense = () => {
+      if (!ganttMenu.activity) return;
+      setQuickLedgerActivityId(ganttMenu.activity.id);
+      setLedgerOpen(true);
+      closeGanttMenu();
+    };
+
+    const handleGanttAddPredecessor = () => {
+      if (!ganttMenu.activity) return;
+      setDependencyModal({ open: true, mode: "pred", activity: ganttMenu.activity, targetId: "" });
+      closeGanttMenu();
+    };
+
+    const handleGanttAddSuccessor = () => {
+      if (!ganttMenu.activity) return;
+      setDependencyModal({ open: true, mode: "succ", activity: ganttMenu.activity, targetId: "" });
+      closeGanttMenu();
+    };
+
     return (
       <div className="h-screen flex flex-col bg-slate-50 dark:bg-slate-900">
         <TopBar
@@ -3390,7 +4161,7 @@ export default function DashboardPage() {
             <div className="border-b border-slate-300 bg-gradient-to-r from-slate-100 to-slate-50 px-3 py-2 dark:border-slate-700 dark:from-slate-800 dark:to-slate-900">
               <div className="flex items-center justify-between">
                 <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200">
-                  Project Explorer
+                  {activityView === "gantt" ? "Activity Hierarchy" : "Project Explorer"}
                 </h3>
                 <button
                   onClick={() => setMode("EPS")}
@@ -3400,59 +4171,86 @@ export default function DashboardPage() {
                 </button>
               </div>
             </div>
-            <div className="p-2 space-y-1">
-              <p className="text-xs text-slate-500 dark:text-slate-400 font-medium p-1">
-                {findNode(epsNodes, activeProject.parentId!)?.name || "Enterprise"} /
-                {activeProject.name}
-              </p>
-              <div className="text-xs text-slate-600 dark:text-slate-400 p-1">
-                Financial Summary:
-                <ul className="ml-2 mt-1 list-disc list-inside">
-                  <li className={profit > 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}>
-                    Profit: {formatCurrency(profit)}
-                  </li>
-                  <li>Budget: {formatCurrency(totalBudget)}</li>
-                  <li>Actual Cost: {formatCurrency(totalActualCostFin)}</li>
-                  <li>Revenue: {formatCurrency(totalRevenue)}</li>
-                </ul>
+            {activityView === "gantt" ? (
+              <div className="p-3 space-y-1">
+                <div className="text-xs text-slate-500 dark:text-slate-400 mb-2">
+                  {activeProject.name}
+                </div>
+                {projectActivities
+                  .slice()
+                  .sort((a, b) => a.wbs.localeCompare(b.wbs, undefined, { numeric: true }))
+                  .map((a) => {
+                    const depth = a.wbs.split(".").length - 1;
+                    const isSelected = selectedActivityId === a.id;
+                    return (
+                      <button
+                        key={a.id}
+                        onClick={() => { setSelectedActivityId(a.id); }}
+                        className={`w-full text-left px-2 py-1 rounded transition-colors ${isSelected ? "bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-200" : "hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200"}`}
+                        style={{ paddingLeft: 8 + depth * 12 }}
+                      >
+                        <span className="font-mono text-xs text-slate-500 dark:text-slate-400 mr-2">{a.wbs}</span>
+                        <span className="font-medium">{a.name}</span>
+                      </button>
+                    );
+                  })}
               </div>
-            </div>
+            ) : (
+              <div className="p-2 space-y-1">
+                <p className="text-xs text-slate-500 dark:text-slate-400 font-medium p-1">
+                  {findNode(epsNodes, activeProject.parentId!)?.name || "Enterprise"} /
+                  {activeProject.name}
+                </p>
+                <div className="text-xs text-slate-600 dark:text-slate-400 p-1">
+                  Financial Summary:
+                  <ul className="ml-2 mt-1 list-disc list-inside">
+                    <li className={profit > 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}>
+                      Profit: {formatCurrency(profit)}
+                    </li>
+                    <li>Budget: {formatCurrency(totalBudget)}</li>
+                    <li>Actual Cost: {formatCurrency(totalActualCostFin)}</li>
+                    <li>Revenue: {formatCurrency(totalRevenue)}</li>
+                  </ul>
+                </div>
+              </div>
+            )}
 
-            {/* Custom Formulas Section in Sidebar */}
-            <div className="border-t border-slate-200 dark:border-slate-700 p-3">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-2 flex items-center gap-1">
-                <IconFunction /> Custom Formulas
-              </h4>
-              <div className="space-y-2">
-                {currentCustomFormulas.slice(0, 3).map((formula) => {
-                  const result = evaluateFormula(formula.formula, currentProjectDetails, currentCustomFormulas);
-                  return (
-                    <div key={formula.id} className="text-xs p-2 bg-slate-50 dark:bg-slate-800 rounded">
-                      <div className="flex justify-between">
-                        <span className="text-slate-600 dark:text-slate-400">{formula.name}</span>
-                        <span className={`font-semibold ${result.error ? 'text-red-500' : 'text-green-600 dark:text-green-400'}`}>
-                          {result.error ? 'Error' : formula.resultType === 'currency' ? formatCurrency(result.value) : formula.resultType === 'percentage' ? `${result.value.toFixed(1)}%` : result.value.toFixed(2)}
-                        </span>
+            {activityView !== "gantt" && (
+              <div className="border-t border-slate-200 dark:border-slate-700 p-3">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-2 flex items-center gap-1">
+                  <IconFunction /> Custom Formulas
+                </h4>
+                <div className="space-y-2">
+                  {currentCustomFormulas.slice(0, 3).map((formula) => {
+                    const result = evaluateFormula(formula.formula, currentProjectDetails, currentCustomFormulas);
+                    return (
+                      <div key={formula.id} className="text-xs p-2 bg-slate-50 dark:bg-slate-800 rounded">
+                        <div className="flex justify-between">
+                          <span className="text-slate-600 dark:text-slate-400">{formula.name}</span>
+                          <span className={`font-semibold ${result.error ? 'text-red-500' : 'text-green-600 dark:text-green-400'}`}>
+                            {result.error ? 'Error' : formula.resultType === 'currency' ? formatCurrency(result.value) : formula.resultType === 'percentage' ? `${result.value.toFixed(1)}%` : result.value.toFixed(2)}
+                          </span>
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
-                <button
-                  onClick={handleCreateFormula}
-                  className="w-full text-xs flex items-center justify-center gap-1 p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded"
-                >
-                  <IconPlus /> {currentCustomFormulas.length > 0 ? 'Manage Formulas' : 'Create Formula'}
-                </button>
+                    );
+                  })}
+                  <button
+                    onClick={handleCreateFormula}
+                    className="w-full text-xs flex items-center justify-center gap-1 p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded"
+                  >
+                    <IconPlus /> {currentCustomFormulas.length > 0 ? 'Manage Formulas' : 'Create Formula'}
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
           </aside>
 
           <main className={`flex-1 flex flex-col overflow-hidden transition-[padding] duration-300 ${isDetailsPanelVisible ? 'md:pr-80' : 'pr-0'}`}>
-            <div className="flex-1 overflow-hidden p-4 flex flex-col gap-4">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="inline-flex rounded-full border border-slate-300 bg-white p-1 text-sm shadow-sm dark:border-slate-700 dark:bg-slate-900">
-                  <button
-                    onClick={() => setActivityView("details")}
+        <div className="flex-1 overflow-hidden p-4 flex flex-col gap-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="inline-flex rounded-full border border-slate-300 bg-white p-1 text-sm shadow-sm dark:border-slate-700 dark:bg-slate-900">
+              <button
+                onClick={() => setActivityView("details")}
                     className={`px-3 py-1.5 rounded-full transition-colors ${activityView === "details" ? "bg-blue-600 text-white shadow" : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"}`}
                   >
                     Activity Details
@@ -3466,9 +4264,9 @@ export default function DashboardPage() {
                 </div>
               </div>
 
-              <div className="flex flex-col gap-4 h-full">
-                {activityView === "details" && (
-                <div className="overflow-y-auto rounded-lg border border-slate-300 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-md">
+            <div className="flex flex-col gap-4 h-full">
+              {activityView === "details" && (
+              <div className="overflow-y-auto rounded-lg border border-slate-300 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-md">
                   <div className="flex justify-between items-center p-3 border-b border-slate-200 dark:border-slate-700 flex-shrink-0">
                     <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-200">
                       Activity Details
@@ -3660,13 +4458,22 @@ export default function DashboardPage() {
                 )}
 
                 {activityView === "gantt" && (
-                <div className="rounded-lg border border-slate-300 bg-white p-4 dark:border-slate-800 dark:bg-slate-900 shadow-md">
-                  <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-200 mb-2 flex items-center gap-2">
-                    <IconGantt /> Gantt Chart (Placeholder)
-                  </h3>
-                  <div className="text-center p-10 text-slate-500">
-                    <p>Gantt Chart visualization of activities goes here.</p>
+                <div className="rounded-lg border border-slate-300 bg-white p-4 dark:border-slate-800 dark:bg-slate-900 shadow-md flex flex-col h-full">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                      <IconGantt />  
+                    </h3>
+                    <span className="text-xs text-slate-500 dark:text-slate-400">Drag bars to move, drag edges to resize.</span>
                   </div>
+                  <GanttChart
+                    activities={projectActivities}
+                    onUpdateDates={handleUpdateActivityDates}
+                    onOpenContextMenu={handleGanttMenuOpen}
+                    selectedId={selectedActivityId}
+                    onSelect={setSelectedActivityId}
+                    dragging={draggingActivity}
+                    setDragging={setDraggingActivity}
+                  />
                 </div>
                 )}
               </div>
@@ -3679,6 +4486,8 @@ export default function DashboardPage() {
               onAddTransaction={handleAddTransaction}
               isOpen={ledgerOpen}
               setIsOpen={setLedgerOpen}
+              draftActivityId={quickLedgerActivityId}
+              setDraftActivityId={setQuickLedgerActivityId}
             />
           </main>
 
@@ -3688,6 +4497,7 @@ export default function DashboardPage() {
             onUpdate={handleUpdateProjectDetails}
             onAutoPopulate={handleAutoPopulateProjectDetails}
             isVisible={isDetailsPanelVisible}
+            onToggle={() => setIsDetailsPanelVisible(prev => !prev)}
           />
         </div>
 
@@ -3736,9 +4546,83 @@ export default function DashboardPage() {
           value={modalValue}
           open={!!modalMode}
           onChange={setModalValue}
-          onCancel={() => { setModalMode(null); setPendingAddConfig(null); }}
+          onCancel={handleCancelEdit}
           onConfirm={modalMode === "add" ? handleConfirmAdd : handleConfirmRename}
         />
+
+        {ganttMenu.activity && (
+          <div className="fixed inset-0 z-50" onClick={closeGanttMenu}>
+            <div
+              className="absolute bg-white dark:bg-slate-800 rounded shadow-lg border border-slate-200 dark:border-slate-700 text-sm overflow-hidden"
+              style={{ top: ganttMenu.y, left: ganttMenu.x }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="px-3 py-2 font-semibold text-slate-800 dark:text-slate-100 border-b border-slate-200 dark:border-slate-700">
+                {ganttMenu.activity.name}
+              </div>
+              <button className="block w-full px-3 py-2 text-left hover:bg-slate-100 dark:hover:bg-slate-700"
+                onClick={handleGanttAddExpense}>Add Expense</button>
+              <button className="block w-full px-3 py-2 text-left hover:bg-slate-100 dark:hover:bg-slate-700"
+                onClick={handleGanttAssignResources}>Assign Resources</button>
+                  <button className="block w-full px-3 py-2 text-left hover:bg-slate-100 dark:hover:bg-slate-700"
+                    onClick={handleGanttAddPredecessor}>Add Predecessor</button>
+              <button className="block w-full px-3 py-2 text-left hover:bg-slate-100 dark:hover:bg-slate-700"
+                onClick={handleGanttAddSuccessor}>Add Successor</button>
+              <button className="block w-full px-3 py-2 text-left text-red-600 hover:bg-slate-100 dark:hover:bg-slate-700"
+                onClick={handleGanttDelete}>Delete Activity</button>
+            </div>
+          </div>
+        )}
+
+        {dependencyModal.open && dependencyModal.activity && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setDependencyModal({ open: false, mode: "pred", activity: null, targetId: "" })}>
+            <div className="bg-white dark:bg-slate-900 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 w-96 p-4" onClick={(e) => e.stopPropagation()}>
+              <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-100 mb-2">
+                {dependencyModal.mode === "pred" ? "Add Predecessor" : "Add Successor"} for {dependencyModal.activity.name}
+              </h4>
+              <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Select activity</label>
+              <select
+                className="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm p-2 text-slate-800 dark:text-slate-100"
+                value={dependencyModal.targetId}
+                onChange={(e) => setDependencyModal(prev => ({ ...prev, targetId: e.target.value }))}
+              >
+                <option value="">-- Choose activity --</option>
+                {projectActivities
+                  .filter(a => a.id !== dependencyModal.activity?.id)
+                  .map(a => (
+                    <option key={a.id} value={a.id}>
+                      {a.wbs} - {a.name}
+                    </option>
+                  ))}
+              </select>
+              <div className="flex justify-end gap-2 mt-4">
+                <button
+                  onClick={() => setDependencyModal({ open: false, mode: "pred", activity: null, targetId: "" })}
+                  className="px-3 py-1 text-sm rounded border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300"
+                >
+                  Cancel
+                </button>
+                <button
+                  disabled={!dependencyModal.targetId}
+                  onClick={() => {
+                    const target = dependencyModal.targetId;
+                    if (dependencyModal.activity && target) {
+                      if (dependencyModal.mode === "pred") {
+                        handleSetPredecessor(dependencyModal.activity.id, target);
+                      } else {
+                        handleSetSuccessor(dependencyModal.activity.id, target);
+                      }
+                    }
+                    setDependencyModal({ open: false, mode: "pred", activity: null, targetId: "" });
+                  }}
+                  className="px-3 py-1 text-sm rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+                >
+                  Save
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -3746,11 +4630,6 @@ export default function DashboardPage() {
   // ---------------------------------------------------------------------------
   // EPS MODE - Default view
   // ---------------------------------------------------------------------------
-  const selectedProjectActivities = (selectedNode && activities[selectedNode.id]) || [];
-  const selectedProjectTransactions = (selectedNode && transactions[selectedNode.id]) || [];
-  const selectedProjectDetails = (selectedNode && projectDetails[selectedNode.id]) || [];
-  const selectedCustomFormulas = (selectedNode && customFormulas[selectedNode.id]) || [];
-
   const projectStats = (selectedNode && selectedNode.type === "project") ? calculateProjectStats(selectedProjectActivities, selectedProjectTransactions) : null;
   const projectFinancials = (selectedNode && selectedNode.type === "project") ? calculateFinancialKPIs(selectedProjectActivities, selectedProjectTransactions) : null;
 
@@ -3795,7 +4674,30 @@ export default function DashboardPage() {
         </aside>
 
         <main className="flex-1 overflow-y-auto p-6">
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+          <div className="flex items-center justify-between mb-4">
+            <div className="inline-flex rounded-full bg-slate-200/70 dark:bg-slate-800/70 p-1">
+              <button
+                className={`px-4 py-1.5 text-sm font-semibold rounded-full transition ${epsViewTab === "overview" ? "bg-blue-600 text-white shadow" : "text-slate-600 dark:text-slate-300"}`}
+                onClick={() => setEpsViewTab("overview")}
+              >
+                Overview
+              </button>
+              <button
+                className={`px-4 py-1.5 text-sm font-semibold rounded-full transition ${epsViewTab === "gantt" ? "bg-blue-600 text-white shadow" : "text-slate-600 dark:text-slate-300"}`}
+                onClick={() => setEpsViewTab("gantt")}
+              >
+                Company Gantt
+              </button>
+            </div>
+            <div className="text-xs text-slate-500 dark:text-slate-400">
+              {selectedCompany
+                ? `${companyProjects.length} project${companyProjects.length === 1 ? "" : "s"} in ${selectedCompany.name}`
+                : "Select a company to view its project span"}
+            </div>
+          </div>
+
+          {epsViewTab === "overview" ? (
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
             <div className="rounded-lg border border-slate-300 bg-white p-6 shadow-sm dark:border-slate-700 dark:bg-slate-800 lg:col-span-3">
               <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-50 mb-3">
                 Global Enterprise Overview
@@ -3960,6 +4862,108 @@ export default function DashboardPage() {
               )}
             </div>
           </div>
+          ) : (
+            <div className="rounded-lg border border-slate-300 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900 overflow-hidden">
+              <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-50">Company Portfolio Gantt</h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Spanning all projects within the selected company.</p>
+                </div>
+                {selectedNode?.type === "company" && companyProjectSpans.length > 0 && (
+                  <div className="text-xs text-slate-500 dark:text-slate-400">
+                    {companyProjectSpans.length} project bars
+                  </div>
+                )}
+              </div>
+              <div className="p-4">
+              {!selectedCompany && (
+                <div className="text-sm text-slate-600 dark:text-slate-300">
+                  Select a company to see its project timelines.
+                </div>
+              )}
+              {selectedCompany && companyProjectSpans.length === 0 && (
+                <div className="text-sm text-slate-600 dark:text-slate-300">
+                  No activities scheduled for projects in this company yet.
+                </div>
+              )}
+                {selectedCompany && companyProjectSpans.length > 0 && (
+                  <div ref={companyGanttRef} className="relative rounded-md border border-slate-200 dark:border-slate-700 bg-slate-900 p-3 overflow-hidden">
+                    <div className="relative h-8 border-b border-slate-700/60">
+                      {epsMonths.map((m, idx) => {
+                        const left = epsDateToXPct(m.start);
+                        const right = epsDateToXPct(m.end);
+                        const width = Math.max(2, right - left);
+                        return (
+                          <div
+                            key={`${m.label}-${idx}`}
+                            className="absolute top-0 bottom-0 border-r border-slate-700/60"
+                            style={{ left: `${left}%`, width: `${width}%` }}
+                          >
+                            <div className="text-[11px] font-semibold text-slate-200 text-center pt-1">
+                              {m.label.toUpperCase()}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div className="relative h-8 border-b border-slate-700/60">
+                      {epsDays.filter((_, i) => i % epsDayStep === 0).map((d) => {
+                        const x = epsDateToXPct(d.ms);
+                        return (
+                          <div key={d.ms} className="absolute top-0 bottom-0" style={{ left: `${x}%` }}>
+                            <div className="absolute top-0 bottom-0 border-l border-slate-700/40 left-1/2" />
+                            <div className="text-[10px] text-slate-300 text-center -translate-x-1/2">{d.day}</div>
+                            <div className="text-[9px] text-slate-500 text-center -translate-x-1/2 mt-0.5">
+                              {d.month[0]}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div className="relative" style={{ minHeight: Math.max(companyProjectSpans.length * 36 + 40, 160) }}>
+                      {epsDays.filter((_, i) => i % epsDayStep === 0).map((d) => (
+                        <div
+                          key={`grid-${d.ms}`}
+                          className="absolute top-0 bottom-0 border-l border-slate-800"
+                          style={{ left: `${epsDateToXPct(d.ms)}%` }}
+                        />
+                      ))}
+                      {centralTodayMs >= epsGanttTimeline.start && centralTodayMs <= epsGanttTimeline.end && (
+                        <div
+                          className="absolute top-0 bottom-0 w-[2px] bg-red-500/60"
+                      style={{ left: `${epsDateToXPct(centralTodayMs)}%` }}
+                        />
+                      )}
+                      {companyProjectSpans.map((p, idx) => {
+                        const delta = companyDragPreview?.projectId === p.id ? companyDragPreview.deltaMs : 0;
+                        const left = epsDateToXPct(p.start + delta);
+                        const right = epsDateToXPct(p.end + delta);
+                        const width = Math.max(1, right - left);
+                        const top = idx * 36 + 12;
+                        return (
+                          <div key={p.id} className="absolute left-0 right-0" style={{ top }}>
+                            <div
+                              className="absolute h-3 rounded bg-blue-500 shadow-sm"
+                              style={{ left: `${left}%`, width: `${width}%` }}
+                              onPointerDown={(e) => handleCompanyPointerDown(p.id, e)}
+                            />
+                            <div
+                              className="absolute flex items-center pointer-events-none"
+                              style={{ left: `${right}%`, top: 0, bottom: 0, transform: "translateX(6px)" }}
+                            >
+                              <span className="text-[10px] font-bold text-white whitespace-nowrap">
+                                {p.name}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </main>
       </div>
 
@@ -3990,7 +4994,7 @@ export default function DashboardPage() {
         value={modalValue}
         open={!!modalMode}
         onChange={setModalValue}
-        onCancel={() => setModalMode(null)}
+        onCancel={handleCancelEdit}
         onConfirm={modalMode === "add" ? handleConfirmAdd : handleConfirmRename}
       />
     </div>
