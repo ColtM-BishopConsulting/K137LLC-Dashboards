@@ -2446,16 +2446,21 @@ interface ProjectDetailsPanelProps {
   details: ProjectDetail[];
   onUpdate: (updatedDetails: ProjectDetail[]) => void;
   onAutoPopulate: (fields: Omit<ProjectDetail, 'id'>[]) => void;
+  isVisible: boolean;
 }
 
 const ProjectDetailsPanel: React.FC<ProjectDetailsPanelProps> = ({
   projectId,
   details,
   onUpdate,
-  onAutoPopulate
+  onAutoPopulate,
+  isVisible
 }) => {
   const [editingCell, setEditingCell] = useState<EditingCell | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const visibilityClasses = isVisible
+    ? "translate-x-0 pointer-events-auto"
+    : "translate-x-full pointer-events-none";
 
   const startEditing = (detailId: string, field: 'variable' | 'value', initialValue: string) => {
     setEditingCell({ detailId, field, value: initialValue, activityId: undefined });
@@ -2486,7 +2491,7 @@ const ProjectDetailsPanel: React.FC<ProjectDetailsPanelProps> = ({
   };
 
   return (
-    <div className="w-80 border-l border-slate-300 bg-white dark:border-slate-700 dark:bg-slate-900 flex flex-col overflow-hidden fixed right-0 top-0 bottom-0 pt-16">
+    <div className={`w-80 border-l border-slate-300 bg-white dark:border-slate-700 dark:bg-slate-900 flex flex-col overflow-hidden fixed right-0 top-0 bottom-0 pt-16 transform transition-transform duration-300 ease-in-out ${visibilityClasses}`}>
       <div className="border-b border-slate-300 bg-gradient-to-r from-white to-slate-50 px-4 py-3 dark:border-slate-700 dark:from-slate-900 dark:to-slate-800">
         <h3 className="text-sm font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400">
           Project Variables / Details
@@ -2790,6 +2795,7 @@ export default function DashboardPage() {
   const [customFormulas, setCustomFormulas] = useState<Record<number, CustomFormula[]>>(INITIAL_CUSTOM_FORMULAS);
   const [resources, setResources] = useState<Resource[]>(INITIAL_RESOURCES);
   const [isDetailsPanelVisible, setIsDetailsPanelVisible] = useState(true);
+  const [activityView, setActivityView] = useState<"details" | "gantt">("details");
   const [ledgerOpen, setLedgerOpen] = useState(false);
 
   // Context menu state
@@ -3441,9 +3447,27 @@ export default function DashboardPage() {
             </div>
           </aside>
 
-          <main className={`flex-1 flex flex-col overflow-hidden ${isDetailsPanelVisible ? 'pr-80' : ''}`}>
-            <div className="flex-1 overflow-hidden p-4">
-              <div className="grid grid-rows-[60%_40%] gap-4 h-full">
+          <main className={`flex-1 flex flex-col overflow-hidden transition-[padding] duration-300 ${isDetailsPanelVisible ? 'md:pr-80' : 'pr-0'}`}>
+            <div className="flex-1 overflow-hidden p-4 flex flex-col gap-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="inline-flex rounded-full border border-slate-300 bg-white p-1 text-sm shadow-sm dark:border-slate-700 dark:bg-slate-900">
+                  <button
+                    onClick={() => setActivityView("details")}
+                    className={`px-3 py-1.5 rounded-full transition-colors ${activityView === "details" ? "bg-blue-600 text-white shadow" : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"}`}
+                  >
+                    Activity Details
+                  </button>
+                  <button
+                    onClick={() => setActivityView("gantt")}
+                    className={`px-3 py-1.5 rounded-full transition-colors ${activityView === "gantt" ? "bg-blue-600 text-white shadow" : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"}`}
+                  >
+                    Gantt Chart
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-4 h-full">
+                {activityView === "details" && (
                 <div className="overflow-y-auto rounded-lg border border-slate-300 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-md">
                   <div className="flex justify-between items-center p-3 border-b border-slate-200 dark:border-slate-700 flex-shrink-0">
                     <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-200">
@@ -3633,7 +3657,9 @@ export default function DashboardPage() {
                     </div>
                   )}
                 </div>
+                )}
 
+                {activityView === "gantt" && (
                 <div className="rounded-lg border border-slate-300 bg-white p-4 dark:border-slate-800 dark:bg-slate-900 shadow-md">
                   <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-200 mb-2 flex items-center gap-2">
                     <IconGantt /> Gantt Chart (Placeholder)
@@ -3642,6 +3668,7 @@ export default function DashboardPage() {
                     <p>Gantt Chart visualization of activities goes here.</p>
                   </div>
                 </div>
+                )}
               </div>
             </div>
 
@@ -3655,14 +3682,13 @@ export default function DashboardPage() {
             />
           </main>
 
-          {isDetailsPanelVisible && (
-            <ProjectDetailsPanel
-              projectId={activeProject.id}
-              details={currentProjectDetails}
-              onUpdate={handleUpdateProjectDetails}
-              onAutoPopulate={handleAutoPopulateProjectDetails}
-            />
-          )}
+          <ProjectDetailsPanel
+            projectId={activeProject.id}
+            details={currentProjectDetails}
+            onUpdate={handleUpdateProjectDetails}
+            onAutoPopulate={handleAutoPopulateProjectDetails}
+            isVisible={isDetailsPanelVisible}
+          />
         </div>
 
         {contextMenu.type && (
