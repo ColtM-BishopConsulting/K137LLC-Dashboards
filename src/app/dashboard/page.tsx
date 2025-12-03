@@ -459,6 +459,11 @@ const getNextActivityId = (activities: Record<number, Activity[]>): string => {
   return `A${(maxId + 10).toString().padStart(4, '0')}`;
 };
 
+const toNumber = (value: number | string) => {
+  const num = typeof value === "string" ? parseFloat(value) : value;
+  return Number.isFinite(num) ? num : 0;
+};
+
 const calculateActivityActuals = (
   activityId: string,
   projectTransactions: Transaction[]
@@ -469,11 +474,11 @@ const calculateActivityActuals = (
 
   const actualLaborCost = activityTransactions
     .filter((t) => t.category === "Labor")
-    .reduce((sum, t) => sum + t.amount, 0);
+    .reduce((sum, t) => sum + toNumber(t.amount), 0);
 
   const actualMaterialCost = activityTransactions
     .filter((t) => t.category !== "Labor")
-    .reduce((sum, t) => sum + t.amount, 0);
+    .reduce((sum, t) => sum + toNumber(t.amount), 0);
 
   return { actualLaborCost, actualMaterialCost };
 };
@@ -499,11 +504,11 @@ const calculateProjectStats = (
 
   const actualLaborCost = outcomeTransactions
     .filter(t => t.category === "Labor")
-    .reduce((sum, t) => sum + t.amount, 0);
+    .reduce((sum, t) => sum + toNumber(t.amount), 0);
 
   const actualMaterialCost = outcomeTransactions
     .filter(t => t.category !== "Labor")
-    .reduce((sum, t) => sum + t.amount, 0);
+    .reduce((sum, t) => sum + toNumber(t.amount), 0);
 
   return {
     totalActivities,
@@ -525,12 +530,12 @@ const calculateFinancialKPIs = (
   const totalActivityRevenue = projectActivities.reduce((sum, a) => sum + a.revenue, 0);
   const totalIncomeTransactions = projectTransactions
     .filter(t => t.type === "Income")
-    .reduce((sum, t) => sum + t.amount, 0);
+    .reduce((sum, t) => sum + toNumber(t.amount), 0);
   const totalRevenue = totalActivityRevenue + totalIncomeTransactions;
 
   const totalActualCost = projectTransactions
     .filter(t => t.type === "Outcome")
-    .reduce((sum, t) => sum + t.amount, 0);
+    .reduce((sum, t) => sum + toNumber(t.amount), 0);
 
   const profit = totalRevenue - totalActualCost;
   const profitMargin = totalRevenue > 0 ? (profit / totalRevenue) * 100 : 0;
@@ -2012,16 +2017,22 @@ const ProjectLedger: React.FC<ProjectLedgerProps> = ({
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
+    if (name === "amount") {
+      const parsed = parseFloat(value);
+      setForm((prev) => ({ ...prev, amount: Number.isFinite(parsed) ? parsed : 0 }));
+      return;
+    }
     setForm((prev) => ({ ...prev, [name]: value }));
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.description || form.amount <= 0 || !form.date) return;
+    const amountValue = toNumber(form.amount);
+    if (!form.description || amountValue <= 0 || !form.date) return;
 
     onAddTransaction({
       ...form,
-      amount: form.amount,
+      amount: amountValue,
       activityId: form.activityId === 'project-level' ? undefined : form.activityId,
     });
 
@@ -2074,7 +2085,7 @@ const ProjectLedger: React.FC<ProjectLedgerProps> = ({
                       {t.activityId || "-"}
                     </td>
                     <td className={`px-3 py-2 text-right font-medium ${t.type === "Income" ? "text-green-600" : "text-red-600"}`}>
-                      {t.type === "Income" ? "+" : "-"} {formatCurrency(t.amount)}
+                      {t.type === "Income" ? "+" : "-"} {formatCurrency(toNumber(t.amount))}
                     </td>
                   </tr>
                 ))}
