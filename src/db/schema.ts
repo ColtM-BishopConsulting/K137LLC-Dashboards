@@ -77,12 +77,16 @@ export const epsNodes = pgTable("eps_nodes", {
   createdAt: timestamp("created_at", { withTimezone: true }).default(sql`now()`),
   updatedAt: timestamp("updated_at", { withTimezone: true }).default(sql`now()`),
 }, (table) => ({
-  parentFk: foreignKey({
-    columns: [table.parentId],
-    foreignColumns: [table.id],
-    name: "eps_nodes_parent_fk",
-    onDelete: "set null",
-  }),
+  parentFk:
+    // Drizzle's `foreignKey` typing doesn't expose onDelete, but we want cascade in DB
+    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+    // @ts-ignore
+    foreignKey({
+      columns: [table.parentId],
+      foreignColumns: [table.id],
+      name: "eps_nodes_parent_fk",
+      onDelete: "cascade",
+    }),
 }));
 
 export const epsNodesRelations = relations(epsNodes, ({ one, many }) => ({
