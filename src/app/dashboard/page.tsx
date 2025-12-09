@@ -19,6 +19,7 @@ interface EpsNode {
   parentId: number | null;
   type: EpsNodeType;
   name: string;
+  projectId?: number | null;
   children?: EpsNode[];
 }
 
@@ -4951,13 +4952,14 @@ export default function DashboardPage() {
         parentId: n.parentId === null || n.parentId === undefined ? null : Number(n.parentId),
         type: n.type as EpsNodeType,
         name: n.name,
+        projectId: n.projectId ? Number(n.projectId) : null,
         children: [],
       }));
       setEpsNodes(nodes);
       const firstRootId = nodes.find((n) => n.parentId === null)?.id ?? null;
       const firstProject = nodes.find((n) => n.type === "project");
       setSelectedNodeId(firstProject?.id ?? firstRootId);
-      setActiveProjectId(firstProject?.id ?? null);
+      setActiveProjectId(firstProject?.projectId ?? firstProject?.id ?? null);
       setExpanded(
         nodes.length
           ? new Set(nodes.filter((n) => n.parentId !== null).map((n) => n.parentId!))
@@ -5598,6 +5600,9 @@ export default function DashboardPage() {
   // --- EPS Node Operations ---
   const handleNodeClick = useCallback((node: EpsNode) => {
     setSelectedNodeId(node.id);
+    if (node.type === "project") {
+      setActiveProjectId(node.projectId ?? node.id);
+    }
   }, []);
 
   const handleToggleExpand = useCallback((nodeId: number) => {
@@ -5660,6 +5665,7 @@ export default function DashboardPage() {
           parentId: pendingAddConfig.parentId,
           type: pendingAddConfig.type,
           name: node.name || trimmed,
+          projectId: node.projectId ? Number(node.projectId) : null,
         };
         setEpsNodes((prev) => [...prev, newNode]);
         if (pendingAddConfig.parentId != null) {
@@ -5710,11 +5716,12 @@ export default function DashboardPage() {
         parentId: pendingAddConfig.parentId,
         type: "project",
         name: project.name || trimmed,
+        projectId: Number(project.id),
       };
 
       setEpsNodes((prev) => [...prev, newNode]);
       setSelectedNodeId(newNode.id);
-      setActiveProjectId(newNode.id);
+      setActiveProjectId(project.id ? Number(project.id) : newNode.id);
       if (pendingAddConfig.parentId != null) {
         setExpanded((prev) => {
           const next = new Set(prev);
