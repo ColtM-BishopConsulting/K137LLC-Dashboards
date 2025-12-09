@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { eq } from "drizzle-orm";
 import { db, employees } from "@/db";
 
 export async function GET() {
@@ -27,7 +28,7 @@ export async function PATCH(req: Request) {
     const body = await req.json();
     const { id, ...rest } = body || {};
     if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
-    const updated = await db.update(employees).set(rest).where(employees.id.eq(id)).returning();
+    const updated = await db.update(employees).set(rest).where(eq(employees.id, id)).returning();
     return NextResponse.json({ employee: updated[0] });
   } catch (err) {
     console.error("PATCH /api/employees error", err);
@@ -40,7 +41,7 @@ export async function DELETE(req: Request) {
     const { searchParams } = new URL(req.url);
     const id = Number(searchParams.get("id"));
     if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
-    const deleted = await db.delete(employees).where(employees.id.eq(id)).returning();
+    const deleted = await db.delete(employees).where(eq(employees.id, id)).returning();
     return NextResponse.json({ employee: deleted[0] });
   } catch (err) {
     console.error("DELETE /api/employees error", err);

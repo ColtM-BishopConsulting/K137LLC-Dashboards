@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { eq } from "drizzle-orm";
 import { db, projectPipelineMeta } from "@/db";
 
 export async function GET() {
@@ -30,7 +31,7 @@ export async function PATCH(req: Request) {
     const updated = await db
       .update(projectPipelineMeta)
       .set(rest)
-      .where(id ? projectPipelineMeta.id.eq(id) : projectPipelineMeta.projectId.eq(projectId))
+      .where(id ? eq(projectPipelineMeta.id, id) : eq(projectPipelineMeta.projectId, projectId))
       .returning();
     return NextResponse.json({ pipeline: updated[0] });
   } catch (err) {

@@ -5925,7 +5925,7 @@ export default function DashboardPage() {
       const saved = data.transaction || {};
       const newTransaction: Transaction = {
         ...transaction,
-        id: String(saved.id || transaction.id || `T${Date.now()}`),
+        id: String(saved.id || `T${Date.now()}`),
       };
       setTransactions(prev => ({
         ...prev,
