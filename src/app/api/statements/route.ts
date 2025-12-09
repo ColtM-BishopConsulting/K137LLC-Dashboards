@@ -36,9 +36,9 @@ export async function POST(req: Request) {
     await db.insert(statementLines).values(
       lines.map((l) => ({
         uploadId: tempIdToDbId.get(l.tempUploadId)!,
-        date: new Date(l.date),
+        date: l.date,
         description: l.description,
-        amount: l.amount,
+        amount: String(l.amount),
       }))
     );
   }
