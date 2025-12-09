@@ -7,6 +7,7 @@ import {
   timestamp,
   numeric,
   text,
+  foreignKey,
 } from "drizzle-orm/pg-core";
 import { sql, relations } from "drizzle-orm";
 
@@ -68,14 +69,21 @@ export const projectDetails = pgTable("project_details", {
 // ----------------------------
 export const epsNodes = pgTable("eps_nodes", {
   id: serial("id").primaryKey(),
-  parentId: integer("parent_id").references(() => epsNodes.id, { onDelete: "set null" }),
+  parentId: integer("parent_id"),
   type: varchar("type", { length: 32 }).notNull(), // enterprise | business_unit | portfolio | company | project
   name: varchar("name", { length: 255 }).notNull(),
   projectId: integer("project_id").references(() => projects.id, { onDelete: "set null" }),
   sortOrder: integer("sort_order").default(0),
   createdAt: timestamp("created_at", { withTimezone: true }).default(sql`now()`),
   updatedAt: timestamp("updated_at", { withTimezone: true }).default(sql`now()`),
-});
+}, (table) => ({
+  parentFk: foreignKey({
+    columns: [table.parentId],
+    foreignColumns: [table.id],
+    name: "eps_nodes_parent_fk",
+    onDelete: "set null",
+  }),
+}));
 
 export const epsNodesRelations = relations(epsNodes, ({ one, many }) => ({
   parent: one(epsNodes, {
