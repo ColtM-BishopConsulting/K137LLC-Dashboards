@@ -16,7 +16,8 @@ export async function POST(req: Request) {
   try {
     const body = await req.json();
     const inserted = await db.insert(epsNodes).values(body).returning();
-    return NextResponse.json({ node: inserted[0] });
+    const node = Array.isArray(inserted) ? inserted[0] : inserted;
+    return NextResponse.json({ node });
   } catch (err) {
     console.error("POST /api/eps error", err);
     return NextResponse.json({ error: "Failed to create EPS node" }, { status: 500 });
@@ -29,7 +30,8 @@ export async function PATCH(req: Request) {
     const { id, ...rest } = body || {};
     if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
     const updated = await db.update(epsNodes).set(rest).where(eq(epsNodes.id, id)).returning();
-    return NextResponse.json({ node: updated[0] });
+    const node = Array.isArray(updated) ? updated[0] : updated;
+    return NextResponse.json({ node });
   } catch (err) {
     console.error("PATCH /api/eps error", err);
     return NextResponse.json({ error: "Failed to update EPS node" }, { status: 500 });
@@ -42,7 +44,8 @@ export async function DELETE(req: Request) {
     const id = Number(searchParams.get("id"));
     if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
     const deleted = await db.delete(epsNodes).where(eq(epsNodes.id, id)).returning();
-    return NextResponse.json({ node: deleted[0] });
+    const node = Array.isArray(deleted) ? deleted[0] : deleted;
+    return NextResponse.json({ node });
   } catch (err) {
     console.error("DELETE /api/eps error", err);
     return NextResponse.json({ error: "Failed to delete EPS node" }, { status: 500 });
