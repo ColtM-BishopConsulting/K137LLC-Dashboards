@@ -64,6 +64,33 @@ export const projectDetails = pgTable("project_details", {
 });
 
 // ----------------------------
+// EPS NODES (ENTERPRISE TREE)
+// ----------------------------
+export const epsNodes = pgTable("eps_nodes", {
+  id: serial("id").primaryKey(),
+  parentId: integer("parent_id").references(() => epsNodes.id, { onDelete: "set null" }),
+  type: varchar("type", { length: 32 }).notNull(), // enterprise | business_unit | portfolio | company | project
+  name: varchar("name", { length: 255 }).notNull(),
+  projectId: integer("project_id").references(() => projects.id, { onDelete: "set null" }),
+  sortOrder: integer("sort_order").default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).default(sql`now()`),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).default(sql`now()`),
+});
+
+export const epsNodesRelations = relations(epsNodes, ({ one, many }) => ({
+  parent: one(epsNodes, {
+    fields: [epsNodes.parentId],
+    references: [epsNodes.id],
+    relationName: "eps_children",
+  }),
+  children: many(epsNodes, { relationName: "eps_children" }),
+  project: one(projects, {
+    fields: [epsNodes.projectId],
+    references: [projects.id],
+  }),
+}));
+
+// ----------------------------
 // WBS NODES
 // ----------------------------
 

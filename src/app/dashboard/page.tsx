@@ -629,7 +629,12 @@ function buildTree(nodes: EpsNode[]): EpsNode[] {
       roots.push(node);
     } else {
       const parent = map.get(node.parentId);
-      if (parent) parent.children!.push(node);
+      if (parent) {
+        parent.children!.push(node);
+      } else {
+        // orphan without known parent; surface at root so it remains visible
+        roots.push(node);
+      }
     }
   });
 
@@ -1100,22 +1105,28 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
     };
   }, [onClose]);
 
-  if (!state.node && !state.activity) return null;
-
-  const menuItems = state.type === 'eps' ? [
-    { label: getAddTarget(state.node).label.replace("Add ", "Add "), icon: <IconAdd />, action: onAdd, divider: false },
-    { label: "Rename", icon: <IconEdit />, action: onRename, divider: false },
-    { label: "Duplicate", icon: <IconCopy />, action: onDuplicate, divider: true },
-    { label: "Cut", icon: null, action: onCut, divider: false },
-    { label: "Copy", icon: <IconCopy />, action: onCopy, divider: false },
-    { label: "Paste", icon: null, action: onPaste, divider: true, disabled: true },
-    { label: "Delete", icon: <IconDelete />, action: onDelete, divider: false, danger: true },
-  ] : [
-    { label: "Edit Activity", icon: <IconEdit />, action: onRename, divider: false },
-    { label: "Manage Resources", icon: <IconUsers />, action: onAddResources, divider: false },
-    { label: "Duplicate", icon: <IconCopy />, action: onDuplicate, divider: true },
-    { label: "Delete", icon: <IconDelete />, action: onDelete, divider: false, danger: true },
-  ];
+  const menuItems = state.type === 'eps'
+    ? (
+      state.node
+        ? [
+            { label: getAddTarget(state.node).label.replace("Add ", "Add "), icon: <IconAdd />, action: onAdd, divider: false },
+            { label: "Rename", icon: <IconEdit />, action: onRename, divider: false },
+            { label: "Duplicate", icon: <IconCopy />, action: onDuplicate, divider: true },
+            { label: "Cut", icon: null, action: onCut, divider: false },
+            { label: "Copy", icon: <IconCopy />, action: onCopy, divider: false },
+            { label: "Paste", icon: null, action: onPaste, divider: true, disabled: true },
+            { label: "Delete", icon: <IconDelete />, action: onDelete, divider: false, danger: true },
+          ]
+        : [
+            { label: getAddTarget(null).label.replace("Add ", "Add "), icon: <IconAdd />, action: onAdd, divider: false },
+          ]
+    )
+    : [
+        { label: "Edit Activity", icon: <IconEdit />, action: onRename, divider: false },
+        { label: "Manage Resources", icon: <IconUsers />, action: onAddResources, divider: false },
+        { label: "Duplicate", icon: <IconCopy />, action: onDuplicate, divider: true },
+        { label: "Delete", icon: <IconDelete />, action: onDelete, divider: false, danger: true },
+      ];
 
   return (
     <div
@@ -4689,7 +4700,7 @@ interface EpsNodeProps {
   selectedNodeId: number | null;
   expanded: Set<number>;
   onNodeClick: (node: EpsNode) => void;
-  onContextMenu: (x: number, y: number, node: EpsNode, activity: null, type: 'eps') => void;
+  onContextMenu: (x: number, y: number, node: EpsNode | null, activity: null, type: 'eps') => void;
   onToggleExpand: (nodeId: number) => void;
   pipelineMetaMap?: Record<number, ProjectPipelineMeta>;
 }
@@ -4719,6 +4730,7 @@ const EpsNodeComponent: React.FC<EpsNodeProps> = ({
   return (
     <div key={node.id}>
       <div
+        data-eps-node
         className={`flex cursor-pointer items-center pr-2 transition-colors ${EPS_ROW_HEIGHT_CLASS} ${
           isSelected
             ? "bg-blue-50 dark:bg-blue-900/40 border-l-4 border-blue-600 dark:border-blue-400"
@@ -4922,16 +4934,30 @@ export default function DashboardPage() {
       const res = await fetch("/api/projects");
       if (!res.ok) return [];
       const data = await res.json();
-      const nodes: EpsNode[] = (data.projects || []).map((p: any) => ({
-        id: Number(p.id),
-        parentId: null,
-        type: "project",
-        name: p.name || p.code || `Project ${p.id}`,
+      return data.projects || [];
+    } catch (err) {
+      console.error("Failed to load projects", err);
+      return [];
+    }
+  }, []);
+
+  const loadEpsNodes = useCallback(async () => {
+    try {
+      const res = await fetch("/api/eps");
+      if (!res.ok) return [];
+      const data = await res.json();
+      const nodes: EpsNode[] = (data.nodes || []).map((n: any) => ({
+        id: Number(n.id),
+        parentId: n.parentId === null || n.parentId === undefined ? null : Number(n.parentId),
+        type: n.type as EpsNodeType,
+        name: n.name,
+        children: [],
       }));
       setEpsNodes(nodes);
-      const firstId = nodes[0]?.id ?? null;
-      setSelectedNodeId(firstId);
-      setActiveProjectId(firstId);
+      const firstRootId = nodes.find((n) => n.parentId === null)?.id ?? null;
+      const firstProject = nodes.find((n) => n.type === "project");
+      setSelectedNodeId(firstProject?.id ?? firstRootId);
+      setActiveProjectId(firstProject?.id ?? null);
       setExpanded(
         nodes.length
           ? new Set(nodes.filter((n) => n.parentId !== null).map((n) => n.parentId!))
@@ -4939,7 +4965,7 @@ export default function DashboardPage() {
       );
       return nodes;
     } catch (err) {
-      console.error("Failed to load projects", err);
+      console.error("Failed to load EPS nodes", err);
       return [];
     }
   }, []);
@@ -4964,49 +4990,46 @@ export default function DashboardPage() {
     }
   }, []);
 
-  const loadActivities = useCallback(
-    async (wbsList?: DbWbsNode[]) => {
-      const wbsMap = new Map<number, string>((wbsList || wbsNodesDb).map((n) => [n.id, n.code]));
-      try {
-        const res = await fetch("/api/activities");
-        if (!res.ok) return {};
-        const data = await res.json();
-        const grouped: Record<number, Activity[]> = {};
-        (data.activities || []).forEach((a: any) => {
-          const projectId = Number(a.projectId);
-          if (!projectId) return;
-          const wbsCode = wbsMap.get(Number(a.wbsId)) || a.code || "";
-          const startDate = a.startDate ? toDateString(toDateMs(a.startDate)) : toDateString(getCentralTodayMs());
-          const finishDate = a.finishDate ? toDateString(toDateMs(a.finishDate)) : startDate;
-          const mapped: Activity = {
-            id: String(a.id),
-            wbs: wbsCode,
-            name: a.name || "",
-            start: startDate,
-            finish: finishDate,
-            duration: Number(a.durationDays || 0),
-            pct: Number(a.percentComplete || 0),
-            responsible: a.responsible || "",
-            status: mapActivityStatus(a.status),
-            projectedLabor: Number(a.projectedLabor || 0),
-            projectedCost: Number(a.projectedCost || 0),
-            budget: Number(a.budget || 0),
-            revenue: Number(a.revenue || 0),
-            resources: [],
-            predecessors: a.predecessorIds ? a.predecessorIds.map((id: any) => String(id)) : [],
-            successor: a.successorId ? String(a.successorId) : undefined,
-          };
-          grouped[projectId] = [...(grouped[projectId] || []), mapped];
-        });
-        setActivities(grouped);
-        return grouped;
-      } catch (err) {
-        console.error("Failed to load activities", err);
-        return {};
-      }
-    },
-    [wbsNodesDb]
-  );
+  const loadActivities = useCallback(async (wbsList?: DbWbsNode[]) => {
+    const wbsMap = new Map<number, string>((wbsList || []).map((n) => [n.id, n.code]));
+    try {
+      const res = await fetch("/api/activities");
+      if (!res.ok) return {};
+      const data = await res.json();
+      const grouped: Record<number, Activity[]> = {};
+      (data.activities || []).forEach((a: any) => {
+        const projectId = Number(a.projectId);
+        if (!projectId) return;
+        const wbsCode = wbsMap.get(Number(a.wbsId)) || a.code || "";
+        const startDate = a.startDate ? toDateString(toDateMs(a.startDate)) : toDateString(getCentralTodayMs());
+        const finishDate = a.finishDate ? toDateString(toDateMs(a.finishDate)) : startDate;
+        const mapped: Activity = {
+          id: String(a.id),
+          wbs: wbsCode,
+          name: a.name || "",
+          start: startDate,
+          finish: finishDate,
+          duration: Number(a.durationDays || 0),
+          pct: Number(a.percentComplete || 0),
+          responsible: a.responsible || "",
+          status: mapActivityStatus(a.status),
+          projectedLabor: Number(a.projectedLabor || 0),
+          projectedCost: Number(a.projectedCost || 0),
+          budget: Number(a.budget || 0),
+          revenue: Number(a.revenue || 0),
+          resources: [],
+          predecessors: a.predecessorIds ? a.predecessorIds.map((id: any) => String(id)) : [],
+          successor: a.successorId ? String(a.successorId) : undefined,
+        };
+        grouped[projectId] = [...(grouped[projectId] || []), mapped];
+      });
+      setActivities(grouped);
+      return grouped;
+    } catch (err) {
+      console.error("Failed to load activities", err);
+      return {};
+    }
+  }, []);
 
   const loadTransactions = useCallback(async () => {
     try {
@@ -5169,6 +5192,40 @@ export default function DashboardPage() {
 
   const loadDbData = useCallback(async () => {
     const [projectsLoaded, wbsLoaded] = await Promise.all([loadProjects(), loadWbs()]);
+    const epsLoaded = await loadEpsNodes();
+
+    // auto-create EPS nodes for projects that don't have one yet
+    const epsProjects = new Set((epsLoaded || []).filter((n: any) => n.type === "project").map((n: any) => Number(n.projectId || n.id)));
+    const missingProjects = (projectsLoaded || []).filter((p: any) => !epsProjects.has(Number(p.id)));
+    for (const p of missingProjects) {
+      try {
+        const res = await fetch("/api/eps", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: p.name || p.code || `Project ${p.id}`,
+            parentId: null,
+            type: "project",
+            projectId: Number(p.id),
+          }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          const node = data.node;
+          if (node) {
+            setEpsNodes(prev => [...prev, {
+              id: Number(node.id),
+              parentId: node.parentId === null || node.parentId === undefined ? null : Number(node.parentId),
+              type: node.type,
+              name: node.name,
+            }]);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to backfill EPS node for project", p.id, err);
+      }
+    }
+
     await Promise.all([
       loadActivities(wbsLoaded),
       loadTransactions(),
@@ -5180,7 +5237,7 @@ export default function DashboardPage() {
       loadPipelineMeta(),
     ]);
     return { projectsLoaded, wbsLoaded };
-  }, [loadActivities, loadEmployees, loadPaychecks, loadPipelineMeta, loadProjectDetailsDb, loadProjects, loadResourcesFromDb, loadTimeEntries, loadTransactions, loadWbs]);
+  }, [loadActivities, loadEpsNodes, loadEmployees, loadPaychecks, loadPipelineMeta, loadProjectDetailsDb, loadProjects, loadResourcesFromDb, loadTimeEntries, loadTransactions, loadWbs]);
   const [isDetailsPanelVisible, setIsDetailsPanelVisible] = useState(true);
   const [epsViewTab, setEpsViewTab] = useState<"overview" | "gantt">("overview");
   const [activityView, setActivityView] = useState<"details" | "gantt">("details");
@@ -5530,7 +5587,10 @@ export default function DashboardPage() {
     }
   }, [mode, loadStatements, loadRentData]);
 
+  const initialLoadRef = useRef(false);
   useEffect(() => {
+    if (initialLoadRef.current) return;
+    initialLoadRef.current = true;
     loadDbData();
     loadRentData();
   }, [loadDbData, loadRentData]);
@@ -5557,9 +5617,14 @@ export default function DashboardPage() {
   }, []);
 
   const handleStartAdd = () => {
-    if (!contextMenu.node) return;
-    const target = getAddTarget(contextMenu.node);
+    const target = getAddTarget(contextMenu.node || null);
     setPendingAddConfig({ type: target.type, parentId: target.parentId });
+    setModalMode("add");
+    setModalValue("");
+  };
+
+  const handleStartAddWithType = (type: EpsNodeType, parentId: number | null) => {
+    setPendingAddConfig({ type, parentId });
     setModalMode("add");
     setModalValue("");
   };
@@ -5577,7 +5642,38 @@ export default function DashboardPage() {
     }
 
     if (pendingAddConfig.type !== "project") {
-      alert("Only projects can be created from this view right now.");
+      try {
+        const res = await fetch("/api/eps", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: trimmed,
+            parentId: pendingAddConfig.parentId,
+            type: pendingAddConfig.type,
+          }),
+        });
+        if (!res.ok) throw new Error("Failed to create node");
+        const data = await res.json();
+        const node = data.node || {};
+        const newNode: EpsNode = {
+          id: Number(node.id || getNextId(epsNodes)),
+          parentId: pendingAddConfig.parentId,
+          type: pendingAddConfig.type,
+          name: node.name || trimmed,
+        };
+        setEpsNodes((prev) => [...prev, newNode]);
+        if (pendingAddConfig.parentId != null) {
+          setExpanded((prev) => {
+            const next = new Set(prev);
+            next.add(pendingAddConfig.parentId!);
+            return next;
+          });
+        }
+        setSelectedNodeId(newNode.id);
+      } catch (err) {
+        console.error("Failed to create EPS node", err);
+        alert("Failed to create EPS node. Please try again.");
+      }
       setPendingAddConfig(null);
       setModalMode(null);
       return;
@@ -5594,9 +5690,24 @@ export default function DashboardPage() {
       if (!res.ok) throw new Error("Failed to create project");
       const data = await res.json();
       const project = data.project || {};
+
+      const epsRes = await fetch("/api/eps", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: project.name || trimmed,
+          parentId: pendingAddConfig.parentId,
+          type: "project",
+          projectId: Number(project.id),
+        }),
+      });
+      if (!epsRes.ok) throw new Error("Failed to create EPS node for project");
+      const epsData = await epsRes.json();
+      const epsNode = epsData.node || {};
+
       const newNode: EpsNode = {
-        id: Number(project.id),
-        parentId: null,
+        id: Number(epsNode.id || project.id),
+        parentId: pendingAddConfig.parentId,
         type: "project",
         name: project.name || trimmed,
       };
@@ -5604,6 +5715,13 @@ export default function DashboardPage() {
       setEpsNodes((prev) => [...prev, newNode]);
       setSelectedNodeId(newNode.id);
       setActiveProjectId(newNode.id);
+      if (pendingAddConfig.parentId != null) {
+        setExpanded((prev) => {
+          const next = new Set(prev);
+          next.add(pendingAddConfig.parentId!);
+          return next;
+        });
+      }
     } catch (err) {
       console.error("Failed to add project", err);
       alert("Failed to add project. Please try again.");
@@ -5641,6 +5759,11 @@ export default function DashboardPage() {
         body: JSON.stringify({ id: renameTarget.id, name: trimmed }),
       }).catch(err => console.error("Failed to rename project", err));
     }
+    fetch("/api/eps", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: renameTarget.id, name: trimmed }),
+    }).catch(err => console.error("Failed to rename eps node", err));
 
     setEpsNodes((prev) =>
       prev.map((n) =>
@@ -5673,6 +5796,7 @@ export default function DashboardPage() {
     };
     collect(contextMenu.node.id);
 
+    fetch(`/api/eps?id=${contextMenu.node.id}`, { method: "DELETE" }).catch(err => console.error("Failed to delete eps node", err));
     if (contextMenu.node.type === "project") {
       fetch(`/api/projects?id=${contextMenu.node.id}`, { method: "DELETE" })
         .catch(err => console.error("Failed to delete project", err));
@@ -9212,7 +9336,15 @@ export default function DashboardPage() {
               Enterprise Project Structure
             </h3>
           </div>
-          <div className="flex-1 overflow-y-auto p-2">
+          <div
+            className="flex-1 overflow-y-auto p-2"
+            onContextMenu={(e) => {
+              const isNode = (e.target as HTMLElement).closest("[data-eps-node]");
+              if (isNode) return;
+              e.preventDefault();
+              handleContextMenu(e.clientX, e.clientY, null, null, "eps");
+            }}
+          >
             {treeNodes.map((node) => (
               <EpsNodeComponent
                 key={node.id}
