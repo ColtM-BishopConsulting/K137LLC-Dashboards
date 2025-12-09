@@ -1,68 +1,49 @@
 import { NextResponse } from "next/server";
-import {
-  db,
-  activities,
-  projects,
-  wbsNodes,
-} from "@/db";
-import { eq } from "drizzle-orm";
+import { db, activities } from "@/db";
 
 export async function GET() {
-  const rows = await db.select().from(activities);
-  return NextResponse.json(rows, { status: 200 });
+  try {
+    const data = await db.select().from(activities);
+    return NextResponse.json({ activities: data });
+  } catch (err) {
+    console.error("GET /api/activities error", err);
+    return NextResponse.json({ error: "Failed to fetch activities" }, { status: 500 });
+  }
 }
 
 export async function POST(req: Request) {
   try {
     const body = await req.json();
+    const inserted = await db.insert(activities).values(body).returning();
+    return NextResponse.json({ activity: inserted[0] });
+  } catch (err) {
+    console.error("POST /api/activities error", err);
+    return NextResponse.json({ error: "Failed to create activity" }, { status: 500 });
+  }
+}
 
-    // For now, just use the first project & its first WBS node
-    const [project] = await db.select().from(projects).limit(1);
-    if (!project) {
-      return NextResponse.json(
-        { error: "No project found" },
-        { status: 400 }
-      );
-    }
+export async function PATCH(req: Request) {
+  try {
+    const body = await req.json();
+    const { id, ...rest } = body || {};
+    if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
+    const updated = await db.update(activities).set(rest).where(activities.id.eq(id)).returning();
+    return NextResponse.json({ activity: updated[0] });
+  } catch (err) {
+    console.error("PATCH /api/activities error", err);
+    return NextResponse.json({ error: "Failed to update activity" }, { status: 500 });
+  }
+}
 
-    const [wbs] = await db
-      .select()
-      .from(wbsNodes)
-      .where(eq(wbsNodes.projectId, project.id))
-      .limit(1);
-
-    if (!wbs) {
-      return NextResponse.json(
-        { error: "No WBS node found" },
-        { status: 400 }
-      );
-    }
-
-    const [inserted] = await db
-      .insert(activities)
-      .values({
-        projectId: project.id,
-        wbsId: wbs.id,
-        code: body.code ?? `ACT-${Date.now()}`,
-        name: body.name ?? "New Activity",
-        bucket: body.bucket ?? "General",
-        property: body.property ?? "Portfolio-wide",
-        priority: body.priority ?? "Medium",
-        status: body.status ?? "Planned",
-        startDate: body.startDate ?? "2025-01-01",
-        finishDate: body.finishDate ?? "2025-01-07",
-        durationDays: body.durationDays ?? 7,
-        percentComplete: body.percentComplete ?? 0,
-        responsible: body.responsible ?? "Unassigned",
-      })
-      .returning();
-
-    return NextResponse.json(inserted, { status: 201 });
-  } catch (err: any) {
-    console.error("POST /activities error", err);
-    return NextResponse.json(
-      { error: err?.message || "Unknown error" },
-      { status: 500 }
-    );
+export async function DELETE(req: Request) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const id = Number(searchParams.get("id"));
+    if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
+    const deleted = await db.delete(activities).where(activities.id.eq(id)).returning();
+    return NextResponse.json({ activity: deleted[0] });
+  } catch (err) {
+    console.error("DELETE /api/activities error", err);
+    return NextResponse.json({ error: "Failed to delete activity" }, { status: 500 });
   }
 }

@@ -22,6 +22,14 @@ interface EpsNode {
   children?: EpsNode[];
 }
 
+interface DbWbsNode {
+  id: number;
+  projectId: number;
+  code: string;
+  name: string;
+  parentId: number | null;
+}
+
 // ---------------------------------------------------------------------------
 // RESOURCE TYPES
 // ---------------------------------------------------------------------------
@@ -50,6 +58,8 @@ interface Activity {
   pct: number;
   responsible: string;
   status: "Not Started" | "In Progress" | "Completed";
+  bucket?: string;
+  property?: string;
   projectedLabor: number;
   projectedCost: number;
   budget: number;
@@ -74,6 +84,86 @@ interface ProjectDetail {
   id: string;
   variable: string;
   value: string;
+}
+
+type ProjectStatus = "under_contract" | "acquired";
+
+interface ProjectPipelineMeta {
+  status: ProjectStatus;
+  seller: {
+    name: string;
+    phone: string;
+    email: string;
+  };
+  selectedEmailOptionIds: string[];
+}
+
+interface EmailOption {
+  id: string;
+  name: string;
+  description?: string;
+  subject: string;
+  body: string;
+}
+
+interface Employee {
+  id: string;
+  name: string;
+  rate: number; // hourly
+}
+
+interface TimeEntry {
+  id: string;
+  employeeId: string;
+  projectId: number | null;
+  date: string; // ISO date
+  hours: number;
+}
+
+interface Paycheck {
+  id: string;
+  employeeId: string;
+  weekStart: string; // ISO date for Monday
+  amount: number;
+  checkNumber: string;
+}
+
+interface TaxRate {
+  id: string;
+  county: string;
+  state?: string;
+  rate: number; // stored as percentage (e.g., 8.25 for 8.25%)
+  note?: string;
+}
+
+type RentRollStatus = "Occupied" | "Vacant" | "Notice";
+
+interface RentRollProperty {
+  id: string;
+  name: string;
+  linkedProjectId?: number | null;
+}
+
+interface RentRollEntry {
+  id: string;
+  propertyId: string;
+  unit: string;
+  tenant: string;
+  status: RentRollStatus;
+  rent: number;
+  balance: number;
+  leaseEnd: string;
+  initialDueMonthDay: string; // MM-DD
+  bedrooms: number;
+  bathrooms: number;
+}
+
+interface RentPayment {
+  id: string;
+  rentRollEntryId: string;
+  amount: number;
+  date: string;
+  note?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -267,12 +357,27 @@ const IconTool = () => (
   </svg>
 );
 
+const IconMarqueePlus = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="3" y="3" width="18" height="18" rx="2" ry="2" strokeDasharray="3 2" />
+    <path d="M12 8v8M8 12h8" />
+  </svg>
+);
+
 const IconFunction = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M9 17H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h4" />
     <path d="M15 7h4a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-4" />
     <path d="M8 12h8" />
     <path d="M12 8v8" />
+  </svg>
+);
+
+const IconPercent = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M7 17a2 2 0 1 1 0-4 2 2 0 0 1 0 4Z" />
+    <path d="M17 11a2 2 0 1 1 0-4 2 2 0 0 1 0 4Z" />
+    <path d="M19 5 5 19" />
   </svg>
 );
 
@@ -399,6 +504,85 @@ const INITIAL_CUSTOM_FORMULAS: Record<number, CustomFormula[]> = {
   6: [],
 };
 
+const INITIAL_FORMULA_PRESETS: CustomFormula[] = [
+  {
+    id: "P1",
+    name: "Gross Profit",
+    formula: "{ARV Estimate} - {All-In Cost}",
+    description: "Quick profit check before taxes/fees",
+    resultType: "currency",
+  },
+  {
+    id: "P2",
+    name: "Tax Liability",
+    formula: "{Net Income} * ({County Tax Rate} / 100)",
+    description: "Applies selected county tax rate to net income",
+    resultType: "currency",
+  },
+];
+
+const INITIAL_TAX_RATES: TaxRate[] = [
+  { id: "TR1", county: "Tarrant", state: "TX", rate: 2.5, note: "Example property tax rate" },
+  { id: "TR2", county: "Harris", state: "TX", rate: 2.3 },
+];
+
+const INITIAL_PIPELINE_META: Record<number, ProjectPipelineMeta> = {
+  5: { status: "acquired", seller: { name: "", phone: "", email: "" }, selectedEmailOptionIds: [] },
+  6: { status: "under_contract", seller: { name: "John Seller", phone: "555-123-4567", email: "john@example.com" }, selectedEmailOptionIds: [] },
+};
+
+const INITIAL_EMAIL_OPTIONS: EmailOption[] = [
+  {
+    id: "EO1",
+    name: "Welcome Introduction",
+    description: "Friendly intro and confirmation of interest",
+    subject: "Great to meet you about the property",
+    body: "Hi {Seller Name},\n\nThanks for discussing {Property Name}. We're excited to move forward. I'll send next steps shortly.\n\nBest,\n{Your Name}",
+  },
+  {
+    id: "EO2",
+    name: "Request Disclosures",
+    description: "Ask for disclosures and recent repairs",
+    subject: "Disclosures and recent updates",
+    body: "Hi {Seller Name},\n\nCould you share any disclosures, recent repairs, or known issues for {Property Name}? This helps us finalize our underwriting.\n\nThanks!",
+  },
+];
+
+const INITIAL_EMPLOYEES: Employee[] = [
+  { id: "EMP1", name: "Alice Foreman", rate: 42 },
+  { id: "EMP2", name: "Bob Carpenter", rate: 38 },
+];
+
+const INITIAL_TIME_ENTRIES: TimeEntry[] = [];
+const INITIAL_PAYCHECKS: Paycheck[] = [];
+
+const INITIAL_RENT_ROLL_PROPERTIES: RentRollProperty[] = [
+  { id: "PROP-LO", name: "202 Live Oak", linkedProjectId: 5 },
+  { id: "PROP-HE", name: "2905 Hemphill", linkedProjectId: 6 },
+  { id: "PROP-VI", name: "1410 Vine", linkedProjectId: 7 },
+  { id: "PROP-DO", name: "Downtown Office Complex", linkedProjectId: 9 },
+  { id: "PROP-RS", name: "Retail Strip Center", linkedProjectId: 10 },
+  { id: "PROP-AR", name: "Arrears Demo", linkedProjectId: null },
+];
+
+const INITIAL_RENT_ROLL: RentRollEntry[] = [
+  { id: "RR1", propertyId: "PROP-LO", unit: "Unit A", tenant: "Megan Carter", status: "Occupied", rent: 1650, balance: 0, leaseEnd: "2025-11-30", initialDueMonthDay: "03-01", bedrooms: 3, bathrooms: 2 },
+  { id: "RR2", propertyId: "PROP-LO", unit: "Unit B", tenant: "Vacant", status: "Vacant", rent: 1450, balance: 0, leaseEnd: "Listing", initialDueMonthDay: "03-01", bedrooms: 2, bathrooms: 1 },
+  { id: "RR3", propertyId: "PROP-HE", unit: "Unit 1", tenant: "Sergio Patel", status: "Occupied", rent: 1350, balance: 120, leaseEnd: "2025-06-30", initialDueMonthDay: "03-05", bedrooms: 2, bathrooms: 1 },
+  { id: "RR4", propertyId: "PROP-VI", unit: "Unit 3", tenant: "Danielle Wu", status: "Notice", rent: 1200, balance: 350, leaseEnd: "2025-04-30", initialDueMonthDay: "02-28", bedrooms: 1, bathrooms: 1 },
+  { id: "RR5", propertyId: "PROP-DO", unit: "Suite 210", tenant: "Northwind Legal", status: "Occupied", rent: 4800, balance: 0, leaseEnd: "2026-01-31", initialDueMonthDay: "03-03", bedrooms: 0, bathrooms: 1 },
+  { id: "RR6", propertyId: "PROP-RS", unit: "Unit 5", tenant: "Vacant", status: "Vacant", rent: 3200, balance: 0, leaseEnd: "Marketing", initialDueMonthDay: "03-10", bedrooms: 0, bathrooms: 1 },
+  { id: "RR7", propertyId: "PROP-AR", unit: "Unit 301", tenant: "Arrears Tenant", status: "Occupied", rent: 1800, balance: 0, leaseEnd: "2025-12-31", initialDueMonthDay: "02-05", bedrooms: 2, bathrooms: 2 },
+];
+
+const INITIAL_RENT_PAYMENTS: RentPayment[] = [
+  { id: "PAY1", rentRollEntryId: "RR1", amount: 1650, date: "2025-12-01", note: "ACH" },
+  { id: "PAY2", rentRollEntryId: "RR3", amount: 1230, date: "2025-11-06", note: "Partial" },
+  { id: "PAY3", rentRollEntryId: "RR5", amount: 4800, date: "2025-12-03", note: "Check" },
+  { id: "PAY4", rentRollEntryId: "RR7", amount: 1800, date: "2025-11-05", note: "Feb Rent" },
+  { id: "PAY5", rentRollEntryId: "RR7", amount: 1800, date: "2025-12-05", note: "Mar Rent" },
+];
+
 const DEFAULT_BRRRR_FIELDS: Omit<ProjectDetail, 'id'>[] = [
   { variable: "Purchase Price", value: "0" },
   { variable: "ARV Estimate", value: "0" },
@@ -408,6 +592,27 @@ const DEFAULT_BRRRR_FIELDS: Omit<ProjectDetail, 'id'>[] = [
   { variable: "Bed/Bath", value: "" },
   { variable: "Property Taxes", value: "0" },
   { variable: "Insurance Cost", value: "0" },
+];
+
+const UNDER_CONTRACT_DETAIL_FIELDS: Omit<ProjectDetail, 'id'>[] = [
+  { variable: "Address", value: "" },
+  { variable: "Under Contract For (days)", value: "0" },
+  { variable: "Title Company Name", value: "" },
+  { variable: "Earnest Money", value: "0" },
+  { variable: "SQFT", value: "0" },
+  { variable: "Purchase Price", value: "0" },
+  { variable: "ARV Estimate", value: "0" },
+  { variable: "ECIP (Estimate cost for renovation/repairs)", value: "0" },
+];
+
+const HIDE_WHEN_UNDER_CONTRACT = [
+  "Title Company Name",
+  "Address",
+  "Under Contract For (days)",
+  "Earnest Money",
+  "SQFT",
+  "ECIP (Estimate cost for renovation/repairs)",
+  "Amount Under Contract",
 ];
 
 // ---------------------------------------------------------------------------
@@ -564,6 +769,15 @@ const formatCurrency = (value: number) => {
   }).format(value);
 };
 
+const formatCurrencyCents = (value: number) => {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value);
+};
+
 function getAddTarget(
   selected: EpsNode | null
 ): { type: EpsNodeType; parentId: number | null; label: string } {
@@ -588,10 +802,30 @@ function getAddTarget(
 // ---------------------------------------------------------------------------
 // FORMULA ENGINE
 // ---------------------------------------------------------------------------
+const getTaxVariableMap = (taxRates: TaxRate[]) => {
+  const map: Record<string, number> = {};
+  taxRates.forEach((tr) => {
+    const label = tr.state ? `${tr.county} (${tr.state}) Tax Rate` : `${tr.county} Tax Rate`;
+    map[label] = tr.rate;
+  });
+  return map;
+};
+
+const extractVariables = (formula: string): string[] => {
+  const vars = new Set<string>();
+  const regex = /\{([^}]+)\}/g;
+  let match;
+  while ((match = regex.exec(formula)) !== null) {
+    vars.add(match[1]);
+  }
+  return Array.from(vars);
+};
+
 const evaluateFormula = (
   formula: string,
   projectDetails: ProjectDetail[],
   customFormulas: CustomFormula[],
+  additionalVariables: Record<string, number> = {},
   evaluatedFormulas: Set<string> = new Set()
 ): { value: number; error: string | null } => {
   try {
@@ -617,6 +851,7 @@ const evaluateFormula = (
           cf.formula,
           projectDetails,
           customFormulas,
+          additionalVariables,
           newEvaluatedSet
         );
 
@@ -624,6 +859,10 @@ const evaluateFormula = (
           variableMap[cf.name] = result.value;
         }
       }
+    });
+
+    Object.entries(additionalVariables).forEach(([key, value]) => {
+      variableMap[key] = value;
     });
 
     let processedFormula = formula;
@@ -643,8 +882,10 @@ const evaluateFormula = (
     }
 
     const sanitized = processedFormula.replace(/[^0-9+\-*/().%\s]/g, '');
+    const compact = processedFormula.replace(/\s/g, '');
+    const sanitizedCompact = sanitized.replace(/\s/g, '');
 
-    if (sanitized !== processedFormula.replace(/\s/g, '')) {
+    if (sanitizedCompact !== compact) {
       return { value: 0, error: "Invalid characters in formula" };
     }
 
@@ -663,9 +904,10 @@ const evaluateFormula = (
 
 const getAvailableVariables = (
   projectDetails: ProjectDetail[],
-  customFormulas: CustomFormula[]
-): { name: string; type: "detail" | "formula"; value?: number }[] => {
-  const variables: { name: string; type: "detail" | "formula"; value?: number }[] = [];
+  customFormulas: CustomFormula[],
+  taxRates: TaxRate[] = []
+): { name: string; type: "detail" | "formula" | "tax"; value?: number }[] => {
+  const variables: { name: string; type: "detail" | "formula" | "tax"; value?: number }[] = [];
 
   projectDetails.forEach((detail) => {
     const numValue = parseFloat(detail.value);
@@ -680,6 +922,15 @@ const getAvailableVariables = (
     variables.push({
       name: cf.name,
       type: "formula",
+    });
+  });
+
+  taxRates.forEach((tr) => {
+    const label = tr.state ? `${tr.county} (${tr.state}) Tax Rate` : `${tr.county} Tax Rate`;
+    variables.push({
+      name: label,
+      type: "tax",
+      value: tr.rate,
     });
   });
 
@@ -726,6 +977,77 @@ const toDateString = (ms: number) => {
   const d = new Date(ms);
   const iso = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate())).toISOString();
   return iso.slice(0, 10);
+};
+const getMonthKey = (date: string) => {
+  const ms = toDateMs(date);
+  if (!Number.isFinite(ms)) {
+    return getMonthKey(toDateString(getCentralTodayMs()));
+  }
+  const d = new Date(ms);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+};
+const nextMonthKey = (key: string) => {
+  const [y, m] = key.split("-").map(Number);
+  const nextMonth = m === 12 ? 1 : m + 1;
+  const nextYear = m === 12 ? y + 1 : y;
+  return `${nextYear}-${String(nextMonth).padStart(2, "0")}`;
+};
+const monthKeyCompare = (a: string, b: string) => {
+  if (a === b) return 0;
+  const [ay, am] = a.split("-").map(Number);
+  const [by, bm] = b.split("-").map(Number);
+  if (ay === by) return am - bm;
+  return ay - by;
+};
+const monthKeySequence = (startKey: string, endKey: string) => {
+  const seq: string[] = [];
+  let current = startKey;
+  while (monthKeyCompare(current, endKey) <= 0) {
+    seq.push(current);
+    current = nextMonthKey(current);
+  }
+  return seq;
+};
+const parseMonthDay = (md: string) => {
+  const [m, d] = md.split("-").map(Number);
+  return { month: m || 1, day: d || 1 };
+};
+const getMonthDayDate = (yearMonth: string, md: string) => {
+  const [y, m] = yearMonth.split("-").map(Number);
+  const { day } = parseMonthDay(md);
+  return `${y}-${String(m).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+};
+
+const csvEscape = (val: string | number) => {
+  const s = String(val ?? "");
+  if (s.includes(",") || s.includes('"') || s.includes("\n")) {
+    return `"${s.replace(/"/g, '""')}"`;
+  }
+  return s;
+};
+const slugify = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "sheet";
+const toExcelXml = (sheets: { name: string; rows: (string | number)[][] }[]) => {
+  const worksheetXml = sheets.map(sheet => {
+    const rowsXml = sheet.rows.map(row => {
+      const cells = row.map(cell => `<Cell><Data ss:Type="${typeof cell === "number" ? "Number" : "String"}">${String(cell ?? "")}</Data></Cell>`).join("");
+      return `<Row>${cells}</Row>`;
+    }).join("");
+    return `<Worksheet ss:Name="${sheet.name}"><Table>${rowsXml}</Table></Worksheet>`;
+  }).join("");
+  return `<?xml version="1.0"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:o="urn:schemas-microsoft-com:office:office"
+ xmlns:x="urn:schemas-microsoft-com:office:excel"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
+ ${worksheetXml}
+</Workbook>`;
+};
+const getWeekStart = (ms: number) => {
+  const d = new Date(ms);
+  const day = d.getUTCDay(); // 0 (Sun) - 6 (Sat)
+  const diff = (day + 6) % 7; // convert to Mon=0
+  return toDateString(ms - diff * DAY_MS);
 };
 
 // ---------------------------------------------------------------------------
@@ -914,24 +1236,30 @@ interface CustomFormulaDialogProps {
   open: boolean;
   onClose: () => void;
   onSave: (formula: CustomFormula) => void;
+  onSavePreset?: (formula: CustomFormula) => void;
   editingFormula: CustomFormula | null;
   projectDetails: ProjectDetail[];
   existingFormulas: CustomFormula[];
+  taxRates: TaxRate[];
 }
 
 const CustomFormulaDialog: React.FC<CustomFormulaDialogProps> = ({
   open,
   onClose,
   onSave,
+  onSavePreset,
   editingFormula,
   projectDetails,
   existingFormulas,
+  taxRates,
 }) => {
   const [name, setName] = useState("");
   const [formula, setFormula] = useState("");
   const [description, setDescription] = useState("");
   const [resultType, setResultType] = useState<"currency" | "percentage" | "number">("currency");
   const [previewResult, setPreviewResult] = useState<{ value: number; error: string | null }>({ value: 0, error: null });
+  const [saveAsPreset, setSaveAsPreset] = useState(false);
+  const formulaInputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     if (editingFormula) {
@@ -939,30 +1267,52 @@ const CustomFormulaDialog: React.FC<CustomFormulaDialogProps> = ({
       setFormula(editingFormula.formula);
       setDescription(editingFormula.description || "");
       setResultType(editingFormula.resultType);
+      setSaveAsPreset(false);
     } else {
       setName("");
       setFormula("");
       setDescription("");
       setResultType("currency");
+      setSaveAsPreset(false);
     }
   }, [editingFormula, open]);
 
   useEffect(() => {
     if (formula) {
-      const result = evaluateFormula(formula, projectDetails, existingFormulas.filter(f => f.id !== editingFormula?.id));
+      const result = evaluateFormula(
+        formula,
+        projectDetails,
+        existingFormulas.filter(f => f.id !== editingFormula?.id),
+        getTaxVariableMap(taxRates)
+      );
       setPreviewResult(result);
     } else {
       setPreviewResult({ value: 0, error: null });
     }
-  }, [formula, projectDetails, existingFormulas, editingFormula]);
+  }, [formula, projectDetails, existingFormulas, editingFormula, taxRates]);
 
   const availableVariables = getAvailableVariables(
     projectDetails,
-    existingFormulas.filter(f => f.id !== editingFormula?.id)
+    existingFormulas.filter(f => f.id !== editingFormula?.id),
+    taxRates
   );
 
   const insertVariable = (varName: string) => {
-    setFormula(prev => prev + `{${varName}}`);
+    const target = formulaInputRef.current;
+    const token = `{${varName}}`;
+    if (target) {
+      const start = target.selectionStart ?? formula.length;
+      const end = target.selectionEnd ?? formula.length;
+      const newValue = formula.slice(0, start) + token + formula.slice(end);
+      setFormula(newValue);
+      requestAnimationFrame(() => {
+        const pos = start + token.length;
+        target.focus();
+        target.setSelectionRange(pos, pos);
+      });
+    } else {
+      setFormula(prev => prev + token);
+    }
   };
 
   const handleSave = () => {
@@ -977,6 +1327,9 @@ const CustomFormulaDialog: React.FC<CustomFormulaDialogProps> = ({
     };
 
     onSave(newFormula);
+    if (saveAsPreset && onSavePreset) {
+      onSavePreset({ ...newFormula, id: editingFormula?.id?.startsWith("P") ? editingFormula.id : `P${Date.now()}` });
+    }
     onClose();
   };
 
@@ -1058,6 +1411,7 @@ const CustomFormulaDialog: React.FC<CustomFormulaDialogProps> = ({
               Formula <span className="text-red-500">*</span>
             </label>
             <textarea
+              ref={formulaInputRef}
               value={formula}
               onChange={(e) => setFormula(e.target.value)}
               placeholder="e.g., {Purchase Price} + {Rehab Cost} + {Holding Cost}"
@@ -1106,7 +1460,38 @@ const CustomFormulaDialog: React.FC<CustomFormulaDialogProps> = ({
                   </div>
                 </div>
               )}
+              {availableVariables.filter(v => v.type === "tax").length > 0 && (
+                <div className="mt-2">
+                  <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase">Tax Rates</span>
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {availableVariables.filter(v => v.type === "tax").map((v) => (
+                      <button
+                        key={v.name}
+                        onClick={() => insertVariable(v.name)}
+                        className="px-2 py-1 text-xs bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-200 rounded hover:bg-amber-200 dark:hover:bg-amber-900/60 transition-colors"
+                        title={v.value !== undefined ? `${v.value}%` : undefined}
+                      >
+                        {v.name}
+                        {v.value !== undefined && <span className="ml-1 opacity-60">({v.value}%)</span>}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <input
+              id="savePreset"
+              type="checkbox"
+              checked={saveAsPreset}
+              onChange={(e) => setSaveAsPreset(e.target.checked)}
+              className="h-4 w-4 text-blue-600 border-slate-300 rounded"
+            />
+            <label htmlFor="savePreset" className="text-sm text-slate-600 dark:text-slate-300">
+              Save as preset for use across projects
+            </label>
           </div>
 
           <div className={`p-4 rounded-lg ${previewResult.error ? 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800' : 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800'}`}>
@@ -1651,6 +2036,8 @@ interface NewActivityDialogProps {
   allResources: Resource[];
   onClose: () => void;
   onConfirm: (activity: Activity) => void;
+  initialStart?: string | null;
+  initialDuration?: number | null;
 }
 
 const NewActivityDialog: React.FC<NewActivityDialogProps> = ({
@@ -1660,6 +2047,8 @@ const NewActivityDialog: React.FC<NewActivityDialogProps> = ({
   allResources,
   onClose,
   onConfirm,
+  initialStart,
+  initialDuration,
 }) => {
   const [form, setForm] = useState<NewActivityForm>({
     wbs: "",
@@ -1678,11 +2067,13 @@ const NewActivityDialog: React.FC<NewActivityDialogProps> = ({
 
   useEffect(() => {
     if (open) {
+      const startValue = initialStart || new Date().toISOString().split('T')[0];
+      const durationValue = initialDuration && initialDuration > 0 ? Math.round(initialDuration) : 1;
       setForm({
         wbs: "",
         name: "",
-        duration: 1,
-        start: new Date().toISOString().split('T')[0],
+        duration: durationValue,
+        start: startValue,
         responsible: "",
         status: "Not Started",
         budget: 0,
@@ -1692,7 +2083,7 @@ const NewActivityDialog: React.FC<NewActivityDialogProps> = ({
       setSelectedResourceId("");
       setResourceQuantity(1);
     }
-  }, [open]);
+  }, [open, initialDuration, initialStart]);
 
   const generateActivityId = () => {
     const projectActivities = existingActivities;
@@ -2027,10 +2418,13 @@ interface ProjectLedgerProps {
   activities: Activity[];
   transactions: Transaction[];
   onAddTransaction: (transaction: Omit<Transaction, "id">) => void;
+  onUpdateTransaction: (transaction: Transaction) => void;
+  onDeleteTransaction: (transactionId: string) => void;
   isOpen: boolean;
   setIsOpen: (open: boolean) => void;
   draftActivityId?: string | null;
   setDraftActivityId?: (id: string | null) => void;
+  onExpand?: () => void;
 }
 
 const ProjectLedger: React.FC<ProjectLedgerProps> = ({
@@ -2038,6 +2432,8 @@ const ProjectLedger: React.FC<ProjectLedgerProps> = ({
   activities,
   transactions,
   onAddTransaction,
+  onUpdateTransaction,
+  onDeleteTransaction,
   isOpen,
   setIsOpen,
   draftActivityId,
@@ -2051,6 +2447,14 @@ const ProjectLedger: React.FC<ProjectLedgerProps> = ({
     amount: 0,
     activityId: "",
   });
+  const [selectedTransactionId, setSelectedTransactionId] = useState<string | null>(null);
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setIsExpanded(false);
+    }
+  }, [isOpen]);
 
   useEffect(() => {
     if (draftActivityId) {
@@ -2073,25 +2477,50 @@ const ProjectLedger: React.FC<ProjectLedgerProps> = ({
     const amountValue = toNumber(form.amount);
     if (!form.description || amountValue <= 0 || !form.date) return;
 
-    onAddTransaction({
-      ...form,
-      amount: amountValue,
-      activityId: form.activityId === 'project-level' ? undefined : form.activityId,
-    });
+    if (selectedTransactionId) {
+      onUpdateTransaction({
+        id: selectedTransactionId,
+        ...form,
+        amount: amountValue,
+        activityId: form.activityId === 'project-level' ? undefined : form.activityId,
+      });
+    } else {
+      onAddTransaction({
+        ...form,
+        amount: amountValue,
+        activityId: form.activityId === 'project-level' ? undefined : form.activityId,
+      });
+    }
 
     setForm((prev) => ({
       ...prev,
       description: "",
       amount: 0,
+      activityId: "",
     }));
+    setSelectedTransactionId(null);
     if (setDraftActivityId) setDraftActivityId(null);
   };
 
   const categories = ["Labor", "Materials", "Equipment", "Client Payment", "Other"];
   const activityOptions = activities.map(a => ({ id: a.id, name: `${a.wbs} - ${a.name}` }));
 
+  const expandedTop = "top-[120px]";
+  const expandedBodyHeight = "calc(100vh - 120px - 44px)"; // ribbon offset minus header height
+  const containerClasses = isExpanded && isOpen
+    ? `fixed inset-x-0 ${expandedTop} bottom-0 z-30`
+    : "relative -mt-px";
+  const targetMaxHeight = isExpanded ? expandedBodyHeight : "16rem";
+  const targetHeight = isExpanded ? expandedBodyHeight : "16rem";
+  const bodyStyle: React.CSSProperties = {
+    maxHeight: isOpen ? targetMaxHeight : "0px",
+    height: isOpen ? targetHeight : "0px",
+    opacity: isOpen ? 1 : 0,
+  };
+  const bodyClasses = `flex overflow-hidden bg-white dark:bg-slate-900 transition-[max-height,height,opacity] duration-400 ease-in-out`;
+
   return (
-    <div className="border-t border-slate-300 dark:border-slate-700">
+    <div className={`border-t border-slate-300 dark:border-slate-700 ${containerClasses}`}>
       <div className="flex justify-between items-center bg-slate-100 dark:bg-slate-800 p-2 cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-700" onClick={() => setIsOpen(!isOpen)}>
         <h4 className="text-sm font-semibold flex items-center gap-2">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -2101,134 +2530,171 @@ const ProjectLedger: React.FC<ProjectLedgerProps> = ({
           </svg>
           Project Ledger ({transactions.length} Transactions)
         </h4>
-        {isOpen ? <IconChevronUp /> : <IconChevronDown />}
+        <div className="flex items-center gap-2">
+          {isOpen && (
+            <button
+              className="text-xs px-2 py-1 rounded border border-slate-300 bg-white text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 dark:hover:bg-slate-600"
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsExpanded((prev) => !prev);
+              }}
+            >
+              {isExpanded ? "Shrink" : "Expand"}
+            </button>
+          )}
+          {isOpen ? <IconChevronUp /> : <IconChevronDown />}
+        </div>
       </div>
 
-      {isOpen && (
-        <div className="h-64 flex overflow-hidden bg-white dark:bg-slate-900">
-          <div className="flex-1 overflow-y-auto border-r border-slate-300 dark:border-slate-700">
-            <table className="w-full border-collapse">
-              <thead className="sticky top-0 z-10">
-                <tr className="bg-slate-100 text-xs font-medium uppercase tracking-wider text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                  <th className="px-3 py-2 text-left">Date</th>
-                  <th className="px-3 py-2 text-left">Description</th>
-                  <th className="px-3 py-2 text-left">Category</th>
-                  <th className="px-3 py-2 text-left">Activity</th>
-                  <th className="px-3 py-2 text-right">Amount</th>
+      <div className={`overflow-hidden ${bodyClasses}`} style={bodyStyle} aria-hidden={!isOpen}>
+        <div className="flex-1 overflow-y-auto border-r border-slate-300 dark:border-slate-700">
+          <table className="min-w-full border-collapse table-fixed">
+            <thead className="sticky top-0 z-10">
+              <tr className="bg-slate-100 text-xs font-medium uppercase tracking-wider text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                <th className="px-3 py-2 text-left">Date</th>
+                <th className="px-3 py-2 text-left">Description</th>
+                <th className="px-3 py-2 text-left">Category</th>
+                <th className="px-3 py-2 text-left w-24">Activity</th>
+                <th className="px-3 py-2 text-right w-24">Amount</th>
+                <th className="px-3 py-2 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="text-sm">
+              {transactions.map((t) => (
+                <tr key={t.id} className="border-b border-slate-200 dark:border-slate-700">
+                  <td className="px-3 py-2 text-slate-600 dark:text-slate-400 whitespace-nowrap">
+                    {new Date(t.date).toLocaleDateString()}
+                  </td>
+                  <td className="px-3 py-2 text-slate-800 dark:text-slate-200 truncate max-w-xs">{t.description}</td>
+                  <td className="px-3 py-2 text-slate-600 dark:text-slate-400 truncate">{t.category}</td>
+                  <td className="px-3 py-2 font-mono text-xs text-slate-500 whitespace-nowrap">
+                    {t.activityId || "-"}
+                  </td>
+                  <td className={`px-3 py-2 text-right font-semibold whitespace-nowrap ${t.type === "Income" ? "text-green-600 dark:text-green-400" : "text-red-500 dark:text-red-400"}`}>
+                    {t.type === "Income" ? "+" : "-"} {formatCurrencyCents(toNumber(t.amount))}
+                  </td>
+                  <td className="px-3 py-2 text-right space-x-1">
+                    <button
+                      onClick={() => {
+                        setSelectedTransactionId(t.id);
+                        setForm({
+                          date: t.date,
+                          description: t.description,
+                          type: t.type,
+                          category: t.category,
+                          amount: t.amount,
+                          activityId: t.activityId || "",
+                        });
+                      }}
+                      className="text-xs px-2 py-1 rounded bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200 hover:bg-blue-200"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => onDeleteTransaction(t.id)}
+                      className="text-xs px-2 py-1 rounded bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300 hover:bg-red-200"
+                    >
+                      Delete
+                    </button>
+                  </td>
                 </tr>
-              </thead>
-              <tbody className="text-sm">
-                {transactions.map((t) => (
-                  <tr key={t.id} className="border-b border-slate-200 dark:border-slate-700">
-                    <td className="px-3 py-2 text-slate-600 dark:text-slate-400">
-                      {new Date(t.date).toLocaleDateString()}
-                    </td>
-                    <td className="px-3 py-2 text-slate-800 dark:text-slate-200 truncate max-w-xs">{t.description}</td>
-                    <td className="px-3 py-2 text-slate-600 dark:text-slate-400">{t.category}</td>
-                    <td className="px-3 py-2 font-mono text-xs text-slate-500">
-                      {t.activityId || "-"}
-                    </td>
-                    <td className={`px-3 py-2 text-right font-medium ${t.type === "Income" ? "text-green-600" : "text-red-600"}`}>
-                      {t.type === "Income" ? "+" : "-"} {formatCurrency(toNumber(t.amount))}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {transactions.length === 0 && (
-              <p className="p-4 text-center text-sm text-slate-500">No transactions for this project.</p>
-            )}
-          </div>
-
-          <div className="w-80 p-4 overflow-y-auto">
-            <h4 className="text-sm font-semibold mb-3 text-slate-800 dark:text-slate-200">
-              Add Transaction
-            </h4>
-            <form onSubmit={handleSubmit} className="space-y-3">
-              <div>
-                <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Date</label>
-                <input
-                  name="date"
-                  type="date"
-                  value={form.date}
-                  onChange={handleChange}
-                  className="w-full rounded border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-50"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Type</label>
-                <select
-                  name="type"
-                  value={form.type}
-                  onChange={handleChange}
-                  className="w-full rounded border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-50"
-                >
-                  <option value="Outcome">Outcome (Cost)</option>
-                  <option value="Income">Income (Revenue)</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Description</label>
-                <input
-                  name="description"
-                  type="text"
-                  value={form.description}
-                  onChange={handleChange}
-                  placeholder="Invoice #1234"
-                  className="w-full rounded border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-50"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Amount ($)</label>
-                <input
-                  name="amount"
-                  type="number"
-                  min="0.01"
-                  step="0.01"
-                  value={form.amount}
-                  onChange={handleChange}
-                  className="w-full rounded border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-50"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Category</label>
-                <select
-                  name="category"
-                  value={form.category}
-                  onChange={handleChange}
-                  className="w-full rounded border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-50"
-                >
-                  {categories.map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Link to Activity (Optional)</label>
-                <select
-                  name="activityId"
-                  value={form.activityId}
-                  onChange={handleChange}
-                  className="w-full rounded border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-50"
-                >
-                  <option value="">-- Project-Level Cost/Income --</option>
-                  {activityOptions.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-                </select>
-              </div>
-
-              <button
-                type="submit"
-                className="w-full rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
-              >
-                Add
-              </button>
-            </form>
-          </div>
+              ))}
+            </tbody>
+          </table>
+          {transactions.length === 0 && (
+            <p className="p-4 text-center text-sm text-slate-500">No transactions for this project.</p>
+          )}
         </div>
-      )}
+
+        <div className="w-80 p-4 overflow-y-auto">
+          <h4 className="text-sm font-semibold mb-3 text-slate-800 dark:text-slate-200">
+            Add Transaction
+          </h4>
+          <form onSubmit={handleSubmit} className="space-y-3">
+            <div>
+              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Date</label>
+              <input
+                name="date"
+                type="date"
+                value={form.date}
+                onChange={handleChange}
+                className="w-full rounded border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-50"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Type</label>
+              <select
+                name="type"
+                value={form.type}
+                onChange={handleChange}
+                className="w-full rounded border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-50"
+              >
+                <option value="Outcome">Outcome (Cost)</option>
+                <option value="Income">Income (Revenue)</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Description</label>
+              <input
+                name="description"
+                type="text"
+                value={form.description}
+                onChange={handleChange}
+                placeholder="Invoice #1234"
+                className="w-full rounded border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-50"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Amount ($)</label>
+              <input
+                name="amount"
+                type="number"
+                min="0.01"
+                step="0.01"
+                value={form.amount}
+                onChange={handleChange}
+                className="w-full rounded border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-50"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Category</label>
+              <select
+                name="category"
+                value={form.category}
+                onChange={handleChange}
+                className="w-full rounded border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-50"
+              >
+                {categories.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Link to Activity (Optional)</label>
+              <select
+                name="activityId"
+                value={form.activityId}
+                onChange={handleChange}
+                className="w-full rounded border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-50"
+              >
+                <option value="">-- Project-Level Cost/Income --</option>
+                {activityOptions.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+              </select>
+            </div>
+
+            <button
+              type="submit"
+              className="w-full rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={!form.description || toNumber(form.amount) <= 0}
+            >
+              {selectedTransactionId ? "Update" : "Add"}
+            </button>
+          </form>
+        </div>
+      </div>
     </div>
   );
 };
@@ -2250,6 +2716,8 @@ interface GanttChartProps {
     grabOffsetMs: number;
   } | null;
   setDragging: React.Dispatch<React.SetStateAction<GanttChartProps["dragging"]>>;
+  creationMode: boolean;
+  onCreateRange: (start: string, finish: string) => void;
 }
 
 const GanttChart: React.FC<GanttChartProps> = ({
@@ -2259,10 +2727,20 @@ const GanttChart: React.FC<GanttChartProps> = ({
   selectedId,
   onSelect,
   dragging,
-  setDragging
+  setDragging,
+  creationMode,
+  onCreateRange,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const isPanning = useRef(false);
+  const panState = useRef({ startX: 0, startY: 0, scrollLeft: 0, scrollTop: 0 });
+  const pointerLockActive = useRef(false);
+  const [scrollThumb, setScrollThumb] = useState({ widthPct: 100, leftPct: 0 });
+  const [companyScrollThumb, setCompanyScrollThumb] = useState({ widthPct: 100, leftPct: 0 });
   const [chartWidth, setChartWidth] = useState(1000);
+  const [creationDraft, setCreationDraft] = useState<{ startMs: number; endMs: number; y: number } | null>(null);
+  const creationDraftRef = useRef<typeof creationDraft>(null);
 
   const timeline = useMemo(() => {
     const todayLocalMs = getCentralTodayMs();
@@ -2271,7 +2749,7 @@ const GanttChart: React.FC<GanttChartProps> = ({
     }
     const minStart = Math.min(...activities.map(a => toDateMs(a.start)));
     const maxFinish = Math.max(...activities.map(a => toDateMs(a.finish)));
-    const padding = 7 * DAY_MS;
+    const padding = DAY_MS; // minimal padding to keep header aligned with project months
     return {
       start: Math.min(minStart - padding, todayLocalMs - 7 * DAY_MS),
       end: Math.max(maxFinish + padding, todayLocalMs + 7 * DAY_MS),
@@ -2323,11 +2801,26 @@ const GanttChart: React.FC<GanttChartProps> = ({
     return Math.min(Math.max(ms, timeline.start), timeline.end);
   }, [timeline.start, timeline.end]);
 
+  useEffect(() => {
+    creationDraftRef.current = creationDraft;
+  }, [creationDraft]);
+
+  useEffect(() => {
+    if (!creationMode) {
+      setCreationDraft(null);
+    }
+  }, [creationMode]);
+
   const handlePointerDown = (
     e: React.PointerEvent,
     activity: Activity,
     mode: "move" | "resize-start" | "resize-end"
   ) => {
+    if (creationMode) return;
+    if (e.button === 1) {
+      e.preventDefault();
+      return;
+    }
     if (e.button === 2) {
       onSelect(activity.id);
       return;
@@ -2405,6 +2898,159 @@ const GanttChart: React.FC<GanttChartProps> = ({
     return () => window.removeEventListener("resize", updateWidth);
   }, []);
 
+  const startPan = (e: React.PointerEvent) => {
+    if (!scrollRef.current) return;
+    const isMouse = e.pointerType === "mouse" || e.pointerType === "pen";
+    const wantsPointerLock = isMouse && e.button === 1;
+    const allowDefaultDrag = e.button === 0;
+    if (creationMode && allowDefaultDrag && !wantsPointerLock) return;
+    if (!wantsPointerLock && !allowDefaultDrag) return;
+    e.preventDefault();
+    isPanning.current = true;
+    panState.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      scrollLeft: scrollRef.current.scrollLeft,
+      scrollTop: scrollRef.current.scrollTop,
+    };
+    scrollRef.current.style.cursor = "grabbing";
+    e.currentTarget.setPointerCapture(e.pointerId);
+    if (wantsPointerLock && scrollRef.current.requestPointerLock) {
+      try { scrollRef.current.requestPointerLock(); } catch {}
+    }
+  };
+
+  const onPanMove = (e: React.PointerEvent) => {
+    if (!isPanning.current || !scrollRef.current || pointerLockActive.current) return;
+    const dx = e.clientX - panState.current.startX;
+    const dy = e.clientY - panState.current.startY;
+    scrollRef.current.scrollLeft = panState.current.scrollLeft - dx;
+    scrollRef.current.scrollTop = panState.current.scrollTop - dy;
+  };
+
+  const handlePointerLockMove = useCallback((event: MouseEvent) => {
+    if (!pointerLockActive.current || !isPanning.current || !scrollRef.current) return;
+    scrollRef.current.scrollLeft -= event.movementX;
+    scrollRef.current.scrollTop -= event.movementY;
+    panState.current.scrollLeft = scrollRef.current.scrollLeft;
+    panState.current.scrollTop = scrollRef.current.scrollTop;
+  }, []);
+
+  const endPan = useCallback((e?: React.PointerEvent | PointerEvent | MouseEvent) => {
+    if (!scrollRef.current) return;
+    isPanning.current = false;
+    pointerLockActive.current = false;
+    scrollRef.current.style.cursor = "";
+    if (document.pointerLockElement === scrollRef.current) {
+      document.exitPointerLock?.();
+    }
+    if (e && "pointerId" in e && "currentTarget" in e && e.currentTarget) {
+      try { (e.currentTarget as Element).releasePointerCapture((e as React.PointerEvent).pointerId); } catch {}
+    }
+  }, []);
+
+  useEffect(() => {
+    const handleLockChange = () => {
+      const locked = document.pointerLockElement === scrollRef.current;
+      pointerLockActive.current = locked;
+      if (!locked && isPanning.current) {
+        endPan();
+      }
+    };
+    const handleGlobalMouseUp = () => {
+      if (isPanning.current) endPan();
+    };
+    document.addEventListener("pointerlockchange", handleLockChange);
+    document.addEventListener("pointerlockerror", handleLockChange);
+    window.addEventListener("mousemove", handlePointerLockMove);
+    window.addEventListener("mouseup", handleGlobalMouseUp);
+    return () => {
+      document.removeEventListener("pointerlockchange", handleLockChange);
+      document.removeEventListener("pointerlockerror", handleLockChange);
+      window.removeEventListener("mousemove", handlePointerLockMove);
+      window.removeEventListener("mouseup", handleGlobalMouseUp);
+      if (document.pointerLockElement === scrollRef.current) {
+        document.exitPointerLock?.();
+      }
+    };
+  }, [endPan, handlePointerLockMove]);
+
+  const handleCreatePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!creationMode || e.button !== 0) return;
+    const target = e.target as HTMLElement;
+    if (target.closest("[data-activity-bar]")) return;
+    if (!containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    if (rect.width === 0) return;
+    const ratio = (e.clientX - rect.left) / rect.width;
+    const startMs = clampToTimeline(timeline.start + ratio * totalSpan);
+    const y = e.clientY - rect.top;
+    const draft = { startMs, endMs: startMs, y };
+    creationDraftRef.current = draft;
+    setCreationDraft(draft);
+    e.stopPropagation();
+  };
+
+  useEffect(() => {
+    if (!creationDraft || !creationMode) return;
+    const handleMove = (ev: PointerEvent) => {
+      if (!containerRef.current) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      if (rect.width === 0) return;
+      const ratio = (ev.clientX - rect.left) / rect.width;
+      const endMs = clampToTimeline(timeline.start + ratio * totalSpan);
+      const y = ev.clientY - rect.top;
+      setCreationDraft(prev => {
+        if (!prev) return null;
+        const next = { ...prev, endMs, y };
+        creationDraftRef.current = next;
+        return next;
+      });
+    };
+
+    const handleUp = (ev: PointerEvent) => {
+      if (ev.button !== 0) return;
+      const draft = creationDraftRef.current;
+      if (draft) {
+        const startMs = Math.min(draft.startMs, draft.endMs);
+        const finishMs = Math.max(draft.startMs, draft.endMs);
+        const normalizedStart = toDateMs(toDateString(startMs));
+        const normalizedFinish = Math.max(normalizedStart, toDateMs(toDateString(finishMs)));
+        onCreateRange(toDateString(normalizedStart), toDateString(normalizedFinish));
+      }
+      setCreationDraft(null);
+    };
+
+    window.addEventListener("pointermove", handleMove);
+    window.addEventListener("pointerup", handleUp);
+    window.addEventListener("pointercancel", handleUp);
+    return () => {
+      window.removeEventListener("pointermove", handleMove);
+      window.removeEventListener("pointerup", handleUp);
+      window.removeEventListener("pointercancel", handleUp);
+    };
+  }, [clampToTimeline, creationDraft, creationMode, onCreateRange, timeline.start, totalSpan]);
+
+  const updateScrollThumb = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const { scrollWidth, clientWidth, scrollLeft } = el;
+    if (scrollWidth <= clientWidth) {
+      setScrollThumb({ widthPct: 100, leftPct: 0 });
+      return;
+    }
+    const widthPct = (clientWidth / scrollWidth) * 100;
+    const available = scrollWidth - clientWidth;
+    const leftPct = (scrollLeft / available) * (100 - widthPct);
+    setScrollThumb({ widthPct, leftPct });
+  };
+
+  useEffect(() => {
+    updateScrollThumb();
+  }, [chartWidth, activities.length]);
+
+  const handleScroll = () => updateScrollThumb();
+
   const chartHeight = Math.max(activities.length * 36 + 80, 220);
   const dateToXPx = useCallback((ms: number) => ((ms - timeline.start) / totalSpan) * chartWidth, [timeline.start, totalSpan, chartWidth]);
   const projectStartMs = activities.length ? Math.min(...activities.map(a => toDateMs(a.start))) : timeline.start;
@@ -2446,7 +3092,7 @@ const GanttChart: React.FC<GanttChartProps> = ({
 
   return (
     <div className="flex-1 flex flex-col gap-3">
-      <div className="flex items-center text-xs text-slate-500 dark:text-slate-400 gap-3">
+      <div className="flex items-center text-xs text-slate-500 dark:text-slate-400 gap-3 flex-wrap">
         <div className="flex items-center gap-1">
           <span className="inline-block w-3 h-3 rounded bg-blue-500" />
           <span>Planned</span>
@@ -2455,13 +3101,30 @@ const GanttChart: React.FC<GanttChartProps> = ({
           <span className="inline-block w-3 h-3 rounded bg-amber-500" />
           <span>Dragging</span>
         </div>
+        {creationMode && (
+          <div className="flex items-center gap-1 px-2 py-1 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200 dark:bg-emerald-900/40 dark:text-emerald-200 dark:border-emerald-700">
+            <span className="inline-block w-2 h-2 rounded-full bg-emerald-500" />
+            <span>Draw on chart</span>
+          </div>
+        )}
       </div>
-      <div className="relative">
-        <div className="relative h-16 border border-slate-400/50 dark:border-slate-700 rounded-t bg-slate-900/80 overflow-hidden select-none">
-          <div
-            className="absolute top-0 left-0 right-0 h-16 text-slate-100 grid"
-            style={{ gridTemplateColumns: `repeat(${days.length}, 1fr)` }}
-          >
+    <div
+      ref={scrollRef}
+      data-gantt-scroll
+      className="relative overflow-auto rounded-md border border-slate-200 dark:border-slate-700 bg-slate-900/80 cursor-grab"
+      style={{ maxHeight: "calc(100vh - 320px)", scrollbarWidth: "none", msOverflowStyle: "none" }}
+      onPointerDown={startPan}
+      onPointerMove={onPanMove}
+      onPointerUp={endPan}
+      onPointerCancel={endPan}
+      onPointerLeave={endPan}
+      onScroll={handleScroll}
+    >
+      <div className="relative h-16 border border-slate-400/50 dark:border-slate-700 rounded-t bg-slate-900/80 overflow-hidden select-none">
+        <div
+          className="absolute top-0 left-0 right-0 h-16 text-slate-100 grid"
+          style={{ gridTemplateColumns: `repeat(${days.length}, 1fr)` }}
+        >
             {/* Month row */}
             {months.map((m, idx) => (
               <div
@@ -2493,6 +3156,7 @@ const GanttChart: React.FC<GanttChartProps> = ({
           ref={containerRef}
           className="relative flex-1 border-x border-b border-slate-200 dark:border-slate-700 rounded-b bg-slate-50 dark:bg-slate-900 overflow-hidden select-none"
           style={{ minHeight: chartHeight }}
+          onPointerDown={handleCreatePointerDown}
         >
           <div className="absolute inset-0">{renderTicks()}</div>
 
@@ -2542,6 +3206,18 @@ const GanttChart: React.FC<GanttChartProps> = ({
             <div
               className="absolute top-0 bottom-0 w-[2px] bg-red-500/50"
               style={{ left: `${dateToXPx(todayMs)}px` }}
+            />
+          )}
+
+          {creationDraft && (
+            <div
+              className="absolute bg-emerald-500/30 border border-emerald-500/70 rounded-sm pointer-events-none shadow-[0_0_0_1px_rgba(16,185,129,0.3)]"
+              style={{
+                left: `${dateToXPx(Math.min(creationDraft.startMs, creationDraft.endMs))}px`,
+                width: `${Math.max(2, Math.abs(dateToXPx(creationDraft.endMs) - dateToXPx(creationDraft.startMs)))}px`,
+                top: Math.max(barYOffset - 6, Math.min(chartHeight - 24, creationDraft.y - 8)),
+                height: 18,
+              }}
             />
           )}
 
@@ -2623,6 +3299,7 @@ const GanttChart: React.FC<GanttChartProps> = ({
                 >
                   <div className="relative h-5">
                     <div
+                      data-activity-bar
                       className={`absolute h-4 shadow-sm cursor-grab active:cursor-grabbing ${color}`}
                       style={{ left: `${leftPx}px`, width: `${widthPx}px`, minWidth: "8px", borderRadius: "2px" }}
                       onPointerDown={(e) => handlePointerDown(e, a, "move")}
@@ -2651,7 +3328,20 @@ const GanttChart: React.FC<GanttChartProps> = ({
             })}
           </div>
         </div>
+      <div className="pointer-events-none absolute bottom-2 left-3 right-3 h-1.5 bg-slate-700/50 rounded-full">
+        <div
+          className="h-full bg-blue-400/80 rounded-full"
+          style={{
+            width: `${scrollThumb.widthPct}%`,
+            transform: `translateX(${scrollThumb.leftPct}%)`,
+          }}
+        />
       </div>
+      <style>{`
+        [data-gantt-scroll]::-webkit-scrollbar { display: none; }
+        [data-company-scroll]::-webkit-scrollbar { display: none; }
+      `}</style>
+    </div>
     </div>
   );
 };
@@ -2746,6 +3436,8 @@ interface CustomFormulasDisplayProps {
   onEdit: (formula: CustomFormula) => void;
   onDelete: (formulaId: string) => void;
   onCreate: () => void;
+  taxRates: TaxRate[];
+  onAddPreset?: () => void;
 }
 
 const CustomFormulasDisplay: React.FC<CustomFormulasDisplayProps> = ({
@@ -2754,6 +3446,8 @@ const CustomFormulasDisplay: React.FC<CustomFormulasDisplayProps> = ({
   onEdit,
   onDelete,
   onCreate,
+  taxRates,
+  onAddPreset,
 }) => {
   const formatValue = (value: number, resultType: CustomFormula["resultType"]) => {
     switch (resultType) {
@@ -2769,7 +3463,7 @@ const CustomFormulasDisplay: React.FC<CustomFormulasDisplayProps> = ({
   return (
     <div className="space-y-2">
       {formulas.map((formula) => {
-        const result = evaluateFormula(formula.formula, projectDetails, formulas);
+        const result = evaluateFormula(formula.formula, projectDetails, formulas, getTaxVariableMap(taxRates));
         return (
           <div
             key={formula.id}
@@ -2826,6 +3520,14 @@ const CustomFormulasDisplay: React.FC<CustomFormulasDisplayProps> = ({
       >
         <IconPlus /> Create New Formula
       </button>
+      {onAddPreset && (
+        <button
+          onClick={onAddPreset}
+          className="w-full text-sm flex items-center justify-center gap-1 p-2 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/40 rounded transition-colors border border-dashed border-amber-300 dark:border-amber-700"
+        >
+          <IconCopy /> Add From Presets
+        </button>
+      )}
     </div>
   );
 };
@@ -2841,6 +3543,8 @@ const ProjectAnalysisPanel: React.FC<{
   onEditFormula: (formula: CustomFormula) => void;
   onDeleteFormula: (formulaId: string) => void;
   onCreateFormula: () => void;
+  onAddPreset: () => void;
+  taxRates: TaxRate[];
 }> = ({
   projectDetails,
   projectActivities,
@@ -2849,6 +3553,8 @@ const ProjectAnalysisPanel: React.FC<{
   onEditFormula,
   onDeleteFormula,
   onCreateFormula,
+  onAddPreset,
+  taxRates,
 }) => {
   const detailsMap: Record<string, string> = projectDetails.reduce((acc, detail) => {
     acc[detail.variable] = detail.value;
@@ -2898,6 +3604,8 @@ const ProjectAnalysisPanel: React.FC<{
             onEdit={onEditFormula}
             onDelete={onDeleteFormula}
             onCreate={onCreateFormula}
+            onAddPreset={onAddPreset}
+            taxRates={taxRates}
           />
         </div>
       </div>
@@ -2915,6 +3623,7 @@ interface ProjectDetailsPanelProps {
   onAutoPopulate: (fields: Omit<ProjectDetail, 'id'>[]) => void;
   isVisible: boolean;
   onToggle?: () => void;
+  hiddenVariables?: string[];
 }
 
 const ProjectDetailsPanel: React.FC<ProjectDetailsPanelProps> = ({
@@ -2923,7 +3632,8 @@ const ProjectDetailsPanel: React.FC<ProjectDetailsPanelProps> = ({
   onUpdate,
   onAutoPopulate,
   isVisible,
-  onToggle
+  onToggle,
+  hiddenVariables = [],
 }) => {
   const [editingCell, setEditingCell] = useState<EditingCell | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -2960,8 +3670,13 @@ const ProjectDetailsPanel: React.FC<ProjectDetailsPanelProps> = ({
   };
 
   return (
-    <div className={`w-80 border-l border-slate-300 bg-white dark:border-slate-700 dark:bg-slate-900 flex flex-col overflow-hidden fixed right-0 top-0 bottom-0 pt-16 transform transition-transform duration-300 ease-in-out ${visibilityClasses}`}>
-      <div className="border-b border-slate-300 bg-gradient-to-r from-white to-slate-50 px-4 py-3 dark:border-slate-700 dark:from-slate-900 dark:to-slate-800 flex items-center justify-between">
+    <div
+      className={`w-80 border-l border-slate-300 bg-white dark:border-slate-700 dark:bg-slate-900 flex flex-col overflow-hidden fixed right-0 top-[122px] bottom-0 transform transition-transform duration-300 ease-in-out ${visibilityClasses}`}
+      style={{ bottom: "-5px" }}
+    >
+      <div
+        className="border border-slate-300 bg-slate-50 px-4 py-2.5 dark:border-slate-700 dark:bg-slate-900 flex items-center justify-between w-[calc(100%+1px)] -ml-px"
+      >
         <h3 className="text-sm font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400">
           Project Variables / Details
         </h3>
@@ -2980,7 +3695,7 @@ const ProjectDetailsPanel: React.FC<ProjectDetailsPanelProps> = ({
           Define key project variables here. These variables are used by the financial and custom analysis tools.
         </p>
         <div className="space-y-1">
-          {details.map((detail) => (
+          {details.filter(d => !hiddenVariables.includes(d.variable)).map((detail) => (
             <div
               key={detail.id}
               className="flex items-center group text-sm border-b border-slate-100 dark:border-slate-800 py-1"
@@ -3011,7 +3726,7 @@ const ProjectDetailsPanel: React.FC<ProjectDetailsPanelProps> = ({
               <div className="mx-2 text-slate-400 dark:text-slate-600">:</div>
 
               <div
-                onClick={() => startEditing(detail.id, 'value', detail.value)}
+                onClick={() => startEditing(detail.id, 'value', detail.value || "")}
                 className="w-1/2 text-slate-900 dark:text-slate-50 cursor-text hover:bg-slate-50 dark:hover:bg-slate-700 px-1 rounded truncate text-right font-mono"
                 title={detail.value}
               >
@@ -3029,7 +3744,7 @@ const ProjectDetailsPanel: React.FC<ProjectDetailsPanelProps> = ({
                     className="w-full bg-transparent outline-none ring-1 ring-blue-500 px-1 rounded text-right"
                   />
                 ) : (
-                  detail.value
+                  detail.value || <span className="text-slate-400 dark:text-slate-600 italic">Click to set</span>
                 )}
               </div>
 
@@ -3070,8 +3785,8 @@ const ProjectDetailsPanel: React.FC<ProjectDetailsPanelProps> = ({
 const TopBar: React.FC<{
   title: string;
   projectName?: string;
-  onModeChange?: (mode: "EPS" | "Activities" | "Resources") => void;
-  currentMode: "EPS" | "Activities" | "Resources";
+  onModeChange?: (mode: "EPS" | "Activities" | "Resources" | "Labor" | "RentRoll" | "Exports" | "Statements") => void;
+  currentMode: "EPS" | "Activities" | "Resources" | "Labor" | "RentRoll" | "Exports" | "Statements";
   isDetailsPanelVisible?: boolean;
   onToggleDetailsPanel?: () => void;
 }> = ({
@@ -3110,6 +3825,16 @@ const TopBar: React.FC<{
             Activities
           </button>
           <button
+            onClick={() => onModeChange && onModeChange("RentRoll")}
+            className={`rounded px-3 py-1 transition-colors ${
+              currentMode === "RentRoll"
+                ? "bg-blue-600 text-white"
+                : "text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
+            }`}
+          >
+            Rent Roll
+          </button>
+          <button
             onClick={() => onModeChange && onModeChange("Resources")}
             className={`rounded px-3 py-1 transition-colors ${
               currentMode === "Resources"
@@ -3118,6 +3843,36 @@ const TopBar: React.FC<{
             }`}
           >
             Resources
+          </button>
+          <button
+            onClick={() => onModeChange && onModeChange("Labor")}
+            className={`rounded px-3 py-1 transition-colors ${
+              currentMode === "Labor"
+                ? "bg-blue-600 text-white"
+                : "text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
+            }`}
+          >
+            Labor
+          </button>
+          <button
+            onClick={() => onModeChange && onModeChange("Exports")}
+            className={`rounded px-3 py-1 transition-colors ${
+              currentMode === "Exports"
+                ? "bg-blue-600 text-white"
+                : "text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
+            }`}
+          >
+            Exports
+          </button>
+          <button
+            onClick={() => onModeChange && onModeChange("Statements")}
+            className={`rounded px-3 py-1 transition-colors ${
+              currentMode === "Statements"
+                ? "bg-blue-600 text-white"
+                : "text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
+            }`}
+          >
+            Bank Statements
           </button>
         </nav>
 
@@ -3173,6 +3928,759 @@ const TopBar: React.FC<{
 };
 
 // ---------------------------------------------------------------------------
+// TAX RATE DIALOG
+// ---------------------------------------------------------------------------
+interface TaxRatesDialogProps {
+  open: boolean;
+  onClose: () => void;
+  taxRates: TaxRate[];
+  onSave: (taxRate: TaxRate) => void;
+  onDelete: (id: string) => void;
+}
+
+const TaxRatesDialog: React.FC<TaxRatesDialogProps> = ({
+  open,
+  onClose,
+  taxRates,
+  onSave,
+  onDelete,
+}) => {
+  const [editing, setEditing] = useState<TaxRate | null>(null);
+
+  useEffect(() => {
+    if (open) {
+      setEditing(null);
+    }
+  }, [open]);
+
+  if (!open) return null;
+
+  const startNew = () => setEditing({ id: "", county: "", state: "", rate: 0, note: "" });
+
+  const handleSubmit = () => {
+    if (!editing || !editing.county.trim()) return;
+    const payload: TaxRate = {
+      ...editing,
+      id: editing.id || `TR${Date.now()}`,
+      county: editing.county.trim(),
+      state: editing.state?.trim() || undefined,
+      note: editing.note?.trim() || undefined,
+      rate: Number(editing.rate) || 0,
+    };
+    onSave(payload);
+    setEditing(null);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm p-4">
+      <div className="w-full max-w-3xl bg-white dark:bg-slate-900 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60">
+          <div>
+            <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-50">County Tax Rates</h3>
+            <p className="text-sm text-slate-500 dark:text-slate-400">Record, update, and delete rates by county. Values are stored as percentages.</p>
+          </div>
+          <div className="flex gap-2 items-center">
+            <button
+              onClick={startNew}
+              className="px-3 py-1.5 text-sm rounded bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-200 hover:bg-amber-200 dark:hover:bg-amber-900/60 flex items-center gap-1"
+            >
+              <IconAdd /> New Rate
+            </button>
+            <button onClick={onClose} className="p-2 rounded hover:bg-slate-200 dark:hover:bg-slate-700">
+              <IconX />
+            </button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 divide-y lg:divide-y-0 lg:divide-x divide-slate-200 dark:divide-slate-700">
+          <div className="p-4 max-h-[60vh] overflow-y-auto">
+            <table className="w-full text-sm">
+              <thead className="text-xs uppercase text-slate-500 dark:text-slate-400">
+                <tr>
+                  <th className="text-left pb-2">County</th>
+                  <th className="text-left pb-2">State</th>
+                  <th className="text-right pb-2">Rate (%)</th>
+                  <th className="text-right pb-2">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {taxRates.map((tr) => (
+                  <tr key={tr.id} className="border-t border-slate-200 dark:border-slate-700">
+                    <td className="py-2 font-medium text-slate-800 dark:text-slate-100">{tr.county}</td>
+                    <td className="py-2 text-slate-500 dark:text-slate-400">{tr.state || "-"}</td>
+                    <td className="py-2 text-right text-amber-700 dark:text-amber-300 font-semibold">{tr.rate.toFixed(2)}%</td>
+                    <td className="py-2 text-right space-x-2">
+                      <button
+                        onClick={() => setEditing(tr)}
+                        className="text-xs px-2 py-1 rounded bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200 hover:bg-blue-200 dark:hover:bg-blue-900/60"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => onDelete(tr.id)}
+                        className="text-xs px-2 py-1 rounded bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300 hover:bg-red-200 dark:hover:bg-red-900/60"
+                      >
+                        Delete
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                {taxRates.length === 0 && (
+                  <tr>
+                    <td colSpan={4} className="py-4 text-center text-slate-500 dark:text-slate-400">
+                      No tax rates yet. Add one to get started.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="p-4 bg-slate-50/60 dark:bg-slate-800/60">
+            <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-100 mb-2">
+              {editing ? (editing.id ? "Edit Tax Rate" : "New Tax Rate") : "Select a row to edit"}
+            </h4>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs text-slate-500 dark:text-slate-400">County</label>
+                <input
+                  value={editing?.county || ""}
+                  onChange={(e) => setEditing(prev => prev ? { ...prev, county: e.target.value } : { id: "", county: e.target.value, state: "", rate: 0 })}
+                  className="w-full rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-sm"
+                  placeholder="e.g., Tarrant"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-500 dark:text-slate-400">State (optional)</label>
+                <input
+                  value={editing?.state || ""}
+                  onChange={(e) => setEditing(prev => prev ? { ...prev, state: e.target.value } : { id: "", county: "", state: e.target.value, rate: 0 })}
+                  className="w-full rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-sm"
+                  placeholder="TX"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-500 dark:text-slate-400">Rate (%)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={editing?.rate ?? 0}
+                  onChange={(e) => setEditing(prev => prev ? { ...prev, rate: parseFloat(e.target.value) } : { id: "", county: "", state: "", rate: parseFloat(e.target.value) })}
+                  className="w-full rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-500 dark:text-slate-400">Notes</label>
+                <textarea
+                  value={editing?.note || ""}
+                  onChange={(e) => setEditing(prev => prev ? { ...prev, note: e.target.value } : { id: "", county: "", state: "", rate: 0, note: e.target.value })}
+                  className="w-full rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-sm"
+                  rows={2}
+                  placeholder="Optional context"
+                />
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  onClick={() => setEditing(null)}
+                  className="px-3 py-1.5 text-sm rounded border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+                >
+                  Clear
+                </button>
+                <button
+                  disabled={!editing || !editing.county.trim()}
+                  onClick={handleSubmit}
+                  className="px-3 py-1.5 text-sm rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  Save
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------------------
+// FORMULA PRESET DIALOGS
+// ---------------------------------------------------------------------------
+interface FormulaPresetDialogProps {
+  open: boolean;
+  onClose: () => void;
+  presets: CustomFormula[];
+  onDelete: (id: string) => void;
+}
+
+const FormulaPresetDialog: React.FC<FormulaPresetDialogProps> = ({
+  open,
+  onClose,
+  presets,
+  onDelete,
+}) => {
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm p-4">
+      <div className="w-full max-w-2xl bg-white dark:bg-slate-900 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60">
+          <div>
+            <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-50">Formula Presets</h3>
+            <p className="text-sm text-slate-500 dark:text-slate-400">Saved formulas available across all projects. Create new presets from the formula dialog using “Save as preset”.</p>
+          </div>
+          <button onClick={onClose} className="p-2 rounded hover:bg-slate-200 dark:hover:bg-slate-700">
+            <IconX />
+          </button>
+        </div>
+
+        <div className="p-4 max-h-[70vh] overflow-y-auto space-y-3">
+          {presets.map((preset) => (
+            <div key={preset.id} className="p-3 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm">
+              <div className="flex justify-between items-start gap-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold text-slate-900 dark:text-slate-50">{preset.name}</span>
+                    <span className="text-[11px] px-2 py-0.5 rounded bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-200">Preset</span>
+                  </div>
+                  {preset.description && (
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{preset.description}</p>
+                  )}
+                  <p className="text-xs font-mono text-slate-400 dark:text-slate-500 mt-1">{preset.formula}</p>
+                </div>
+                <div className="text-right space-y-1">
+                  <div className="text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                    {preset.resultType}
+                  </div>
+                  <button
+                    onClick={() => onDelete(preset.id)}
+                    className="text-xs px-2 py-1 rounded bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300 hover:bg-red-200 dark:hover:bg-red-900/60"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+
+          {presets.length === 0 && (
+            <div className="p-4 text-center text-slate-500 dark:text-slate-400 border border-dashed border-slate-300 dark:border-slate-700 rounded">
+              No presets yet. Save any custom formula as a preset to see it here.
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+interface PresetPickerProps {
+  open: boolean;
+  onClose: () => void;
+  presets: CustomFormula[];
+  onApply: (presetId: string) => void;
+}
+
+const PresetPicker: React.FC<PresetPickerProps> = ({
+  open,
+  onClose,
+  presets,
+  onApply,
+}) => {
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm p-4">
+      <div className="w-full max-w-lg bg-white dark:bg-slate-900 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60">
+          <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-50">Add Formula Preset</h3>
+          <button onClick={onClose} className="p-2 rounded hover:bg-slate-200 dark:hover:bg-slate-700">
+            <IconX />
+          </button>
+        </div>
+        <div className="p-4 max-h-[60vh] overflow-y-auto space-y-2">
+          {presets.map((preset) => (
+            <div key={preset.id} className="p-3 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 flex items-center justify-between">
+              <div>
+                <div className="font-semibold text-slate-900 dark:text-slate-50">{preset.name}</div>
+                <p className="text-xs text-slate-500 dark:text-slate-400 font-mono">{preset.formula}</p>
+              </div>
+              <button
+                onClick={() => onApply(preset.id)}
+                className="px-3 py-1.5 text-xs rounded bg-blue-600 text-white hover:bg-blue-700"
+              >
+                Add
+              </button>
+            </div>
+          ))}
+          {presets.length === 0 && (
+            <div className="p-4 text-center text-slate-500 dark:text-slate-400 border border-dashed border-slate-300 dark:border-slate-700 rounded">
+              No presets available. Save a formula as a preset first.
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------------------
+// EMAIL OPTIONS MANAGER
+// ---------------------------------------------------------------------------
+interface EmailOptionsDialogProps {
+  open: boolean;
+  onClose: () => void;
+  options: EmailOption[];
+  onSave: (option: EmailOption) => void;
+  onDelete: (id: string) => void;
+}
+
+const EmailOptionsDialog: React.FC<EmailOptionsDialogProps> = ({
+  open,
+  onClose,
+  options,
+  onSave,
+  onDelete,
+}) => {
+  const [editing, setEditing] = useState<EmailOption | null>(null);
+
+  useEffect(() => {
+    if (!open) setEditing(null);
+  }, [open]);
+
+  const handleSave = () => {
+    if (!editing || !editing.name.trim() || !editing.subject.trim() || !editing.body.trim()) return;
+    const payload: EmailOption = {
+      ...editing,
+      id: editing.id || `EO${Date.now()}`,
+      name: editing.name.trim(),
+      description: editing.description?.trim() || undefined,
+      subject: editing.subject.trim(),
+      body: editing.body.trim(),
+    };
+    onSave(payload);
+    setEditing(null);
+  };
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm p-4">
+      <div className="w-full max-w-4xl bg-white dark:bg-slate-900 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60">
+          <div>
+            <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-50">Email Options</h3>
+            <p className="text-sm text-slate-500 dark:text-slate-400">Create and manage email templates you can send to sellers.</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setEditing({ id: "", name: "", description: "", subject: "", body: "" })}
+              className="px-3 py-1.5 text-sm rounded bg-blue-600 text-white hover:bg-blue-700"
+            >
+              New Option
+            </button>
+            <button onClick={onClose} className="p-2 rounded hover:bg-slate-200 dark:hover:bg-slate-700">
+              <IconX />
+            </button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 divide-y lg:divide-y-0 lg:divide-x divide-slate-200 dark:divide-slate-700 max-h-[80vh]">
+          <div className="p-4 overflow-y-auto">
+            {options.map((opt) => (
+              <div key={opt.id} className="p-3 rounded border border-slate-200 dark:border-slate-700 mb-3 bg-white dark:bg-slate-800 shadow-sm">
+                <div className="flex justify-between items-start gap-2">
+                  <div>
+                    <div className="font-semibold text-slate-900 dark:text-slate-50">{opt.name}</div>
+                    {opt.description && <p className="text-xs text-slate-500 dark:text-slate-400">{opt.description}</p>}
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">Subject: {opt.subject}</p>
+                    <pre className="text-[11px] text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-900/50 rounded p-2 mt-1 whitespace-pre-wrap">{opt.body}</pre>
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <button
+                      onClick={() => setEditing(opt)}
+                      className="px-2 py-1 text-xs rounded bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200 hover:bg-blue-200 dark:hover:bg-blue-900/60"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => onDelete(opt.id)}
+                      className="px-2 py-1 text-xs rounded bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300 hover:bg-red-200 dark:hover:bg-red-900/60"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+            {options.length === 0 && (
+              <div className="p-4 text-sm text-slate-500 dark:text-slate-400 border border-dashed border-slate-300 dark:border-slate-700 rounded">
+                No email options yet. Create one to get started.
+              </div>
+            )}
+          </div>
+
+          <div className="p-4 bg-slate-50/70 dark:bg-slate-800/70">
+            <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-100 mb-2">
+              {editing ? (editing.id ? "Edit Email Option" : "New Email Option") : "Select an option to edit"}
+            </h4>
+            {editing ? (
+              <div className="space-y-3">
+                <div>
+                  <label className="text-xs text-slate-500 dark:text-slate-400">Name</label>
+                  <input
+                    value={editing.name}
+                    onChange={(e) => setEditing(prev => prev ? { ...prev, name: e.target.value } : null)}
+                    className="w-full rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-slate-500 dark:text-slate-400">Description</label>
+                  <input
+                    value={editing.description || ""}
+                    onChange={(e) => setEditing(prev => prev ? { ...prev, description: e.target.value } : null)}
+                    className="w-full rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-slate-500 dark:text-slate-400">Subject</label>
+                  <input
+                    value={editing.subject}
+                    onChange={(e) => setEditing(prev => prev ? { ...prev, subject: e.target.value } : null)}
+                    className="w-full rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-slate-500 dark:text-slate-400">Body</label>
+                  <textarea
+                    value={editing.body}
+                    rows={6}
+                    onChange={(e) => setEditing(prev => prev ? { ...prev, body: e.target.value } : null)}
+                    className="w-full rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-sm"
+                  />
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">Supports placeholders like {"{Seller Name}"} or {"{Property Name}"}.</p>
+                </div>
+                <div className="flex justify-end gap-2 pt-2">
+                  <button
+                    onClick={() => setEditing(null)}
+                    className="px-3 py-1.5 text-sm rounded border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleSave}
+                    disabled={!editing.name.trim() || !editing.subject.trim() || !editing.body.trim()}
+                    className="px-3 py-1.5 text-sm rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60"
+                  >
+                    Save
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="text-sm text-slate-500 dark:text-slate-400">Choose an option or create a new one.</div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------------------
+// ACQUISITION CONFIRMATION MODAL
+// ---------------------------------------------------------------------------
+interface AcquisitionConfirmModalProps {
+  open: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}
+
+const AcquisitionConfirmModal: React.FC<AcquisitionConfirmModalProps> = ({
+  open,
+  onConfirm,
+  onCancel,
+}) => {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+      <div className="w-full max-w-md rounded-2xl bg-white dark:bg-slate-900 shadow-2xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+        <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-700 bg-gradient-to-r from-slate-50 to-white dark:from-slate-800 dark:to-slate-900">
+          <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-50">Mark as Acquired?</h3>
+          <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
+            Seller details and outreach selections will be retained if you need to switch back.
+          </p>
+        </div>
+        <div className="p-5 flex items-center justify-end gap-3">
+          <button
+            onClick={onCancel}
+            className="px-4 py-2 text-sm rounded-full border border-slate-300 text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            className="px-4 py-2 text-sm rounded-full bg-gradient-to-r from-blue-600 to-blue-500 text-white shadow hover:from-blue-700 hover:to-blue-600"
+          >
+            Yes, Acquired
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------------------
+// CONTRACT VIEW (UNDER CONTRACT)
+// ---------------------------------------------------------------------------
+interface ContractViewProps {
+  projectId: number;
+  projectName: string;
+  meta: ProjectPipelineMeta;
+  emailOptions: EmailOption[];
+  details: ProjectDetail[];
+  onStatusChange: (status: ProjectStatus) => void;
+  onSellerChange: (field: keyof ProjectPipelineMeta["seller"], value: string) => void;
+  onToggleOption: (optionId: string) => void;
+  onSend: () => void;
+  onManageOptions: () => void;
+  onUpdateDetail: (variable: string, value: string) => void;
+}
+
+  const ContractView: React.FC<ContractViewProps> = ({
+  projectId,
+  projectName,
+  meta,
+  emailOptions,
+  details,
+  onStatusChange,
+  onSellerChange,
+  onToggleOption,
+  onSend,
+  onManageOptions,
+  onUpdateDetail,
+}) => {
+  const isValidEmail = meta.seller.email ? /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(meta.seller.email.trim()) : false;
+  const sendDisabled = !isValidEmail || meta.selectedEmailOptionIds.length === 0;
+  const detailMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    details.forEach(d => { map[d.variable] = d.value; });
+    return map;
+  }, [details]);
+
+  const detailFields = [
+    { label: "Address", key: "Address" },
+    { label: "Not Acquired For (days)", key: "Under Contract For (days)" },
+    { label: "Title Company Name", key: "Title Company Name" },
+    { label: "Amount Under Contract", key: "Amount Under Contract" },
+    { label: "Earnest Money", key: "Earnest Money" },
+    { label: "SQFT", key: "SQFT" },
+    { label: "Purchase Price", key: "Purchase Price" },
+    { label: "ARV Estimate", key: "ARV Estimate" },
+    { label: "ECIP (Estimate cost for renovation/repairs)", key: "ECIP (Estimate cost for renovation/repairs)" },
+  ];
+  return (
+    <div className="flex-1 overflow-y-auto p-6">
+      <div className="max-w-4xl mx-auto space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-50">{projectName}</h2>
+            <p className="text-sm text-slate-500 dark:text-slate-400">Project is currently not acquired.</p>
+          </div>
+          <div className="inline-flex items-center gap-2 bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200 px-3 py-1.5 rounded-full text-sm font-semibold">
+            Not Acquired
+            <button
+              onClick={() => onStatusChange("acquired")}
+              className="ml-2 px-2 py-1 text-xs rounded bg-blue-600 text-white hover:bg-blue-700"
+            >
+              Mark Acquired
+            </button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4 shadow-sm">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100">Seller Contact</h3>
+              <span className="text-xs uppercase font-semibold text-slate-500 dark:text-slate-400">Project #{projectId}</span>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs text-slate-500 dark:text-slate-400">Name</label>
+                <input
+                  value={meta.seller.name}
+                  onChange={(e) => onSellerChange("name", e.target.value)}
+                  className="w-full rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm"
+                  placeholder="Seller name"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-500 dark:text-slate-400">Phone</label>
+                <input
+                  value={meta.seller.phone}
+                  onChange={(e) => onSellerChange("phone", e.target.value)}
+                  className="w-full rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm"
+                  placeholder="(555) 123-4567"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-500 dark:text-slate-400">Email</label>
+                <input
+                  value={meta.seller.email}
+                  onChange={(e) => onSellerChange("email", e.target.value)}
+                  className="w-full rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm"
+                  type="email"
+                  placeholder="seller@example.com"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4 shadow-sm">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100">Email Options</h3>
+              <button
+                onClick={onManageOptions}
+                className="text-xs px-2 py-1 rounded bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-200 hover:bg-slate-300 dark:hover:bg-slate-700"
+              >
+                Manage Options
+              </button>
+            </div>
+            <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+              {emailOptions.map((opt) => {
+                const checked = meta.selectedEmailOptionIds.includes(opt.id);
+                return (
+                  <label key={opt.id} className="flex items-start gap-2 p-2 rounded border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => onToggleOption(opt.id)}
+                      className="mt-1"
+                    />
+                    <div className="flex-1">
+                      <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">{opt.name}</div>
+                      {opt.description && <p className="text-xs text-slate-500 dark:text-slate-400">{opt.description}</p>}
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400">Subject: {opt.subject}</p>
+                    </div>
+                  </label>
+                );
+              })}
+              {emailOptions.length === 0 && (
+                <div className="text-sm text-slate-500 dark:text-slate-400">No options available. Create one.</div>
+              )}
+            </div>
+            <button
+              onClick={onSend}
+              disabled={sendDisabled}
+              className="mt-3 w-full px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed text-sm font-semibold"
+            >
+              Send Email (stub)
+            </button>
+            {sendDisabled && (
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">Provide seller email and choose at least one option.</p>
+            )}
+          </div>
+        </div>
+
+        <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4 shadow-sm">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100">Key Deal Inputs</h3>
+            <span className="text-xs text-slate-500 dark:text-slate-400">Visible until acquisition; will appear in details panel after.</span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {detailFields.map((f) => (
+              <div key={f.key} className="space-y-1">
+                <label className="text-xs text-slate-500 dark:text-slate-400">{f.label}</label>
+                <input
+                  value={detailMap[f.key] ?? ""}
+                  onChange={(e) => onUpdateDetail(f.key, e.target.value)}
+                  className="w-full rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm"
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------------------
+// ACTION RIBBON
+// ---------------------------------------------------------------------------
+const ActionRibbon: React.FC<{
+  onOpenTaxRates: () => void;
+  onManagePresets: () => void;
+  onCreateFormula: () => void;
+  onAddPresetToProject?: () => void;
+  taxRateCount: number;
+  presetCount: number;
+  hasActiveProject: boolean;
+}> = ({
+  onOpenTaxRates,
+  onManagePresets,
+  onCreateFormula,
+  onAddPresetToProject,
+  taxRateCount,
+  presetCount,
+  hasActiveProject,
+}) => {
+  return (
+    <div className="w-full bg-gradient-to-r from-slate-100 via-white to-slate-100 dark:from-slate-900 dark:via-slate-950 dark:to-slate-900 border-b border-slate-200 dark:border-slate-800 px-4 py-2 shadow-sm flex items-center gap-3 overflow-x-auto">
+      <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm">
+        <IconPercent />
+        <div className="flex flex-col leading-tight">
+          <span className="text-xs text-slate-500 dark:text-slate-400">Tax Rates</span>
+          <span className="text-sm font-semibold text-slate-800 dark:text-slate-100">{taxRateCount} counties</span>
+        </div>
+        <button
+          onClick={onOpenTaxRates}
+          className="ml-2 px-2 py-1 text-xs rounded-md bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-200 hover:bg-amber-200 dark:hover:bg-amber-900/60"
+        >
+          Manage
+        </button>
+      </div>
+
+      <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm">
+        <IconFunction />
+        <div className="flex flex-col leading-tight">
+          <span className="text-xs text-slate-500 dark:text-slate-400">Formulas</span>
+          <span className="text-sm font-semibold text-slate-800 dark:text-slate-100">New or edit</span>
+        </div>
+        <button
+          onClick={onCreateFormula}
+          disabled={!hasActiveProject}
+          className={`ml-2 px-2 py-1 text-xs rounded-md ${hasActiveProject ? "bg-blue-600 text-white hover:bg-blue-700" : "bg-slate-200 text-slate-500 cursor-not-allowed dark:bg-slate-700 dark:text-slate-500"}`}
+        >
+          New
+        </button>
+        {onAddPresetToProject && (
+          <button
+            onClick={onAddPresetToProject}
+            disabled={!hasActiveProject}
+            className={`px-2 py-1 text-xs rounded-md border border-blue-200 dark:border-blue-700 ${hasActiveProject ? "text-blue-600 hover:bg-blue-50 dark:text-blue-300 dark:hover:bg-blue-900/40" : "text-slate-400 cursor-not-allowed"}`}
+          >
+            Add Preset
+          </button>
+        )}
+      </div>
+
+      <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm">
+        <IconCopy />
+        <div className="flex flex-col leading-tight">
+          <span className="text-xs text-slate-500 dark:text-slate-400">Presets Library</span>
+          <span className="text-sm font-semibold text-slate-800 dark:text-slate-100">{presetCount} saved</span>
+        </div>
+        <button
+          onClick={onManagePresets}
+          className="ml-2 px-2 py-1 text-xs rounded-md bg-slate-900 text-white dark:bg-slate-600 hover:bg-slate-700 dark:hover:bg-slate-500"
+        >
+          Open
+        </button>
+      </div>
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------------------
 // EPS EXPLORER NODE
 // ---------------------------------------------------------------------------
 interface EpsNodeProps {
@@ -3183,6 +4691,7 @@ interface EpsNodeProps {
   onNodeClick: (node: EpsNode) => void;
   onContextMenu: (x: number, y: number, node: EpsNode, activity: null, type: 'eps') => void;
   onToggleExpand: (nodeId: number) => void;
+  pipelineMetaMap?: Record<number, ProjectPipelineMeta>;
 }
 
 const EpsNodeComponent: React.FC<EpsNodeProps> = ({
@@ -3193,11 +4702,14 @@ const EpsNodeComponent: React.FC<EpsNodeProps> = ({
   onNodeClick,
   onContextMenu,
   onToggleExpand,
+  pipelineMetaMap,
 }) => {
   const isSelected = node.id === selectedNodeId;
   const hasChildren = node.children && node.children.length > 0;
   const isExpanded = hasChildren && expanded.has(node.id);
   const paddingLeft = `${depth * 15}px`;
+  const meta = node.type === "project" ? pipelineMetaMap?.[node.id] : undefined;
+  const isNotAcquired = meta?.status === "under_contract";
 
   const handleContextMenu = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     e.preventDefault();
@@ -3234,6 +4746,14 @@ const EpsNodeComponent: React.FC<EpsNodeProps> = ({
           <span className={`text-sm truncate ${node.type === "project" ? "font-medium text-slate-900 dark:text-slate-50" : "text-slate-700 dark:text-slate-200"}`}>
             {node.name}
           </span>
+          {isNotAcquired && (
+            <span
+              className="ml-1 inline-flex items-center justify-center rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-200 w-5 h-5 shadow-sm border border-amber-200/80 dark:border-amber-800/60"
+              title="Not acquired"
+            >
+              <IconPercent />
+            </span>
+          )}
         </div>
       </div>
 
@@ -3249,6 +4769,7 @@ const EpsNodeComponent: React.FC<EpsNodeProps> = ({
               onNodeClick={onNodeClick}
               onContextMenu={onContextMenu}
               onToggleExpand={onToggleExpand}
+              pipelineMetaMap={pipelineMetaMap}
             />
           ))}
         </div>
@@ -3261,16 +4782,405 @@ const EpsNodeComponent: React.FC<EpsNodeProps> = ({
 // MAIN DASHBOARD
 // ---------------------------------------------------------------------------
 export default function DashboardPage() {
-  const [mode, setMode] = useState<"EPS" | "Activities" | "Resources">("EPS");
+  const [mode, setMode] = useState<"EPS" | "Activities" | "Resources" | "Labor" | "RentRoll" | "Exports" | "Statements">("EPS");
   const [activeProjectId, setActiveProjectId] = useState<number | null>(null);
   const [epsNodes, setEpsNodes] = useState<EpsNode[]>([]);
+  const [wbsNodesDb, setWbsNodesDb] = useState<DbWbsNode[]>([]);
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [selectedNodeId, setSelectedNodeId] = useState<number | null>(null);
-  const [activities, setActivities] = useState<Record<number, Activity[]>>(INITIAL_ACTIVITIES);
-  const [transactions, setTransactions] = useState<Record<number, Transaction[]>>(INITIAL_TRANSACTIONS);
-  const [projectDetails, setProjectDetails] = useState<Record<number, ProjectDetail[]>>(INITIAL_PROJECT_DETAILS);
-  const [customFormulas, setCustomFormulas] = useState<Record<number, CustomFormula[]>>(INITIAL_CUSTOM_FORMULAS);
-  const [resources, setResources] = useState<Resource[]>(INITIAL_RESOURCES);
+  const [activities, setActivities] = useState<Record<number, Activity[]>>({});
+  const [transactions, setTransactions] = useState<Record<number, Transaction[]>>({});
+  const [projectDetails, setProjectDetails] = useState<Record<number, ProjectDetail[]>>({});
+  const [customFormulas, setCustomFormulas] = useState<Record<number, CustomFormula[]>>({});
+  const [formulaPresets, setFormulaPresets] = useState<CustomFormula[]>([]);
+  const [taxRates, setTaxRates] = useState<TaxRate[]>([]);
+  const [pipelineMeta, setPipelineMeta] = useState<Record<number, ProjectPipelineMeta>>({});
+  const [emailOptions, setEmailOptions] = useState<EmailOption[]>([]);
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [timeEntries, setTimeEntries] = useState<TimeEntry[]>([]);
+  const [paychecks, setPaychecks] = useState<Paycheck[]>([]);
+  const [resources, setResources] = useState<Resource[]>([]);
+  const [rentRollProperties, setRentRollProperties] = useState<RentRollProperty[]>([]);
+  const [rentRollEntries, setRentRollEntries] = useState<RentRollEntry[]>([]);
+  const [rentRollProperty, setRentRollProperty] = useState<string>("all");
+  const [rentRollForm, setRentRollForm] = useState({
+    propertyName: "",
+    unit: "",
+    tenant: "",
+    status: "Occupied" as RentRollStatus,
+    rent: "",
+    leaseEnd: "",
+    initialDueMonthDay: "",
+    bedrooms: "",
+    bathrooms: "",
+  });
+  const [rentRollModalOpen, setRentRollModalOpen] = useState(false);
+  const [editingRentRollId, setEditingRentRollId] = useState<string | null>(null);
+  const [rentPayments, setRentPayments] = useState<RentPayment[]>([]);
+  const [rentPaymentModal, setRentPaymentModal] = useState<{ open: boolean; entryId: string | null; amount: string; date: string; note: string }>({
+    open: false,
+    entryId: null,
+    amount: "",
+    date: toDateString(getCentralTodayMs()),
+    note: "",
+  });
+  const [rentRollDeleteModal, setRentRollDeleteModal] = useState<{ open: boolean; entry: RentRollEntry | null }>({ open: false, entry: null });
+  const [linkingPropertyId, setLinkingPropertyId] = useState<string | null>(null);
+  const [linkTargetProjectId, setLinkTargetProjectId] = useState<string>("");
+  const [exportModalOpen, setExportModalOpen] = useState(false);
+  const [exportType, setExportType] = useState<"main" | "property" | "rentroll">("main");
+  const [exportFormat, setExportFormat] = useState<"csv" | "xlsx">("csv");
+  const [exportHistory, setExportHistory] = useState<{ id: string; type: string; format: string; filename: string; timestamp: string }[]>([]);
+  const [statementUploads, setStatementUploads] = useState<{ id: string; name: string; size: number; uploadedAt: string }[]>([]);
+  const [parsedStatements, setParsedStatements] = useState<{ uploadId: string; rows: { date: string; description: string; amount: number }[] }[]>([]);
+  const loadStatements = useCallback(async () => {
+    try {
+      const res = await fetch("/api/statements");
+      if (!res.ok) return;
+      const data = await res.json();
+      const uploads = data.uploads || [];
+      setStatementUploads(uploads.map((u: any) => ({
+        id: String(u.id),
+        name: u.name,
+        size: Number(u.size || 0),
+        uploadedAt: u.uploadedAt,
+      })));
+      setParsedStatements(uploads.map((u: any) => ({
+        uploadId: String(u.id),
+        rows: (u.lines || []).map((l: any) => ({
+          date: toDateString(toDateMs(l.date)),
+          description: l.description,
+          amount: Number(l.amount || 0),
+        })),
+      })));
+    } catch (err) {
+      console.error("Failed to load statements", err);
+    }
+  }, []);
+
+  const loadRentData = useCallback(async () => {
+    try {
+      const [propsRes, unitsRes, payRes] = await Promise.all([
+        fetch("/api/rent/properties"),
+        fetch("/api/rent/units"),
+        fetch("/api/rent/payments"),
+      ]);
+      if (propsRes.ok) {
+        const data = await propsRes.json();
+        setRentRollProperties(
+          (data.properties || []).map((p: any) => ({
+            id: String(p.id),
+            name: p.name || "Property",
+            linkedProjectId: p.linkedProjectId ? Number(p.linkedProjectId) : null,
+          }))
+        );
+      }
+      if (unitsRes.ok) {
+        const data = await unitsRes.json();
+        setRentRollEntries(
+          (data.units || []).map((u: any) => ({
+            id: String(u.id),
+            propertyId: String(u.propertyId),
+            unit: u.unit,
+            tenant: u.tenant || "Vacant",
+            status: (u.status as RentRollStatus) || "Occupied",
+            rent: Number(u.rent || 0),
+            balance: 0,
+            leaseEnd: u.leaseEnd || "TBD",
+            initialDueMonthDay: u.initialDueMonthDay || "01-01",
+            bedrooms: Number(u.bedrooms || 0),
+            bathrooms: Number(u.bathrooms || 0),
+          }))
+        );
+      }
+      if (payRes.ok) {
+        const data = await payRes.json();
+        setRentPayments(
+          (data.payments || []).map((p: any) => ({
+            id: String(p.id),
+            rentRollEntryId: String(p.rentUnitId),
+            amount: Number(p.amount || 0),
+            date: toDateString(toDateMs(p.date)),
+            note: p.note || undefined,
+          }))
+        );
+      }
+    } catch (err) {
+      console.error("Failed to load rent data", err);
+    }
+  }, []);
+
+  const mapActivityStatus = (status?: string): Activity["status"] => {
+    const s = (status || "").toLowerCase();
+    if (s.includes("progress")) return "In Progress";
+    if (s.includes("complete")) return "Completed";
+    return "Not Started";
+  };
+
+  const loadProjects = useCallback(async () => {
+    try {
+      const res = await fetch("/api/projects");
+      if (!res.ok) return [];
+      const data = await res.json();
+      const nodes: EpsNode[] = (data.projects || []).map((p: any) => ({
+        id: Number(p.id),
+        parentId: null,
+        type: "project",
+        name: p.name || p.code || `Project ${p.id}`,
+      }));
+      setEpsNodes(nodes);
+      const firstId = nodes[0]?.id ?? null;
+      setSelectedNodeId(firstId);
+      setActiveProjectId(firstId);
+      setExpanded(
+        nodes.length
+          ? new Set(nodes.filter((n) => n.parentId !== null).map((n) => n.parentId!))
+          : new Set<number>()
+      );
+      return nodes;
+    } catch (err) {
+      console.error("Failed to load projects", err);
+      return [];
+    }
+  }, []);
+
+  const loadWbs = useCallback(async () => {
+    try {
+      const res = await fetch("/api/wbs");
+      if (!res.ok) return [];
+      const data = await res.json();
+      const nodes: DbWbsNode[] = (data.nodes || []).map((n: any) => ({
+        id: Number(n.id),
+        projectId: Number(n.projectId),
+        code: n.code,
+        name: n.name,
+        parentId: n.parentId === null || n.parentId === undefined ? null : Number(n.parentId),
+      }));
+      setWbsNodesDb(nodes);
+      return nodes;
+    } catch (err) {
+      console.error("Failed to load WBS nodes", err);
+      return [];
+    }
+  }, []);
+
+  const loadActivities = useCallback(
+    async (wbsList?: DbWbsNode[]) => {
+      const wbsMap = new Map<number, string>((wbsList || wbsNodesDb).map((n) => [n.id, n.code]));
+      try {
+        const res = await fetch("/api/activities");
+        if (!res.ok) return {};
+        const data = await res.json();
+        const grouped: Record<number, Activity[]> = {};
+        (data.activities || []).forEach((a: any) => {
+          const projectId = Number(a.projectId);
+          if (!projectId) return;
+          const wbsCode = wbsMap.get(Number(a.wbsId)) || a.code || "";
+          const startDate = a.startDate ? toDateString(toDateMs(a.startDate)) : toDateString(getCentralTodayMs());
+          const finishDate = a.finishDate ? toDateString(toDateMs(a.finishDate)) : startDate;
+          const mapped: Activity = {
+            id: String(a.id),
+            wbs: wbsCode,
+            name: a.name || "",
+            start: startDate,
+            finish: finishDate,
+            duration: Number(a.durationDays || 0),
+            pct: Number(a.percentComplete || 0),
+            responsible: a.responsible || "",
+            status: mapActivityStatus(a.status),
+            projectedLabor: Number(a.projectedLabor || 0),
+            projectedCost: Number(a.projectedCost || 0),
+            budget: Number(a.budget || 0),
+            revenue: Number(a.revenue || 0),
+            resources: [],
+            predecessors: a.predecessorIds ? a.predecessorIds.map((id: any) => String(id)) : [],
+            successor: a.successorId ? String(a.successorId) : undefined,
+          };
+          grouped[projectId] = [...(grouped[projectId] || []), mapped];
+        });
+        setActivities(grouped);
+        return grouped;
+      } catch (err) {
+        console.error("Failed to load activities", err);
+        return {};
+      }
+    },
+    [wbsNodesDb]
+  );
+
+  const loadTransactions = useCallback(async () => {
+    try {
+      const res = await fetch("/api/transactions");
+      if (!res.ok) return {};
+      const data = await res.json();
+      const grouped: Record<number, Transaction[]> = {};
+      (data.transactions || []).forEach((t: any) => {
+        const projectId = t.projectId ? Number(t.projectId) : null;
+        if (!projectId) return;
+        const mapped: Transaction = {
+          id: String(t.id),
+          date: toDateString(toDateMs(t.date)),
+          description: t.description || "",
+          type: t.type === "Income" ? "Income" : "Outcome",
+          category: t.category || "",
+          subCategory: t.subCategory || undefined,
+          amount: Number(t.amount || 0),
+          activityId: t.activityId ? String(t.activityId) : undefined,
+        };
+        grouped[projectId] = [...(grouped[projectId] || []), mapped];
+      });
+      setTransactions(grouped);
+      return grouped;
+    } catch (err) {
+      console.error("Failed to load transactions", err);
+      return {};
+    }
+  }, []);
+
+  const loadResourcesFromDb = useCallback(async () => {
+    try {
+      const res = await fetch("/api/resources");
+      if (!res.ok) return [];
+      const data = await res.json();
+      const mapped: Resource[] = (data.resources || []).map((r: any) => ({
+        id: String(r.id),
+        name: r.name,
+        type: (r.costType as Resource["type"]) || "Labor",
+        rate: Number(r.standardRate || r.rate || 0),
+        rateUnit: (r.unitType as Resource["rateUnit"]) || "hour",
+        availability: r.availability ? Number(r.availability) : undefined,
+      }));
+      setResources(mapped);
+      return mapped;
+    } catch (err) {
+      console.error("Failed to load resources", err);
+      return [];
+    }
+  }, []);
+
+  const loadEmployees = useCallback(async () => {
+    try {
+      const res = await fetch("/api/employees");
+      if (!res.ok) return [];
+      const data = await res.json();
+      const mapped: Employee[] = (data.employees || []).map((e: any) => ({
+        id: String(e.id),
+        name: e.name,
+        rate: Number(e.rate || 0),
+      }));
+      setEmployees(mapped);
+      return mapped;
+    } catch (err) {
+      console.error("Failed to load employees", err);
+      return [];
+    }
+  }, []);
+
+  const loadTimeEntries = useCallback(async () => {
+    try {
+      const res = await fetch("/api/time-entries");
+      if (!res.ok) return [];
+      const data = await res.json();
+      const mapped: TimeEntry[] = (data.timeEntries || []).map((t: any) => ({
+        id: String(t.id),
+        employeeId: String(t.employeeId),
+        projectId: t.projectId ? Number(t.projectId) : null,
+        date: toDateString(toDateMs(t.date)),
+        hours: Number(t.hours || 0),
+      }));
+      setTimeEntries(mapped);
+      return mapped;
+    } catch (err) {
+      console.error("Failed to load time entries", err);
+      return [];
+    }
+  }, []);
+
+  const loadPaychecks = useCallback(async () => {
+    try {
+      const res = await fetch("/api/paychecks");
+      if (!res.ok) return [];
+      const data = await res.json();
+      const mapped: Paycheck[] = (data.paychecks || []).map((p: any) => ({
+        id: String(p.id),
+        employeeId: String(p.employeeId),
+        weekStart: toDateString(toDateMs(p.weekStart)),
+        amount: Number(p.amount || 0),
+        checkNumber: p.checkNumber || "",
+      }));
+      setPaychecks(mapped);
+      return mapped;
+    } catch (err) {
+      console.error("Failed to load paychecks", err);
+      return [];
+    }
+  }, []);
+
+  const loadProjectDetailsDb = useCallback(async () => {
+    try {
+      const res = await fetch("/api/project-details");
+      if (!res.ok) return {};
+      const data = await res.json();
+      const grouped: Record<number, ProjectDetail[]> = {};
+      (data.details || []).forEach((d: any) => {
+        const pid = Number(d.projectId);
+        if (!pid) return;
+        const detail: ProjectDetail = {
+          id: String(d.id),
+          variable: d.variable,
+          value: d.value || "",
+        };
+        grouped[pid] = [...(grouped[pid] || []), detail];
+      });
+      setProjectDetails(grouped);
+      return grouped;
+    } catch (err) {
+      console.error("Failed to load project details", err);
+      return {};
+    }
+  }, []);
+
+  const loadPipelineMeta = useCallback(async () => {
+    try {
+      const res = await fetch("/api/pipeline");
+      if (!res.ok) return {};
+      const data = await res.json();
+      const map: Record<number, ProjectPipelineMeta> = {};
+      (data.pipeline || []).forEach((p: any) => {
+        const projectId = Number(p.projectId);
+        if (!projectId) return;
+        map[projectId] = {
+          status: (p.status as ProjectStatus) || "under_contract",
+          seller: {
+            name: p.sellerName || "",
+            phone: p.sellerPhone || "",
+            email: p.sellerEmail || "",
+          },
+          selectedEmailOptionIds: p.selectedEmailOptionIds ? String(p.selectedEmailOptionIds).split(",").filter(Boolean) : [],
+        };
+      });
+      setPipelineMeta(map);
+      return map;
+    } catch (err) {
+      console.error("Failed to load pipeline meta", err);
+      return {};
+    }
+  }, []);
+
+  const loadDbData = useCallback(async () => {
+    const [projectsLoaded, wbsLoaded] = await Promise.all([loadProjects(), loadWbs()]);
+    await Promise.all([
+      loadActivities(wbsLoaded),
+      loadTransactions(),
+      loadResourcesFromDb(),
+      loadEmployees(),
+      loadTimeEntries(),
+      loadPaychecks(),
+      loadProjectDetailsDb(),
+      loadPipelineMeta(),
+    ]);
+    return { projectsLoaded, wbsLoaded };
+  }, [loadActivities, loadEmployees, loadPaychecks, loadPipelineMeta, loadProjectDetailsDb, loadProjects, loadResourcesFromDb, loadTimeEntries, loadTransactions, loadWbs]);
   const [isDetailsPanelVisible, setIsDetailsPanelVisible] = useState(true);
   const [epsViewTab, setEpsViewTab] = useState<"overview" | "gantt">("overview");
   const [activityView, setActivityView] = useState<"details" | "gantt">("details");
@@ -3284,10 +5194,15 @@ export default function DashboardPage() {
     finishMs: number;
     grabOffsetMs: number;
   } | null>(null);
+  const [ganttCreateMode, setGanttCreateMode] = useState(false);
+  const [newActivityDraft, setNewActivityDraft] = useState<{ start: string; finish: string } | null>(null);
   const [draggingCompanySpan, setDraggingCompanySpan] = useState<{ projectId: number; anchorMs: number; grabOffsetMs: number } | null>(null);
   const [companyDragPreview, setCompanyDragPreview] = useState<{ projectId: number; deltaMs: number } | null>(null);
+  const [companyScrollThumb, setCompanyScrollThumb] = useState({ widthPct: 100, leftPct: 0 });
   const companyDeltaRef = useRef(0);
   const companyGanttRef = useRef<HTMLDivElement>(null);
+  const companyPanActive = useRef(false);
+  const companyPanState = useRef({ startX: 0, startY: 0, scrollLeft: 0, scrollTop: 0 });
   const [ganttMenu, setGanttMenu] = useState<{ x: number; y: number; activity: Activity | null }>({ x: 0, y: 0, activity: null });
   const [dependencyModal, setDependencyModal] = useState<{ open: boolean; mode: "pred" | "succ"; activity: Activity | null; targetId: string }>({
     open: false,
@@ -3310,6 +5225,282 @@ export default function DashboardPage() {
   const [modalMode, setModalMode] = useState<"add" | "rename" | null>(null);
   const [modalValue, setModalValue] = useState("");
   const [pendingAddConfig, setPendingAddConfig] = useState<{ type: EpsNodeType; parentId: number | null; } | null>(null);
+  const [taxRateDialogOpen, setTaxRateDialogOpen] = useState(false);
+  const [formulaPresetDialogOpen, setFormulaPresetDialogOpen] = useState(false);
+  const [presetPickerOpen, setPresetPickerOpen] = useState(false);
+  const [emailOptionsDialogOpen, setEmailOptionsDialogOpen] = useState(false);
+  const [acquireConfirmOpen, setAcquireConfirmOpen] = useState(false);
+  const [pendingAcquireProjectId, setPendingAcquireProjectId] = useState<number | null>(null);
+  const [laborWeekStart, setLaborWeekStart] = useState(() => getWeekStart(getCentralTodayMs()));
+  const [paycheckNumbers, setPaycheckNumbers] = useState<Record<string, string>>({});
+  const [employeeFormOpen, setEmployeeFormOpen] = useState(false);
+  const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
+  const [employeeNameInput, setEmployeeNameInput] = useState("");
+  const [employeeRateInput, setEmployeeRateInput] = useState("");
+
+  const rentRollPropertyMap = useMemo(() => {
+    return rentRollProperties.reduce<Record<string, RentRollProperty>>((acc, p) => {
+      acc[p.id] = p;
+      return acc;
+    }, {});
+  }, [rentRollProperties]);
+
+  const filteredRentRoll = useMemo(() => {
+    if (rentRollProperty === "all") return rentRollEntries;
+    return rentRollEntries.filter((entry) => entry.propertyId === rentRollProperty);
+  }, [rentRollEntries, rentRollProperty]);
+  const paymentRollup = useMemo(() => {
+    const todayMs = getCentralTodayMs();
+    const todayKey = getMonthKey(toDateString(todayMs));
+    const paymentsByEntryMonth: Record<string, Record<string, number>> = {};
+    rentPayments.forEach((p) => {
+      const key = getMonthKey(p.date);
+      paymentsByEntryMonth[p.rentRollEntryId] = paymentsByEntryMonth[p.rentRollEntryId] || {};
+      paymentsByEntryMonth[p.rentRollEntryId][key] = (paymentsByEntryMonth[p.rentRollEntryId][key] || 0) + p.amount;
+    });
+
+    const map: Record<string, { paid: number; balance: number; monthKey: string; monthLabel: string; dueDate: string; lateFee: number; totalDue: number }> = {};
+    rentRollEntries.forEach((entry) => {
+      const { month } = parseMonthDay(entry.initialDueMonthDay || "01-01");
+      const todayYear = Number(todayKey.split("-")[0]);
+      const startKey = `${todayYear}-${String(month).padStart(2, "0")}`;
+
+      const months = monthKeySequence(startKey, todayKey);
+      const paymentsForEntry = Object.entries(paymentsByEntryMonth[entry.id] || {}).reduce((sum, [, amt]) => sum + amt, 0);
+
+      let totalLateFeeOutstanding = 0;
+      let totalDueOutstanding = 0;
+      let remainingPaid = paymentsForEntry;
+      let remainingBalance = 0;
+      let firstUnpaidKey = months[0];
+      let firstUnpaidDueDate = "";
+
+      months.forEach((key, idx) => {
+        const dueDate = getMonthDayDate(key, entry.initialDueMonthDay || "01-01");
+        // For past months, assume fully late; for current month compute actual lateness
+        const daysLate = idx < months.length - 1
+          ? 30 // prior months accrue full late fee
+          : Math.max(0, Math.floor((todayMs - toDateMs(dueDate)) / DAY_MS));
+        const initialLateFee = daysLate >= 3 ? 50 : 0; // late after end of 3rd day
+        const perDayLateStart = 5; // begins on 5th day
+        const perDayCount = Math.max(0, daysLate - (perDayLateStart - 1));
+        const perDayLateFee = Math.min(10, perDayCount) * 5; // up to 10 days
+        const cappedLateFee = Math.min(initialLateFee + perDayLateFee, entry.rent * 0.12);
+
+        const monthDue = entry.rent + cappedLateFee;
+
+        if (remainingPaid >= monthDue) {
+          // fully covered; no outstanding late fee for this month
+          remainingPaid -= monthDue;
+        } else {
+          const monthBalance = monthDue - remainingPaid;
+          remainingBalance += monthBalance;
+          totalDueOutstanding += monthBalance;
+          totalLateFeeOutstanding += cappedLateFee;
+          remainingPaid = 0;
+          if (!firstUnpaidDueDate) {
+            firstUnpaidDueDate = dueDate;
+            firstUnpaidKey = key;
+          }
+        }
+      });
+
+      const effectiveDueDate = firstUnpaidDueDate || getMonthDayDate(nextMonthKey(todayKey), entry.initialDueMonthDay || "01-01");
+      const monthLabel = new Date(toDateMs(effectiveDueDate)).toLocaleString("en-US", { month: "short", year: "numeric", timeZone: "UTC" });
+      map[entry.id] = {
+        paid: paymentsForEntry,
+        balance: remainingBalance,
+        monthKey: firstUnpaidKey,
+        monthLabel,
+        dueDate: effectiveDueDate,
+        lateFee: totalLateFeeOutstanding,
+        totalDue: totalDueOutstanding,
+      };
+    });
+    return map;
+  }, [rentRollEntries, rentPayments]);
+
+  const downloadCsv = useCallback((filename: string, rows: (string | number)[][]) => {
+    const csv = rows.map(r => r.map(csvEscape).join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    link.style.display = "none";
+    document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}, []);
+
+  const downloadXlsx = useCallback((filename: string, sheets: { name: string; rows: (string | number)[][] }[]) => {
+    const xml = toExcelXml(sheets);
+    const blob = new Blob([xml], { type: "application/vnd.ms-excel" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    link.style.display = "none";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }, []);
+
+  const logExport = useCallback((type: string, format: string, filename: string) => {
+    setExportHistory((prev) => [
+      { id: `exp-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, type, format, filename, timestamp: new Date().toISOString() },
+      ...prev,
+    ]);
+  }, []);
+
+  const exportMainLedger = () => {
+    const rows: (string | number)[][] = [
+      ["Date", "Type", "Amount", "Description", "Source", "Property/Project", "Category", "Note"],
+    ];
+    // Rent payments
+    rentPayments.forEach((p) => {
+      const entry = rentRollEntries.find((e) => e.id === p.rentRollEntryId);
+      const propertyName = entry ? rentRollPropertyMap[entry.propertyId]?.name || "Unlinked Property" : "Unlinked Property";
+      const desc = entry ? `Rent payment - ${entry.unit}` : "Rent payment";
+      rows.push([p.date, "Income", p.amount, desc, "Rent Payment", propertyName, "Rent", p.note || ""]);
+    });
+    // Project transactions
+    Object.entries(transactions).forEach(([projIdStr, txns]) => {
+      const projId = Number(projIdStr);
+      const projName = epsProjectNameById(projId) || `Project ${projId}`;
+      txns.forEach((t) => {
+        rows.push([t.date, t.type, t.amount, t.description, "Project", projName, t.category, t.subCategory || ""]);
+      });
+    });
+    rows.sort((a, b) => toDateMs(String(b[0])) - toDateMs(String(a[0])));
+    if (exportFormat === "csv") {
+      downloadCsv("main-ledger.csv", rows);
+      logExport("Main Ledger", "CSV", "main-ledger.csv");
+    } else {
+      downloadXlsx("main-ledger.xls", [{ name: "Main Ledger", rows }]);
+      logExport("Main Ledger", "XLSX", "main-ledger.xls");
+    }
+  };
+
+  const exportPropertyLedger = () => {
+    if (exportFormat === "csv") {
+      rentRollProperties.forEach((prop) => {
+        const rows: (string | number)[][] = [["Date", "Type", "Amount", "Description", "Source", "Category", "Note"]];
+        const inferredProjectId = getPropertyProjectId(prop);
+        const includePayments = isProjectAcquired(inferredProjectId);
+        const linkedTxns = inferredProjectId ? (transactions[inferredProjectId] || []) : [];
+        linkedTxns
+          .slice()
+          .sort((a, b) => toDateMs(b.date) - toDateMs(a.date))
+          .forEach((t) => {
+            rows.push([t.date, t.type, t.amount, t.description, "Project", t.category, t.subCategory || ""]);
+          });
+        if (includePayments) {
+          rentPayments
+            .filter((p) => rentRollEntries.find((e) => e.id === p.rentRollEntryId)?.propertyId === prop.id)
+            .sort((a, b) => toDateMs(b.date) - toDateMs(a.date))
+            .forEach((p) => {
+              const entry = rentRollEntries.find((e) => e.id === p.rentRollEntryId);
+              rows.push([p.date, "Income", p.amount, entry ? `Rent payment - ${entry.unit}` : "Rent payment", "Rent Payment", "Rent", p.note || ""]);
+            });
+        }
+        const filename = `property-ledger-${slugify(prop.name)}.csv`;
+        downloadCsv(filename, rows);
+        logExport(`Property Ledger (${prop.name})`, "CSV", filename);
+      });
+    } else {
+      const sheets = rentRollProperties.map((prop) => {
+        const rows: (string | number)[][] = [["Date", "Type", "Amount", "Description", "Source", "Category", "Note"]];
+        const inferredProjectId = getPropertyProjectId(prop);
+        const includePayments = isProjectAcquired(inferredProjectId);
+        const linkedTxns = inferredProjectId ? (transactions[inferredProjectId] || []) : [];
+        linkedTxns
+          .slice()
+          .sort((a, b) => toDateMs(b.date) - toDateMs(a.date))
+          .forEach((t) => {
+            rows.push([t.date, t.type, t.amount, t.description, "Project", t.category, t.subCategory || ""]);
+          });
+        if (includePayments) {
+          rentPayments
+            .filter((p) => rentRollEntries.find((e) => e.id === p.rentRollEntryId)?.propertyId === prop.id)
+            .sort((a, b) => toDateMs(b.date) - toDateMs(a.date))
+            .forEach((p) => {
+              const entry = rentRollEntries.find((e) => e.id === p.rentRollEntryId);
+              rows.push([p.date, "Income", p.amount, entry ? `Rent payment - ${entry.unit}` : "Rent payment", "Rent Payment", "Rent", p.note || ""]);
+            });
+        }
+        return { name: prop.name.slice(0, 28) || "Property", rows };
+      });
+      downloadXlsx("property-ledgers.xls", sheets);
+      logExport("Property Ledgers", "XLSX", "property-ledgers.xls");
+    }
+  };
+
+  const exportRentRollLedger = () => {
+    if (exportFormat === "csv") {
+      rentRollProperties.forEach((prop) => {
+        const rows: (string | number)[][] = [["Date", "Tenant/Unit", "Amount", "Note"]];
+        rentRollEntries
+          .filter((e) => e.propertyId === prop.id)
+          .forEach((entry) => {
+            rentPayments
+              .filter((p) => p.rentRollEntryId === entry.id)
+              .sort((a, b) => toDateMs(b.date) - toDateMs(a.date))
+              .forEach((p) => {
+                rows.push([p.date, `${entry.unit} - ${entry.tenant || "Vacant"}`, p.amount, p.note || ""]);
+              });
+          });
+        const filename = `rent-roll-${slugify(prop.name)}.csv`;
+        downloadCsv(filename, rows);
+        logExport(`Rent Roll (${prop.name})`, "CSV", filename);
+      });
+    } else {
+      const sheets = rentRollProperties.map((prop) => {
+        const rows: (string | number)[][] = [["Date", "Tenant/Unit", "Amount", "Note"]];
+        rentRollEntries
+          .filter((e) => e.propertyId === prop.id)
+          .forEach((entry) => {
+            rentPayments
+              .filter((p) => p.rentRollEntryId === entry.id)
+              .sort((a, b) => toDateMs(b.date) - toDateMs(a.date))
+              .forEach((p) => {
+                rows.push([p.date, `${entry.unit} - ${entry.tenant || "Vacant"}`, p.amount, p.note || ""]);
+              });
+          });
+        return { name: prop.name.slice(0, 28), rows };
+      });
+      downloadXlsx("rent-roll-ledger.xls", sheets);
+      logExport("Rent Roll Ledgers", "XLSX", "rent-roll-ledger.xls");
+    }
+  };
+  const rentRollSummary = useMemo(() => {
+    const totalUnits = filteredRentRoll.length;
+    const occupiedUnits = filteredRentRoll.filter((r) => r.status === "Occupied").length;
+    const potential = filteredRentRoll.reduce((sum, r) => sum + r.rent, 0);
+    const collected = filteredRentRoll.reduce((sum, r) => {
+      const roll = paymentRollup[r.id];
+      if (!roll) return sum;
+      const paidApplied = Math.min(roll.paid, roll.totalDue);
+      return sum + paidApplied;
+    }, 0);
+    const delinquent = filteredRentRoll.reduce((sum, r) => {
+      const roll = paymentRollup[r.id];
+      const totalDue = roll ? roll.totalDue : r.rent;
+      const paidApplied = roll ? Math.min(roll.paid, roll.totalDue) : 0;
+      return sum + Math.max(0, totalDue - paidApplied);
+    }, 0);
+    const occupancyRate = totalUnits ? Math.round((occupiedUnits / totalUnits) * 100) : 0;
+    return { totalUnits, occupancyRate, potential, collected, delinquent, occupiedUnits };
+  }, [filteredRentRoll, paymentRollup]);
+
+  const getRemainingBalance = useCallback((entryId: string) => {
+    const entry = rentRollEntries.find((e) => e.id === entryId);
+    if (!entry) return 0;
+    const roll = paymentRollup[entryId];
+    return roll ? roll.balance : entry.rent;
+  }, [paymentRollup, rentRollEntries]);
 
   // Activity editing state
   const [editingCell, setEditingCell] = useState<EditingCell | null>(null);
@@ -3325,18 +5516,24 @@ export default function DashboardPage() {
   const [resourceManagementDialog, setResourceManagementDialog] = useState(false);
 
   useEffect(() => {
-    setEpsNodes(MOCK_EPS);
-
-    const initialExpanded = new Set<number>();
-    let current = findNode(MOCK_EPS, 5);
-    while (current && current.parentId !== null) {
-      initialExpanded.add(current.parentId);
-      current = findNode(MOCK_EPS, current.parentId);
+    if (activityView !== "gantt" || mode !== "Activities") {
+      setGanttCreateMode(false);
+      setNewActivityDraft(null);
     }
-    setExpanded(initialExpanded);
-    setSelectedNodeId(5);
-    setActiveProjectId(5);
-  }, []);
+  }, [activityView, mode]);
+  useEffect(() => {
+    if (mode === "Statements") {
+      loadStatements();
+    }
+    if (mode === "RentRoll") {
+      loadRentData();
+    }
+  }, [mode, loadStatements, loadRentData]);
+
+  useEffect(() => {
+    loadDbData();
+    loadRentData();
+  }, [loadDbData, loadRentData]);
 
   // --- EPS Node Operations ---
   const handleNodeClick = useCallback((node: EpsNode) => {
@@ -3367,7 +5564,7 @@ export default function DashboardPage() {
     setModalValue("");
   };
 
-  const handleConfirmAdd = () => {
+  const handleConfirmAdd = async () => {
     if (!modalMode || modalMode !== "add" || !pendingAddConfig) {
       setModalMode(null);
       return;
@@ -3379,34 +5576,37 @@ export default function DashboardPage() {
       return;
     }
 
-    const nextId = getNextId(epsNodes);
-    const newNode: EpsNode = {
-      id: nextId,
-      parentId: pendingAddConfig.parentId,
-      type: pendingAddConfig.type,
-      name: trimmed,
-    };
-
-    setEpsNodes((prev) => [...prev, newNode]);
-
-    setSelectedNodeId(nextId);
-    if (pendingAddConfig.parentId != null) {
-      setExpanded((prev) => {
-        const next = new Set(prev);
-        next.add(pendingAddConfig.parentId!);
-        return next;
-      });
+    if (pendingAddConfig.type !== "project") {
+      alert("Only projects can be created from this view right now.");
+      setPendingAddConfig(null);
+      setModalMode(null);
+      return;
     }
 
-    if (newNode.type === 'project') {
-      setProjectDetails(prev => ({
-        ...prev,
-        [newNode.id]: DEFAULT_BRRRR_FIELDS.map((d, i) => ({ ...d, id: `D${i + 1}` })),
-      }));
-      setCustomFormulas(prev => ({
-        ...prev,
-        [newNode.id]: [],
-      }));
+    try {
+      const today = toDateString(getCentralTodayMs());
+      const code = `PRJ-${Date.now().toString().slice(-5)}`;
+      const res = await fetch("/api/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: trimmed, code, startDate: today }),
+      });
+      if (!res.ok) throw new Error("Failed to create project");
+      const data = await res.json();
+      const project = data.project || {};
+      const newNode: EpsNode = {
+        id: Number(project.id),
+        parentId: null,
+        type: "project",
+        name: project.name || trimmed,
+      };
+
+      setEpsNodes((prev) => [...prev, newNode]);
+      setSelectedNodeId(newNode.id);
+      setActiveProjectId(newNode.id);
+    } catch (err) {
+      console.error("Failed to add project", err);
+      alert("Failed to add project. Please try again.");
     }
 
     setPendingAddConfig(null);
@@ -3432,6 +5632,14 @@ export default function DashboardPage() {
       setModalMode(null);
       setRenameTarget(null);
       return;
+    }
+
+    if (renameTarget.type === "project") {
+      fetch("/api/projects", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: renameTarget.id, name: trimmed }),
+      }).catch(err => console.error("Failed to rename project", err));
     }
 
     setEpsNodes((prev) =>
@@ -3464,6 +5672,11 @@ export default function DashboardPage() {
       });
     };
     collect(contextMenu.node.id);
+
+    if (contextMenu.node.type === "project") {
+      fetch(`/api/projects?id=${contextMenu.node.id}`, { method: "DELETE" })
+        .catch(err => console.error("Failed to delete project", err));
+    }
 
     const remaining = epsNodes.filter((n) => !idsToDelete.has(n.id));
     setEpsNodes(remaining);
@@ -3508,59 +5721,114 @@ export default function DashboardPage() {
       return;
     }
 
-    const nextId = getNextId(epsNodes);
-    const newName = `${nodeToDupe.name} (Copy)`;
-
-    const newNode: EpsNode = {
-      id: nextId,
-      parentId: nodeToDupe.parentId,
-      type: nodeToDupe.type,
-      name: newName,
-    };
-
-    setEpsNodes(prev => [...prev, newNode]);
-
-    if (nodeToDupe.type === 'project') {
-      const projectActivities = activities[nodeToDupe.id] || [];
-      let activityIdCounter = parseInt(getNextActivityId(activities).replace(/^[A-Z]/, ''));
-
-      const newActivities: Activity[] = projectActivities.map(a => {
-        const newId = `A${(activityIdCounter).toString().padStart(4, '0')}`;
-        activityIdCounter += 10;
-        return {
-          ...a,
-          id: newId,
-        };
-      });
-      setActivities(prev => ({ ...prev, [nextId]: newActivities }));
-
-      setProjectDetails(prev => ({
-        ...prev,
-        [nextId]: (projectDetails[nodeToDupe.id] || []).map((d, i) => ({ ...d, id: `D${i + 1}` })),
-      }));
-
-      setCustomFormulas(prev => ({
-        ...prev,
-        [nextId]: (customFormulas[nodeToDupe.id] || []).map((f, i) => ({ ...f, id: `CF${Date.now()}${i}` })),
-      }));
+    if (nodeToDupe.type !== 'project') {
+      alert("Duplicating non-project nodes is not supported.");
+      setContextMenu({ x: 0, y: 0, node: null, type: null, activity: null });
+      return;
     }
 
-    setContextMenu({ x: 0, y: 0, node: null, type: null, activity: null });
+    const newName = `${nodeToDupe.name} (Copy)`;
+    fetch("/api/projects", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: newName, code: `PRJ-${Date.now().toString().slice(-5)}`, startDate: toDateString(getCentralTodayMs()) }),
+    })
+      .then(res => res.json())
+      .then((data) => {
+        const project = data.project || {};
+        const newNode: EpsNode = {
+          id: Number(project.id),
+          parentId: null,
+          type: "project",
+          name: project.name || newName,
+        };
+        setEpsNodes(prev => [...prev, newNode]);
+        setSelectedNodeId(newNode.id);
+        setActiveProjectId(newNode.id);
+      })
+      .catch(err => console.error("Failed to duplicate project", err))
+      .finally(() => setContextMenu({ x: 0, y: 0, node: null, type: null, activity: null }));
   };
 
   // --- Activity & Transaction Operations ---
   const handleStartNewActivity = () => {
     if (!activeProjectId) return;
+    setGanttCreateMode(false);
+    setNewActivityDraft(null);
     setNewActivityDialog(true);
   };
 
-  const handleAddActivity = (activity: Activity) => {
+  const handleAddActivity = useCallback(async (activity: Activity) => {
     if (!activeProjectId) return;
-    setActivities(prev => ({
-      ...prev,
-      [activeProjectId]: [...(prev[activeProjectId] || []), activity]
-    }));
-  };
+
+    try {
+      const existingWbs = wbsNodesDb.find(
+        (n) => n.projectId === activeProjectId && n.code === activity.wbs
+      );
+      let wbsId = existingWbs?.id;
+      if (!wbsId) {
+        const resWbs = await fetch("/api/wbs", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            projectId: activeProjectId,
+            code: activity.wbs || "1.0",
+            name: activity.name,
+            parentId: null,
+            sortOrder: 0,
+          }),
+        });
+        if (resWbs.ok) {
+          const data = await resWbs.json();
+          wbsId = Number(data.node?.id);
+          const createdNode: DbWbsNode = {
+            id: wbsId,
+            projectId: activeProjectId,
+            code: activity.wbs || "1.0",
+            name: activity.name,
+            parentId: null,
+          };
+          setWbsNodesDb((prev) => [...prev, createdNode]);
+        }
+      }
+
+      if (!wbsId) throw new Error("Unable to resolve WBS for activity");
+
+      const res = await fetch("/api/activities", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId: activeProjectId,
+          wbsId: wbsId,
+          code: activity.wbs || activity.id,
+          name: activity.name,
+          bucket: activity.bucket,
+          property: activity.property,
+          priority: "Medium",
+          status: activity.status,
+          startDate: activity.start,
+          finishDate: activity.finish,
+          durationDays: activity.duration,
+          percentComplete: activity.pct,
+          responsible: activity.responsible,
+        }),
+      });
+      if (!res.ok) throw new Error("Failed to create activity");
+      const data = await res.json();
+      const saved = data.activity || {};
+      const mapped: Activity = {
+        ...activity,
+        id: String(saved.id || activity.id),
+        wbs: activity.wbs || "",
+      };
+      setActivities(prev => ({
+        ...prev,
+        [activeProjectId]: [...(prev[activeProjectId] || []), mapped]
+      }));
+    } catch (err) {
+      console.error("Failed to add activity", err);
+    }
+  }, [activeProjectId, wbsNodesDb]);
 
   const handleUpdateActivity = (
     activityId: string,
@@ -3573,6 +5841,23 @@ export default function DashboardPage() {
       ? parseFloat(value)
       : value;
 
+    const payload: any = { id: Number(activityId) };
+    if (field === "name") payload.name = value;
+    if (field === "status") payload.status = value;
+    if (field === "responsible") payload.responsible = value;
+    if (field === "duration") payload.durationDays = newValue;
+    if (field === "pct") payload.percentComplete = newValue;
+    if (field === "start" || field === "finish") {
+      const act = activities[activeProjectId]?.find(a => a.id === activityId);
+      payload.startDate = field === "start" ? value : act?.start;
+      payload.finishDate = field === "finish" ? value : act?.finish;
+    }
+    fetch("/api/activities", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }).catch(err => console.error("Failed to update activity", err));
+
     setActivities(prev => ({
       ...prev,
       [activeProjectId]: (prev[activeProjectId] || []).map(a =>
@@ -3583,6 +5868,9 @@ export default function DashboardPage() {
 
   const handleDeleteActivity = () => {
     if (!activeProjectId || !contextMenu.activity) return;
+
+    fetch(`/api/activities?id=${Number(contextMenu.activity.id)}`, { method: "DELETE" })
+      .catch(err => console.error("Failed to delete activity", err));
 
     setActivities(prev => ({
       ...prev,
@@ -3612,21 +5900,73 @@ export default function DashboardPage() {
 
   const deleteActivityById = (activityId: string) => {
     if (!activeProjectId) return;
+    fetch(`/api/activities?id=${Number(activityId)}`, { method: "DELETE" }).catch(err => console.error("Failed to delete activity", err));
     setActivities(prev => ({
       ...prev,
       [activeProjectId]: (prev[activeProjectId] || []).filter(a => a.id !== activityId)
     }));
   };
 
-  const handleAddTransaction = (transaction: Omit<Transaction, "id">) => {
-    if (!activeProjectId) return;
-    const newTransaction: Transaction = {
-      ...transaction,
-      id: `T${Date.now()}`,
-    };
+  const handleAddTransaction = useCallback(async (transaction: Omit<Transaction, "id">, projectIdOverride?: number) => {
+    const targetProjectId = projectIdOverride || activeProjectId;
+    if (!targetProjectId) return;
+    try {
+      const res = await fetch("/api/transactions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...transaction,
+          projectId: targetProjectId,
+          activityId: transaction.activityId ? Number(transaction.activityId) : null,
+        }),
+      });
+      if (!res.ok) throw new Error("Failed to create transaction");
+      const data = await res.json();
+      const saved = data.transaction || {};
+      const newTransaction: Transaction = {
+        ...transaction,
+        id: String(saved.id || transaction.id || `T${Date.now()}`),
+      };
+      setTransactions(prev => ({
+        ...prev,
+        [targetProjectId]: [...(prev[targetProjectId] || []), newTransaction]
+      }));
+    } catch (err) {
+      console.error("Failed to add transaction", err);
+    }
+  }, [activeProjectId]);
+
+  const handleUpdateTransaction = (transaction: Transaction, projectIdOverride?: number) => {
+    const targetProjectId = projectIdOverride || activeProjectId;
+    if (!targetProjectId) return;
+    fetch("/api/transactions", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: Number(transaction.id),
+        projectId: targetProjectId,
+        activityId: transaction.activityId ? Number(transaction.activityId) : null,
+        type: transaction.type,
+        category: transaction.category,
+        subCategory: transaction.subCategory,
+        date: transaction.date,
+        amount: transaction.amount,
+        description: transaction.description,
+      }),
+    }).catch(err => console.error("Failed to update transaction", err));
     setTransactions(prev => ({
       ...prev,
-      [activeProjectId]: [...(prev[activeProjectId] || []), newTransaction]
+      [targetProjectId]: (prev[targetProjectId] || []).map(t => t.id === transaction.id ? transaction : t),
+    }));
+  };
+
+  const handleDeleteTransaction = (transactionId: string, projectIdOverride?: number) => {
+    const targetProjectId = projectIdOverride || activeProjectId;
+    if (!targetProjectId) return;
+    fetch(`/api/transactions?id=${Number(transactionId)}`, { method: "DELETE" }).catch(err => console.error("Failed to delete transaction", err));
+    setTransactions(prev => ({
+      ...prev,
+      [targetProjectId]: (prev[targetProjectId] || []).filter(t => t.id !== transactionId),
     }));
   };
 
@@ -3650,6 +5990,45 @@ export default function DashboardPage() {
   };
 
   const handleSaveAllResources = (updatedResources: Resource[]) => {
+    const currentIds = new Set(resources.map(r => r.id));
+    const updatedIds = new Set(updatedResources.map(r => r.id));
+    // deletions
+    resources.forEach((r) => {
+      if (!updatedIds.has(r.id) && r.id && !isNaN(Number(r.id))) {
+        fetch(`/api/resources?id=${Number(r.id)}`, { method: "DELETE" }).catch(err => console.error("Failed to delete resource", err));
+      }
+    });
+    // upserts
+    updatedResources.forEach((r) => {
+      const payload = {
+        name: r.name,
+        role: r.type,
+        costType: r.type,
+        unitType: r.rateUnit,
+        standardRate: r.rate,
+      };
+      if (r.id && !isNaN(Number(r.id)) && currentIds.has(r.id)) {
+        fetch("/api/resources", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: Number(r.id), ...payload }),
+        }).catch(err => console.error("Failed to update resource", err));
+      } else {
+        fetch("/api/resources", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        })
+          .then(res => res.json())
+          .then((data) => {
+            const resrc = data.resource;
+            if (resrc && resrc.id) {
+              setResources(prev => prev.map(pr => pr === r ? { ...r, id: String(resrc.id) } : pr));
+            }
+          })
+          .catch(err => console.error("Failed to create resource", err));
+      }
+    });
     setResources(updatedResources);
   };
 
@@ -3658,6 +6037,12 @@ export default function DashboardPage() {
     const startMs = toDateMs(newStart);
     const finishMs = toDateMs(newFinish);
     const durationDays = Math.max(1, Math.round((finishMs - startMs) / DAY_MS) + 1);
+
+    fetch("/api/activities", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: Number(activityId), startDate: newStart, finishDate: newFinish, durationDays }),
+    }).catch(err => console.error("Failed to update activity dates", err));
 
     setActivities(prev => ({
       ...prev,
@@ -3696,6 +6081,46 @@ export default function DashboardPage() {
   // --- Project Details Operations ---
   const handleUpdateProjectDetails = (updatedDetails: ProjectDetail[]) => {
     if (!activeProjectId) return;
+    const prevDetails = projectDetails[activeProjectId] || [];
+    const prevIds = new Set(prevDetails.map(d => d.id));
+    const updatedIds = new Set(updatedDetails.map(d => d.id));
+
+    // deletions
+    prevDetails.forEach((d) => {
+      if (!updatedIds.has(d.id) && d.id && !isNaN(Number(d.id))) {
+        fetch(`/api/project-details?id=${Number(d.id)}`, { method: "DELETE" }).catch(err => console.error("Failed to delete project detail", err));
+      }
+    });
+
+    // upserts
+    updatedDetails.forEach((d) => {
+      const payload = { projectId: activeProjectId, variable: d.variable, value: d.value };
+      if (d.id && !isNaN(Number(d.id))) {
+        fetch("/api/project-details", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: Number(d.id), ...payload }),
+        }).catch(err => console.error("Failed to update project detail", err));
+      } else {
+        fetch("/api/project-details", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        })
+          .then(res => res.json())
+          .then((data) => {
+            const detail = data.detail;
+            if (detail?.id) {
+              setProjectDetails(prev => ({
+                ...prev,
+                [activeProjectId]: updatedDetails.map(ud => ud === d ? { ...ud, id: String(detail.id) } : ud),
+              }));
+            }
+          })
+          .catch(err => console.error("Failed to create project detail", err));
+      }
+    });
+
     setProjectDetails(prev => ({
       ...prev,
       [activeProjectId]: updatedDetails,
@@ -3726,13 +6151,33 @@ export default function DashboardPage() {
     }));
   };
 
+  const upsertProjectDetail = useCallback((projectId: number, variable: string, value: string) => {
+    setProjectDetails(prev => {
+      const current = prev[projectId] || [];
+      const idx = current.findIndex(d => d.variable === variable);
+      if (idx >= 0) {
+        const next = [...current];
+        next[idx] = { ...next[idx], value };
+        return { ...prev, [projectId]: next };
+      }
+      const nextIdNum = current.length > 0 ? Math.max(...current.map(d => parseInt(d.id.substring(1)))) + 1 : 1;
+      const newDetail: ProjectDetail = { id: `D${nextIdNum}`, variable, value };
+      return { ...prev, [projectId]: [...current, newDetail] };
+    });
+  }, []);
+
   // --- Custom Formula Operations ---
   const handleCreateFormula = () => {
+    if (selectedNode && selectedNode.type === "project") {
+      setActiveProjectId(selectedNode.id);
+    }
     setEditingFormula(null);
     setFormulaDialogOpen(true);
   };
 
   const handleEditFormula = (formula: CustomFormula) => {
+    const projectId = resolveActiveProjectId();
+    if (projectId) setActiveProjectId(projectId);
     setEditingFormula(formula);
     setFormulaDialogOpen(true);
   };
@@ -3769,6 +6214,698 @@ export default function DashboardPage() {
     });
   };
 
+  const handleSaveFormulaPreset = (formula: CustomFormula) => {
+    setFormulaPresets((prev) => {
+      const existingIdx = prev.findIndex(p => p.id === formula.id);
+      if (existingIdx >= 0) {
+        const next = [...prev];
+        next[existingIdx] = formula;
+        return next;
+      }
+      return [...prev, { ...formula, id: formula.id.startsWith("P") ? formula.id : `P${Date.now()}` }];
+    });
+  };
+
+  const handleDeletePreset = (presetId: string) => {
+    setFormulaPresets(prev => prev.filter(p => p.id !== presetId));
+  };
+
+  const handleSaveTaxRate = (taxRate: TaxRate) => {
+    setTaxRates((prev) => {
+      const idx = prev.findIndex(tr => tr.id === taxRate.id);
+      if (idx >= 0) {
+        const next = [...prev];
+        next[idx] = taxRate;
+        return next;
+      }
+      return [...prev, taxRate];
+    });
+  };
+
+  const handleDeleteTaxRate = (id: string) => {
+    setTaxRates(prev => prev.filter(tr => tr.id !== id));
+  };
+
+  const resolveActiveProjectId = () => {
+    if (activeProjectId) return activeProjectId;
+    if (selectedNode && selectedNode.type === "project") return selectedNode.id;
+    return null;
+  };
+
+  const handleApplyPresetToProject = (presetId: string) => {
+    const projectId = resolveActiveProjectId();
+    if (!projectId) return;
+    const preset = formulaPresets.find(p => p.id === presetId);
+    if (!preset) return;
+    const cloned: CustomFormula = { ...preset, id: `CF${Date.now()}` };
+    setCustomFormulas(prev => ({
+      ...prev,
+      [projectId]: [...(prev[projectId] || []), cloned],
+    }));
+    setPresetPickerOpen(false);
+
+    // Auto-generate missing detail variables for this preset and surface them in the details panel
+    const placeholderVars = extractVariables(preset.formula);
+    const taxVarNames = new Set(Object.keys(taxVariableMap));
+
+    setProjectDetails(prev => {
+      const existingDetails = prev[projectId] || [];
+      const existingDetailNames = new Set(existingDetails.map(d => d.variable));
+      const existingFormulaNames = new Set((customFormulas[projectId] || []).map(f => f.name));
+
+      const missingDetailVars = placeholderVars.filter(
+        (v) => !existingDetailNames.has(v) && !existingFormulaNames.has(v) && !taxVarNames.has(v)
+      );
+
+      if (!missingDetailVars.length) return prev;
+
+      const nextIdNum = existingDetails.length > 0 ? Math.max(...existingDetails.map(d => parseInt(d.id.substring(1)))) + 1 : 1;
+      let counter = nextIdNum;
+      const newDetails: ProjectDetail[] = missingDetailVars.map((name) => ({
+        id: `D${counter++}`,
+        variable: name,
+        value: "0",
+      }));
+
+      return {
+        ...prev,
+        [projectId]: [...existingDetails, ...newDetails],
+      };
+    });
+  };
+
+  const openPresetPicker = () => {
+    if (selectedNode && selectedNode.type === "project") {
+      setActiveProjectId(selectedNode.id);
+    }
+    setPresetPickerOpen(true);
+  };
+
+  const persistPipelineMeta = (projectId: number, meta: ProjectPipelineMeta) => {
+    const payload = {
+      projectId,
+      status: meta.status,
+      sellerName: meta.seller?.name || "",
+      sellerPhone: meta.seller?.phone || "",
+      sellerEmail: meta.seller?.email || "",
+      selectedEmailOptionIds: (meta.selectedEmailOptionIds || []).join(","),
+    };
+    fetch("/api/pipeline", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }).then(res => {
+      if (!res.ok) {
+        return fetch("/api/pipeline", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+      }
+      return res;
+    }).catch(err => console.error("Failed to persist pipeline meta", err));
+  };
+
+  const handleProjectStatusChange = (projectId: number, status: ProjectStatus) => {
+    const existing = pipelineMeta[projectId] || { seller: { name: "", phone: "", email: "" }, selectedEmailOptionIds: [] as string[], status: "under_contract" as ProjectStatus };
+    if (existing.status === "under_contract" && status === "acquired") {
+      setPendingAcquireProjectId(projectId);
+      setAcquireConfirmOpen(true);
+      return;
+    }
+    const nextMeta = { ...existing, status };
+    setPipelineMeta(prev => ({
+      ...prev,
+      [projectId]: nextMeta,
+    }));
+    persistPipelineMeta(projectId, nextMeta);
+  };
+
+  const confirmAcquire = () => {
+    if (pendingAcquireProjectId == null) {
+      setAcquireConfirmOpen(false);
+      return;
+    }
+    setPipelineMeta(prev => {
+      const existing = prev[pendingAcquireProjectId] || { seller: { name: "", phone: "", email: "" }, selectedEmailOptionIds: [] as string[], status: "under_contract" as ProjectStatus };
+      const next = { ...existing, status: "acquired" as ProjectStatus };
+      persistPipelineMeta(pendingAcquireProjectId, next);
+      return { ...prev, [pendingAcquireProjectId]: next };
+    });
+    setAcquireConfirmOpen(false);
+    setPendingAcquireProjectId(null);
+  };
+
+  const epsProjects = useMemo(() => epsNodes.filter(n => n.type === "project"), [epsNodes]);
+  const epsProjectMap = useMemo(() => {
+    const map: Record<number, string> = {};
+    epsProjects.forEach((p) => { map[p.id] = p.name; });
+    return map;
+  }, [epsProjects]);
+  const epsProjectNameById = useCallback((id: number | null | undefined) => (id && epsProjectMap[id]) || "", [epsProjectMap]);
+  const isProjectAcquired = useCallback((id: number | null | undefined) => {
+    if (!id) return true;
+    return pipelineMeta[id]?.status === "acquired";
+  }, [pipelineMeta]);
+  const getPropertyProjectId = useCallback((prop: RentRollProperty) => {
+    const inferred = epsProjects.find(p => p.name.toLowerCase() === prop.name.toLowerCase());
+    return prop.linkedProjectId ?? inferred?.id ?? null;
+  }, [epsProjects]);
+
+  const ensureRentProperty = useCallback(async (name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) return null;
+    const existing = rentRollProperties.find((p) => p.name.toLowerCase() === trimmed.toLowerCase());
+    if (existing) return existing.id;
+    try {
+      const res = await fetch("/api/rent/properties", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: trimmed }),
+      });
+      if (!res.ok) throw new Error("Failed to create property");
+      const data = await res.json();
+      const prop = data.property || {};
+      const newProperty: RentRollProperty = { id: String(prop.id || `PROP-${Date.now()}`), name: prop.name || trimmed, linkedProjectId: prop.linkedProjectId ? Number(prop.linkedProjectId) : null };
+      setRentRollProperties((prev) => [...prev, newProperty]);
+      return newProperty.id;
+    } catch (err) {
+      console.error("Failed to create property", err);
+      return null;
+    }
+  }, [rentRollProperties]);
+
+  const handleSaveRentRollUnit = async () => {
+    const propertyId = await ensureRentProperty(rentRollForm.propertyName);
+    if (!propertyId || !rentRollForm.unit.trim()) return;
+    const rent = parseFloat(rentRollForm.rent) || 0;
+    const bedrooms = parseInt(rentRollForm.bedrooms || "0", 10) || 0;
+    const bathrooms = parseInt(rentRollForm.bathrooms || "0", 10) || 0;
+    const initialDueMonthDay = rentRollForm.initialDueMonthDay || "01-01";
+    if (editingRentRollId) {
+      try {
+        const res = await fetch("/api/rent/units", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: Number(editingRentRollId),
+            propertyId: Number(propertyId),
+            unit: rentRollForm.unit.trim(),
+            tenant: rentRollForm.tenant.trim() || "Vacant",
+            status: rentRollForm.status,
+            rent,
+            leaseEnd: rentRollForm.leaseEnd || "TBD",
+            initialDueMonthDay,
+            bedrooms,
+            bathrooms,
+          }),
+        });
+        if (!res.ok) throw new Error("Failed to update unit");
+        const data = await res.json();
+        const unit = data.unit || {};
+        setRentRollEntries((prev) =>
+          prev.map((entry) =>
+            entry.id === editingRentRollId
+              ? {
+                  ...entry,
+                  propertyId,
+                  unit: unit.unit || rentRollForm.unit.trim(),
+                  tenant: unit.tenant || rentRollForm.tenant.trim() || "Vacant",
+                  status: (unit.status as RentRollStatus) || rentRollForm.status,
+                  rent: Number(unit.rent ?? rent),
+                  leaseEnd: unit.leaseEnd || rentRollForm.leaseEnd || "TBD",
+                  initialDueMonthDay: unit.initialDueMonthDay || initialDueMonthDay,
+                  bedrooms: Number(unit.bedrooms ?? bedrooms),
+                  bathrooms: Number(unit.bathrooms ?? bathrooms),
+                }
+              : entry
+          )
+        );
+      } catch (err) {
+        console.error("Failed to update unit", err);
+      }
+    } else {
+      try {
+        const res = await fetch("/api/rent/units", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            propertyId: Number(propertyId),
+            unit: rentRollForm.unit.trim(),
+            tenant: rentRollForm.tenant.trim() || "Vacant",
+            status: rentRollForm.status,
+            rent,
+            leaseEnd: rentRollForm.leaseEnd || "TBD",
+            initialDueMonthDay,
+            bedrooms,
+            bathrooms,
+          }),
+        });
+        if (!res.ok) throw new Error("Failed to create unit");
+        const data = await res.json();
+        const unit = data.unit || {};
+        const newEntry: RentRollEntry = {
+          id: String(unit.id || `RR${Date.now().toString(36)}`),
+          propertyId,
+          unit: unit.unit || rentRollForm.unit.trim(),
+          tenant: unit.tenant || rentRollForm.tenant.trim() || "Vacant",
+          status: (unit.status as RentRollStatus) || rentRollForm.status,
+          rent: Number(unit.rent ?? rent),
+          balance: 0,
+          leaseEnd: unit.leaseEnd || rentRollForm.leaseEnd || "TBD",
+          initialDueMonthDay: unit.initialDueMonthDay || initialDueMonthDay,
+          bedrooms: Number(unit.bedrooms ?? bedrooms),
+          bathrooms: Number(unit.bathrooms ?? bathrooms),
+        };
+        setRentRollEntries((prev) => [...prev, newEntry]);
+      } catch (err) {
+        console.error("Failed to save unit", err);
+      }
+    }
+    setRentRollModalOpen(false);
+    setEditingRentRollId(null);
+    setRentRollForm({
+      propertyName: "",
+      unit: "",
+      tenant: "",
+      status: "Occupied" as RentRollStatus,
+      rent: "",
+      leaseEnd: "",
+      initialDueMonthDay: "",
+      bedrooms: "",
+      bathrooms: "",
+    });
+  };
+
+  const handleEditRentRoll = (entry: RentRollEntry) => {
+    const propertyName = rentRollPropertyMap[entry.propertyId]?.name || "";
+    setRentRollForm({
+      propertyName,
+      unit: entry.unit,
+      tenant: entry.tenant === "Vacant" ? "" : entry.tenant,
+      status: entry.status,
+      rent: entry.rent.toString(),
+      leaseEnd: entry.leaseEnd === "TBD" ? "" : entry.leaseEnd,
+      initialDueMonthDay: entry.initialDueMonthDay || "",
+      bedrooms: entry.bedrooms.toString(),
+      bathrooms: entry.bathrooms.toString(),
+    });
+    setEditingRentRollId(entry.id);
+    setRentRollModalOpen(true);
+  };
+
+  const handleDeleteRentRoll = (entryId: string) => {
+    fetch(`/api/rent/units?id=${Number(entryId)}`, { method: "DELETE" })
+      .catch((err) => console.error("Failed to delete unit", err))
+      .finally(() => {
+        setRentRollEntries((prev) => prev.filter((e) => e.id !== entryId));
+        setRentPayments((prev) => prev.filter((p) => p.rentRollEntryId !== entryId));
+      });
+  };
+
+  const handleOpenPaymentModal = (entry: RentRollEntry) => {
+    const defaultDate = toDateString(getCentralTodayMs());
+    const remaining = getRemainingBalance(entry.id);
+    setRentPaymentModal({
+      open: true,
+      entryId: entry.id,
+      amount: remaining > 0 ? remaining.toString() : "0",
+      date: defaultDate,
+      note: "",
+    });
+  };
+
+  const handleSavePayment = async () => {
+    if (!rentPaymentModal.entryId) return;
+    const entry = rentRollEntries.find((e) => e.id === rentPaymentModal.entryId);
+    if (!entry) return;
+    const remaining = getRemainingBalance(entry.id);
+    const amount = Math.min(remaining, parseFloat(rentPaymentModal.amount) || 0);
+    if (amount <= 0) return;
+    try {
+      const res = await fetch("/api/rent/payments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          rentUnitId: Number(entry.id),
+          amount,
+          date: rentPaymentModal.date || toDateString(getCentralTodayMs()),
+          note: rentPaymentModal.note.trim() || undefined,
+        }),
+      });
+      if (!res.ok) throw new Error("Failed to record payment");
+      const data = await res.json();
+      const payment = data.payment || {};
+      const newPayment: RentPayment = {
+        id: String(payment.id || `PAY${Date.now().toString(36)}`),
+        rentRollEntryId: String(payment.rentUnitId || entry.id),
+        amount: Number(payment.amount ?? amount),
+        date: payment.date ? toDateString(toDateMs(payment.date)) : (rentPaymentModal.date || toDateString(getCentralTodayMs())),
+        note: payment.note || rentPaymentModal.note.trim() || undefined,
+      };
+      setRentPayments((prev) => [...prev, newPayment]);
+    } catch (err) {
+      console.error("Failed to save payment", err);
+    }
+    setRentPaymentModal({ open: false, entryId: null, amount: "", date: toDateString(getCentralTodayMs()), note: "" });
+  };
+
+  const handleSavePropertyLink = () => {
+    if (!linkingPropertyId || !linkTargetProjectId) return;
+    const projectIdNum = Number(linkTargetProjectId);
+    if (!projectIdNum) return;
+    fetch("/api/rent/properties", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: Number(linkingPropertyId), linkedProjectId: projectIdNum }),
+    })
+      .catch((err) => console.error("Failed to link property", err))
+      .finally(() => {
+        setRentRollProperties((prev) =>
+          prev.map((p) => p.id === linkingPropertyId ? { ...p, linkedProjectId: projectIdNum } : p)
+        );
+        setLinkingPropertyId(null);
+        setLinkTargetProjectId("");
+      });
+  };
+
+  const handleUnlinkProperty = (propertyId: string) => {
+    fetch("/api/rent/properties", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: Number(propertyId), linkedProjectId: null }),
+    })
+      .catch((err) => console.error("Failed to unlink property", err))
+      .finally(() => {
+        setRentRollProperties((prev) => prev.map((p) => p.id === propertyId ? { ...p, linkedProjectId: null } : p));
+      });
+  };
+
+  const handleSaveEmployee = () => {
+    const trimmedName = employeeNameInput.trim();
+    const rateNum = parseFloat(employeeRateInput) || 0;
+    if (!trimmedName) return;
+    if (editingEmployee) {
+      fetch("/api/employees", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: Number(editingEmployee.id), name: trimmedName, rate: rateNum }),
+      })
+        .then(res => res.json())
+        .then((data) => {
+          const emp = data.employee || {};
+          setEmployees(prev => prev.map(e => e.id === editingEmployee.id ? { ...e, name: emp.name || trimmedName, rate: Number(emp.rate ?? rateNum) } : e));
+        })
+        .catch(err => console.error("Failed to update employee", err))
+        .finally(() => {
+          setEmployeeFormOpen(false);
+          setEditingEmployee(null);
+          setEmployeeNameInput("");
+          setEmployeeRateInput("");
+        });
+    } else {
+      fetch("/api/employees", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: trimmedName, rate: rateNum }),
+      })
+        .then(res => res.json())
+        .then((data) => {
+          const emp = data.employee || {};
+          const newEmp: Employee = { id: String(emp.id || `EMP${Date.now()}`), name: emp.name || trimmedName, rate: Number(emp.rate ?? rateNum) };
+          setEmployees(prev => [...prev, newEmp]);
+        })
+        .catch(err => console.error("Failed to create employee", err))
+        .finally(() => {
+          setEmployeeFormOpen(false);
+          setEditingEmployee(null);
+          setEmployeeNameInput("");
+          setEmployeeRateInput("");
+        });
+    }
+  };
+
+  const handleEditEmployee = (emp: Employee) => {
+    setEditingEmployee(emp);
+    setEmployeeNameInput(emp.name);
+    setEmployeeRateInput(emp.rate.toString());
+    setEmployeeFormOpen(true);
+  };
+
+  const handleDeleteEmployee = (empId: string) => {
+    fetch(`/api/employees?id=${Number(empId)}`, { method: "DELETE" })
+      .catch(err => console.error("Failed to delete employee", err))
+      .finally(() => {
+        setEmployees(prev => prev.filter(e => e.id !== empId));
+        setTimeEntries(prev => prev.filter(t => t.employeeId !== empId));
+        setPaychecks(prev => prev.filter(p => p.employeeId !== empId));
+      });
+  };
+
+  const weekDays = useMemo(() => {
+    const startMs = toDateMs(laborWeekStart);
+    return Array.from({ length: 7 }).map((_, idx) => {
+      const ms = startMs + idx * DAY_MS;
+      const d = new Date(ms);
+      const label = d.toLocaleDateString("en-US", { weekday: "short" });
+      return { ms, date: toDateString(ms), label };
+    });
+  }, [laborWeekStart]);
+
+  const laborProjects = useMemo(() => epsNodes.filter(n => n.type === "project"), [epsNodes]);
+
+  const addTimeEntry = useCallback((empId: string, date: string, defaultProjectId: number | null) => {
+    fetch("/api/time-entries", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        employeeId: Number(empId),
+        projectId: defaultProjectId,
+        date,
+        hours: 0,
+      }),
+    })
+      .then(res => res.json())
+      .then((data) => {
+        const te = data.timeEntry || {};
+        setTimeEntries(prev => [
+          ...prev,
+          {
+            id: String(te.id || `TE${Date.now()}`),
+            employeeId: empId,
+            projectId: defaultProjectId,
+            date: te.date ? toDateString(toDateMs(te.date)) : date,
+            hours: Number(te.hours ?? 0),
+          }
+        ]);
+      })
+      .catch(err => console.error("Failed to add time entry", err));
+  }, []);
+
+  const updateTimeEntry = useCallback((entryId: string, field: "projectId" | "hours", value: number | null) => {
+    const patch: any = field === "projectId" ? { projectId: value } : { hours: value };
+    fetch("/api/time-entries", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: Number(entryId), ...patch }),
+    }).catch(err => console.error("Failed to update time entry", err));
+    setTimeEntries(prev => prev.map(t => t.id === entryId ? { ...t, [field]: value } : t));
+  }, []);
+
+  const deleteTimeEntry = useCallback((entryId: string) => {
+    fetch(`/api/time-entries?id=${Number(entryId)}`, { method: "DELETE" })
+      .catch(err => console.error("Failed to delete time entry", err))
+      .finally(() => {
+        setTimeEntries(prev => prev.filter(t => t.id !== entryId));
+      });
+  }, []);
+
+  const weekHoursForEmployee = useCallback((empId: string) => {
+    const startMs = toDateMs(laborWeekStart);
+    const endMs = startMs + 6 * DAY_MS;
+    return timeEntries
+      .filter(t => t.employeeId === empId && toDateMs(t.date) >= startMs && toDateMs(t.date) <= endMs)
+      .reduce((sum, t) => sum + (t.hours || 0), 0);
+  }, [laborWeekStart, timeEntries]);
+
+  const handleRecordPaycheck = (emp: Employee) => {
+    const hours = weekHoursForEmployee(emp.id);
+    const amount = hours * emp.rate;
+    const checkNumber = paycheckNumbers[emp.id] || "";
+    if (!checkNumber.trim()) {
+      alert("Enter a check number before recording paycheck.");
+      return;
+    }
+
+    // group hours by project for the selected week
+    const startMs = toDateMs(laborWeekStart);
+    const endMs = startMs + 6 * DAY_MS;
+    const weekEntries = timeEntries.filter(
+      t => t.employeeId === emp.id && toDateMs(t.date) >= startMs && toDateMs(t.date) <= endMs && t.projectId
+    );
+    const hoursByProject = new Map<number, number>();
+    weekEntries.forEach((t) => {
+      if (!t.projectId) return;
+      hoursByProject.set(t.projectId, (hoursByProject.get(t.projectId) || 0) + (t.hours || 0));
+    });
+
+    hoursByProject.forEach((projHours, projId) => {
+      const projAmount = projHours * emp.rate;
+      handleAddTransaction(
+        {
+          date: laborWeekStart,
+          description: `Paycheck - ${emp.name} - ${formatCurrencyCents(projAmount)}`,
+          type: "Outcome",
+          category: "Labor",
+          subCategory: "Payroll",
+          amount: projAmount,
+        },
+        projId
+      );
+    });
+
+    fetch("/api/paychecks", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        employeeId: Number(emp.id),
+        weekStart: laborWeekStart,
+        amount,
+        checkNumber: checkNumber.trim(),
+      }),
+    })
+      .then(res => res.json())
+      .then((data) => {
+        const pc = data.paycheck || {};
+        setPaychecks(prev => [...prev, {
+          id: String(pc.id || `PC${Date.now()}`),
+          employeeId: emp.id,
+          weekStart: pc.weekStart ? toDateString(toDateMs(pc.weekStart)) : laborWeekStart,
+          amount: Number(pc.amount ?? amount),
+          checkNumber: pc.checkNumber || checkNumber.trim(),
+        }]);
+      })
+      .catch(err => console.error("Failed to add paycheck", err));
+    setPaycheckNumbers(prev => ({ ...prev, [emp.id]: "" }));
+  };
+
+  const handleSellerFieldChange = (projectId: number, field: keyof ProjectPipelineMeta["seller"], value: string) => {
+    setPipelineMeta(prev => {
+      const next = {
+        ...(prev[projectId] || { status: "under_contract", seller: { name: "", phone: "", email: "" }, selectedEmailOptionIds: [] }),
+        seller: {
+          ...(prev[projectId]?.seller || { name: "", phone: "", email: "" }),
+          [field]: value,
+        },
+      };
+      persistPipelineMeta(projectId, next);
+      return {
+        ...prev,
+        [projectId]: next,
+      };
+    });
+  };
+
+  const handleToggleEmailOptionForProject = (projectId: number, optionId: string) => {
+    setPipelineMeta(prev => {
+      const current = prev[projectId] || { status: "under_contract", seller: { name: "", phone: "", email: "" }, selectedEmailOptionIds: [] };
+      const setIds = new Set(current.selectedEmailOptionIds);
+      if (setIds.has(optionId)) setIds.delete(optionId); else setIds.add(optionId);
+      const next = { ...current, selectedEmailOptionIds: Array.from(setIds) };
+      persistPipelineMeta(projectId, next);
+      return {
+        ...prev,
+        [projectId]: next,
+      };
+    });
+  };
+
+  const isValidEmail = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+
+  const handleSendSellerEmail = (projectId: number) => {
+    const meta = pipelineMeta[projectId];
+    if (!meta) return;
+    if (!isValidEmail(meta.seller.email)) {
+      alert("Please enter a valid seller email before sending.");
+      return;
+    }
+    const project = findNode(epsNodes, projectId);
+    const selectedOptions = emailOptions.filter(o => meta.selectedEmailOptionIds.includes(o.id));
+    const payload = {
+      projectId,
+      projectName: project?.name || "",
+      seller: meta.seller,
+      options: selectedOptions,
+    };
+    console.log("Webhook payload (stubbed):", payload);
+    alert("Email send queued (stub). Check console for payload.");
+  };
+
+  const handleSaveEmailOption = (option: EmailOption) => {
+    setEmailOptions(prev => {
+      const idx = prev.findIndex(o => o.id === option.id);
+      if (idx >= 0) {
+        const next = [...prev];
+        next[idx] = option;
+        return next;
+      }
+      return [...prev, option];
+    });
+  };
+
+  const handleDeleteEmailOption = (id: string) => {
+    setEmailOptions(prev => prev.filter(o => o.id !== id));
+    setPipelineMeta(prev => {
+      const next = { ...prev };
+      Object.keys(next).forEach(pid => {
+        const meta = next[Number(pid)];
+        if (meta) {
+          next[Number(pid)] = {
+            ...meta,
+            selectedEmailOptionIds: meta.selectedEmailOptionIds.filter(x => x !== id),
+          };
+        }
+      });
+      return next;
+    });
+  };
+
+  const ensureUnderContractDetails = useCallback((projectId: number) => {
+    setProjectDetails(prev => {
+      const existing = prev[projectId] || [];
+      const existingNames = new Set(existing.map(d => d.variable));
+      const missing = UNDER_CONTRACT_DETAIL_FIELDS.filter(f => !existingNames.has(f.variable));
+      if (!missing.length) return prev;
+
+      const nextIdNum = existing.length > 0 ? Math.max(...existing.map(d => parseInt(d.id.substring(1)))) + 1 : 1;
+      let counter = nextIdNum;
+
+      // If ARV Estimate is missing, try to compute with SQFT * 125
+      const sqftDetail = existing.find(d => d.variable === "SQFT" || d.variable === "Square Footage");
+      const sqftVal = sqftDetail ? parseFloat(sqftDetail.value) : 0;
+      const defaultArv = Number.isFinite(sqftVal) ? (sqftVal * 125).toString() : "0";
+
+      const newDetails: ProjectDetail[] = missing.map((m) => {
+        let value = m.value;
+        if (m.variable === "ARV Estimate") value = defaultArv;
+        return { ...m, id: `D${counter++}`, value };
+      });
+
+      return {
+        ...prev,
+        [projectId]: [...existing, ...newDetails],
+      };
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!activeProjectId) return;
+    const status = pipelineMeta[activeProjectId]?.status || "under_contract";
+    if (status === "under_contract") {
+      ensureUnderContractDetails(activeProjectId);
+    }
+  }, [activeProjectId, pipelineMeta, ensureUnderContractDetails]);
+
   const handleProjectSelect = (projectId: number) => {
     setActiveProjectId(projectId);
     setMode("Activities");
@@ -3795,6 +6932,7 @@ export default function DashboardPage() {
     epsNodes.forEach((n) => map.set(n.id, n.parentId));
     return map;
   }, [epsNodes]);
+  const taxVariableMap = useMemo(() => getTaxVariableMap(taxRates), [taxRates]);
   const isDescendantOf = useCallback((nodeId: number, ancestorId: number) => {
     let current: number | null | undefined = nodeId;
     while (current !== null && current !== undefined) {
@@ -3849,7 +6987,7 @@ export default function DashboardPage() {
     }
     const minStart = Math.min(...companyProjectSpans.map((p) => p.start));
     const maxEnd = Math.max(...companyProjectSpans.map((p) => p.end));
-    const pad = 7 * DAY_MS;
+    const pad = DAY_MS;
     return {
       start: Math.min(minStart - pad, centralTodayMs - 7 * DAY_MS),
       end: Math.max(maxEnd + pad, centralTodayMs + 7 * DAY_MS),
@@ -3879,6 +7017,51 @@ export default function DashboardPage() {
     }
     return arr;
   }, [epsGanttTimeline.start, epsGanttTimeline.end]);
+
+  const handleCompanyPanStart = (e: React.PointerEvent) => {
+    if (!companyGanttRef.current || e.button !== 0) return;
+    e.preventDefault();
+    companyPanActive.current = true;
+    companyPanState.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      scrollLeft: companyGanttRef.current.scrollLeft,
+      scrollTop: companyGanttRef.current.scrollTop,
+    };
+    companyGanttRef.current.style.cursor = "grabbing";
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+
+  const handleCompanyPanMove = (e: React.PointerEvent) => {
+    if (!companyPanActive.current || !companyGanttRef.current) return;
+    const dx = e.clientX - companyPanState.current.startX;
+    const dy = e.clientY - companyPanState.current.startY;
+    companyGanttRef.current.scrollLeft = companyPanState.current.scrollLeft - dx;
+    companyGanttRef.current.scrollTop = companyPanState.current.scrollTop - dy;
+  };
+
+  const handleCompanyPanEnd = (e?: React.PointerEvent) => {
+    if (!companyGanttRef.current) return;
+    companyPanActive.current = false;
+    companyGanttRef.current.style.cursor = "";
+    if (e) {
+      try { e.currentTarget.releasePointerCapture(e.pointerId); } catch {}
+    }
+  };
+
+  const updateCompanyThumb = () => {
+    const el = companyGanttRef.current;
+    if (!el) return;
+    const { scrollWidth, clientWidth, scrollLeft } = el;
+    if (scrollWidth <= clientWidth) {
+      setCompanyScrollThumb({ widthPct: 100, leftPct: 0 });
+      return;
+    }
+    const widthPct = (clientWidth / scrollWidth) * 100;
+    const available = scrollWidth - clientWidth;
+    const leftPct = (scrollLeft / available) * (100 - widthPct);
+    setCompanyScrollThumb({ widthPct, leftPct });
+  };
 
   const epsDayStep = useMemo(() => {
     if (epsDays.length > 90) return 7;
@@ -3956,6 +7139,832 @@ export default function DashboardPage() {
   }, [draggingCompanySpan, epsXToMs, shiftProjectActivities]);
 
   // ---------------------------------------------------------------------------
+  // RENT ROLL VIEW
+  // ---------------------------------------------------------------------------
+  if (mode === "RentRoll") {
+    const selectedRentPropertyName = rentRollProperty === "all"
+      ? "All Properties"
+      : rentRollPropertyMap[rentRollProperty]?.name || "Unlinked Property";
+    const linkingProperty = linkingPropertyId ? rentRollProperties.find((p) => p.id === linkingPropertyId) : null;
+    const daysUntil = (date: string) => {
+      if (!date) return null;
+      const target = toDateMs(date);
+      if (!Number.isFinite(target)) return null;
+      const today = getCentralTodayMs();
+      return Math.round((target - today) / DAY_MS);
+    };
+
+    return (
+      <div className="h-screen flex flex-col bg-slate-50 dark:bg-slate-900">
+        <TopBar
+          title="Rent Roll"
+          projectName={selectedRentPropertyName}
+          onModeChange={setMode}
+          currentMode={mode}
+        />
+
+        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <div>
+                <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-50">Rent Roll Dashboard</h1>
+                <p className="text-sm text-slate-500 dark:text-slate-400">Monitor occupancy, exposure, and collections across your portfolio.</p>
+              </div>
+              <div className="flex items-center gap-3 flex-wrap">
+                <select
+                  value={rentRollProperty}
+                  onChange={(e) => setRentRollProperty(e.target.value)}
+                  className="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-800 dark:text-slate-100"
+                >
+                  <option value="all">All Properties</option>
+                  {rentRollProperties.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} {p.linkedProjectId ? "(linked)" : "(unlinked)"}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  onClick={() => { setRentRollModalOpen(true); setEditingRentRollId(null); setRentRollForm({ propertyName: "", unit: "", tenant: "", status: "Occupied", rent: "", leaseEnd: "", initialDueMonthDay: "", bedrooms: "", bathrooms: "" }); }}
+                  className="px-4 py-2 rounded-md bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700"
+                >
+                  + New Rental
+                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={exportMainLedger}
+                    className="px-3 py-2 text-xs rounded-md border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+                  >
+                    Export Main Ledger
+                  </button>
+                  <button
+                    onClick={exportPropertyLedger}
+                    className="px-3 py-2 text-xs rounded-md border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+                  >
+                    Export Property Ledgers
+                  </button>
+                  <button
+                    onClick={exportRentRollLedger}
+                    className="px-3 py-2 text-xs rounded-md border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+                  >
+                    Export Rent Roll Ledger
+                  </button>
+                </div>
+              </div>
+            </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+              <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">Occupancy</div>
+              <div className="text-2xl font-bold text-slate-900 dark:text-slate-50">{rentRollSummary.occupancyRate}%</div>
+              <div className="text-xs text-slate-500 dark:text-slate-400">Occupied {rentRollSummary.occupiedUnits} / {rentRollSummary.totalUnits}</div>
+            </div>
+            <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+              <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">Potential Monthly Rent</div>
+              <div className="text-xl font-bold text-green-700 dark:text-green-300">{formatCurrency(rentRollSummary.potential)}</div>
+              <div className="text-xs text-slate-500 dark:text-slate-400">Gross scheduled, before concessions</div>
+            </div>
+            <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+              <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">Collected</div>
+              <div className="text-xl font-bold text-blue-700 dark:text-blue-300">{formatCurrency(rentRollSummary.collected)}</div>
+              <div className="text-xs text-slate-500 dark:text-slate-400">Based on payments recorded this month</div>
+            </div>
+            <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+              <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">Delinquent Balance</div>
+              <div className="text-xl font-bold text-red-600 dark:text-red-400">{formatCurrency(rentRollSummary.delinquent)}</div>
+              <div className="text-xs text-slate-500 dark:text-slate-400">Outstanding against current period</div>
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900 overflow-hidden">
+            <div className="p-4 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-50">Unit Ledger</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">Lease exposure, balances, and expirations.</p>
+              </div>
+              <span className="text-xs text-slate-500 dark:text-slate-400">
+                Showing {rentRollProperty === "all" ? "all properties" : selectedRentPropertyName}
+              </span>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 uppercase text-[11px]">
+                  <tr>
+                    <th className="px-4 py-2 text-left">Property</th>
+                    <th className="px-4 py-2 text-left">Unit</th>
+                    <th className="px-4 py-2 text-left">Tenant</th>
+                    <th className="px-4 py-2 text-left">Status</th>
+                    <th className="px-4 py-2 text-left">Beds/Baths</th>
+                    <th className="px-4 py-2 text-left">Rent</th>
+                    <th className="px-4 py-2 text-left">Balance</th>
+                    <th className="px-4 py-2 text-left">Late Fee</th>
+                    <th className="px-4 py-2 text-left">Rent Due</th>
+                    <th className="px-4 py-2 text-left">Lease End</th>
+                    <th className="px-4 py-2 text-left">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredRentRoll.map((entry, idx) => {
+                    const propertyName = rentRollPropertyMap[entry.propertyId]?.name || "Unlinked Property";
+                    const rowBg = idx % 2 === 0 ? "" : "bg-slate-50 dark:bg-slate-800/60";
+                    const statusClass = entry.status === "Occupied"
+                      ? "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-200"
+                      : entry.status === "Vacant"
+                        ? "bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                        : "bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-200";
+                    const paymentInfo = paymentRollup[entry.id];
+                    const balanceVal = paymentInfo?.balance ?? entry.balance;
+                    const paidVal = paymentInfo?.paid ?? 0;
+                    const lateFeeVal = paymentInfo?.lateFee ?? 0;
+                    const balanceClass = balanceVal > 0 ? "text-red-600 dark:text-red-400" : "text-green-700 dark:text-green-300";
+                    const lateFeeClass = lateFeeVal > 0 ? "text-amber-700 dark:text-amber-300 font-semibold" : "text-slate-600 dark:text-slate-300";
+                    const dueDate = paymentInfo?.dueDate;
+                    const dueInDays = dueDate ? daysUntil(dueDate) : null;
+                    const dueLabel = dueDate
+                      ? dueInDays === null
+                        ? dueDate
+                        : dueInDays === 0
+                          ? "Due today"
+                          : dueInDays < 0
+                            ? `${Math.abs(dueInDays)}d overdue`
+                            : `Due on ${new Date(dueDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })}`
+                      : "No due date";
+                    const dueClass = dueInDays == null
+                      ? "text-slate-700 dark:text-slate-200"
+                      : dueInDays < 0
+                        ? "text-red-600 dark:text-red-400"
+                        : dueInDays <= 5
+                          ? "text-amber-600 dark:text-amber-300"
+                          : "text-green-700 dark:text-green-300";
+                    return (
+                      <tr key={entry.id} className={rowBg}>
+                        <td className="px-4 py-2 font-medium text-slate-800 dark:text-slate-100">{propertyName}</td>
+                        <td className="px-4 py-2 text-slate-700 dark:text-slate-200">{entry.unit}</td>
+                        <td className="px-4 py-2 text-slate-700 dark:text-slate-200">{entry.tenant}</td>
+                        <td className="px-4 py-2">
+                          <span className={`px-2 py-1 rounded-full text-[11px] font-semibold ${statusClass}`}>
+                            {entry.status}
+                          </span>
+                        </td>
+                        <td className="px-4 py-2 text-slate-700 dark:text-slate-200">{entry.bedrooms} bd / {entry.bathrooms} ba</td>
+                        <td className="px-4 py-2 font-medium text-slate-800 dark:text-slate-100">{formatCurrency(entry.rent)}</td>
+                        <td className="px-4 py-2 font-medium">
+                          <div className={balanceClass}>{formatCurrency(balanceVal)}</div>
+                          <div className="text-[11px] text-slate-500 dark:text-slate-400">Paid: {formatCurrency(paidVal)}</div>
+                        </td>
+                        <td className="px-4 py-2 font-medium">
+                          <div className={lateFeeClass}>{lateFeeVal > 0 ? formatCurrency(lateFeeVal) : "$0"}</div>
+                        </td>
+                        <td className="px-4 py-2 text-slate-700 dark:text-slate-200">
+                          <div className={`text-xs font-semibold ${dueClass}`}>{dueLabel}</div>
+                          {dueDate && <div className="text-[11px] text-slate-500 dark:text-slate-400">{dueDate}</div>}
+                        </td>
+                        <td className="px-4 py-2 text-slate-700 dark:text-slate-200">{entry.leaseEnd}</td>
+                        <td className="px-4 py-2 text-slate-700 dark:text-slate-200">
+                          <div className="flex flex-wrap gap-2">
+                            <button
+                              onClick={() => handleEditRentRoll(entry)}
+                              className="px-2 py-1 text-xs rounded-md bg-slate-200 text-slate-800 dark:bg-slate-800 dark:text-slate-100 hover:bg-slate-300 dark:hover:bg-slate-700"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => handleOpenPaymentModal(entry)}
+                              disabled={(paymentRollup[entry.id]?.balance ?? entry.rent) <= 0}
+                              className={`px-2 py-1 text-xs rounded-md ${((paymentRollup[entry.id]?.balance ?? entry.rent) <= 0) ? "bg-emerald-900/40 text-emerald-200 cursor-not-allowed" : "bg-emerald-600 text-white hover:bg-emerald-700"}`}
+                            >
+                              {((paymentRollup[entry.id]?.balance ?? entry.rent) <= 0) ? "Paid" : "Payment"}
+                            </button>
+                            <button
+                              onClick={() => { setLinkingPropertyId(entry.propertyId); setLinkTargetProjectId(rentRollPropertyMap[entry.propertyId]?.linkedProjectId != null ? String(rentRollPropertyMap[entry.propertyId]?.linkedProjectId) : ""); }}
+                              className="px-2 py-1 text-xs rounded-md bg-blue-600 text-white hover:bg-blue-700"
+                            >
+                              Link
+                            </button>
+                            <button
+                              onClick={() => setRentRollDeleteModal({ open: true, entry })}
+                              className="px-2 py-1 text-xs rounded-md bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300 hover:bg-red-200"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {filteredRentRoll.length === 0 && (
+                    <tr>
+                      <td colSpan={10} className="px-4 py-6 text-center text-slate-500 dark:text-slate-400">
+                        No units match this filter.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        {rentRollModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => { setRentRollModalOpen(false); setEditingRentRollId(null); }}>
+            <div className="w-full max-w-3xl mx-4 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-2xl p-6" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-50">{editingRentRollId ? "Edit Rental" : "New Rental"}</h3>
+                <button
+                  onClick={() => { setRentRollModalOpen(false); setEditingRentRollId(null); }}
+                  className="text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+                >
+                  <IconX />
+                </button>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-slate-500 dark:text-slate-400">Property Name</label>
+                  <input
+                    value={rentRollForm.propertyName}
+                    onChange={(e) => setRentRollForm((prev) => ({ ...prev, propertyName: e.target.value }))}
+                    className="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm"
+                    placeholder="e.g., 123 Main"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-slate-500 dark:text-slate-400">Unit</label>
+                  <input
+                    value={rentRollForm.unit}
+                    onChange={(e) => setRentRollForm((prev) => ({ ...prev, unit: e.target.value }))}
+                    className="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm"
+                    placeholder="Unit A"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-slate-500 dark:text-slate-400">Tenant</label>
+                  <input
+                    value={rentRollForm.tenant}
+                    onChange={(e) => setRentRollForm((prev) => ({ ...prev, tenant: e.target.value }))}
+                    className="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm"
+                    placeholder="Name or Vacant"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-slate-500 dark:text-slate-400">Status</label>
+                  <select
+                    value={rentRollForm.status}
+                    onChange={(e) => setRentRollForm((prev) => ({ ...prev, status: e.target.value as RentRollStatus }))}
+                    className="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm"
+                  >
+                    <option value="Occupied">Occupied</option>
+                    <option value="Vacant">Vacant</option>
+                    <option value="Notice">Notice</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs text-slate-500 dark:text-slate-400">Rent</label>
+                  <input
+                    type="number"
+                    value={rentRollForm.rent}
+                    onChange={(e) => setRentRollForm((prev) => ({ ...prev, rent: e.target.value }))}
+                    className="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm"
+                    placeholder="1500"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-slate-500 dark:text-slate-400">Initial Due (MM-DD)</label>
+                  <input
+                    type="text"
+                    value={rentRollForm.initialDueMonthDay}
+                    onChange={(e) => setRentRollForm((prev) => ({ ...prev, initialDueMonthDay: e.target.value }))}
+                    className="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm"
+                    placeholder="03-01"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-slate-500 dark:text-slate-400">Lease End</label>
+                  <input
+                    type="date"
+                    value={rentRollForm.leaseEnd}
+                    onChange={(e) => setRentRollForm((prev) => ({ ...prev, leaseEnd: e.target.value }))}
+                    className="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-slate-500 dark:text-slate-400">Bedrooms</label>
+                  <input
+                    type="number"
+                    value={rentRollForm.bedrooms}
+                    onChange={(e) => setRentRollForm((prev) => ({ ...prev, bedrooms: e.target.value }))}
+                    className="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm"
+                    placeholder="2"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-slate-500 dark:text-slate-400">Bathrooms</label>
+                  <input
+                    type="number"
+                    value={rentRollForm.bathrooms}
+                    onChange={(e) => setRentRollForm((prev) => ({ ...prev, bathrooms: e.target.value }))}
+                    className="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm"
+                    placeholder="1"
+                  />
+                </div>
+              </div>
+              <div className="flex justify-end mt-4 gap-2">
+                <button
+                  onClick={() => { setRentRollModalOpen(false); setEditingRentRollId(null); }}
+                  className="px-4 py-2 rounded-md border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 text-sm"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSaveRentRollUnit}
+                  className="px-4 py-2 rounded-md bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700"
+                >
+                  Save Unit
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {rentPaymentModal.open && rentPaymentModal.entryId && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setRentPaymentModal({ open: false, entryId: null, amount: "", date: toDateString(getCentralTodayMs()), note: "" })}>
+            <div className="w-full max-w-lg mx-4 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-2xl p-6" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-50">Record Payment</h3>
+                <button
+                  onClick={() => setRentPaymentModal({ open: false, entryId: null, amount: "", date: toDateString(getCentralTodayMs()), note: "" })}
+                  className="text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+                >
+                  <IconX />
+                </button>
+              </div>
+              {rentPaymentModal.entryId && (
+                <div className="text-sm text-slate-600 dark:text-slate-300 mb-3">
+                  Remaining this month: <span className="font-semibold">{formatCurrency(getRemainingBalance(rentPaymentModal.entryId))}</span>
+                </div>
+              )}
+              <div className="space-y-3">
+                <div>
+                  <label className="text-xs text-slate-500 dark:text-slate-400">Amount</label>
+                  <input
+                    type="number"
+                    value={rentPaymentModal.amount}
+                    min={0}
+                    max={rentPaymentModal.entryId ? getRemainingBalance(rentPaymentModal.entryId) : undefined}
+                    onChange={(e) => {
+                      const raw = parseFloat(e.target.value) || 0;
+                      const limit = rentPaymentModal.entryId ? getRemainingBalance(rentPaymentModal.entryId) : raw;
+                      const clamped = Math.min(limit, Math.max(0, raw));
+                      setRentPaymentModal((prev) => ({ ...prev, amount: clamped.toString() }));
+                    }}
+                    className="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm"
+                    placeholder="e.g., 1500"
+                  />
+                  </div>
+                <div>
+                  <label className="text-xs text-slate-500 dark:text-slate-400">Date</label>
+                  <input
+                    type="date"
+                    value={rentPaymentModal.date}
+                    onChange={(e) => setRentPaymentModal((prev) => ({ ...prev, date: e.target.value }))}
+                    className="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-slate-500 dark:text-slate-400">Note</label>
+                  <input
+                    value={rentPaymentModal.note}
+                    onChange={(e) => setRentPaymentModal((prev) => ({ ...prev, note: e.target.value }))}
+                    className="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm"
+                    placeholder="Optional note"
+                  />
+                </div>
+              </div>
+              <div className="flex justify-end gap-2 mt-4">
+                <button
+                  onClick={() => setRentPaymentModal({ open: false, entryId: null, amount: "", date: toDateString(getCentralTodayMs()), note: "" })}
+                  className="px-4 py-2 rounded-md border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 text-sm"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSavePayment}
+                  className="px-4 py-2 rounded-md bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700"
+                >
+                  Save Payment
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {rentRollDeleteModal.open && rentRollDeleteModal.entry && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setRentRollDeleteModal({ open: false, entry: null })}>
+            <div className="w-full max-w-md mx-4 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-2xl p-6" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-50">Delete Rental</h3>
+                <button
+                  onClick={() => setRentRollDeleteModal({ open: false, entry: null })}
+                  className="text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+                >
+                  <IconX />
+                </button>
+              </div>
+              <p className="text-sm text-slate-600 dark:text-slate-300 mb-4">
+                Are you sure you want to delete {rentRollDeleteModal.entry.unit} at {rentRollDeleteModal.entry.tenant || "this unit"}? This will also remove its payments.
+              </p>
+              <div className="flex justify-end gap-2">
+                <button
+                  onClick={() => setRentRollDeleteModal({ open: false, entry: null })}
+                  className="px-3 py-2 text-sm rounded-md border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => { handleDeleteRentRoll(rentRollDeleteModal.entry!.id); setRentRollDeleteModal({ open: false, entry: null }); }}
+                  className="px-3 py-2 text-sm rounded-md bg-red-600 text-white hover:bg-red-700"
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {linkingProperty && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => { setLinkingPropertyId(null); setLinkTargetProjectId(""); }}>
+            <div className="w-full max-w-lg mx-4 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-2xl p-6" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-50">Link to EPS Project</h3>
+                <button
+                  onClick={() => { setLinkingPropertyId(null); setLinkTargetProjectId(""); }}
+                  className="text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+                >
+                  <IconX />
+                </button>
+              </div>
+              <p className="text-sm text-slate-600 dark:text-slate-300 mb-3">Property: <span className="font-semibold">{linkingProperty.name}</span></p>
+              <select
+                value={linkTargetProjectId}
+                onChange={(e) => setLinkTargetProjectId(e.target.value)}
+                className="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-800 dark:text-slate-100"
+              >
+                <option value="">Select EPS project</option>
+                {epsProjects.map((proj) => (
+                  <option key={proj.id} value={proj.id}>{proj.name}</option>
+                ))}
+              </select>
+              <div className="flex justify-end gap-2 mt-4">
+                <button
+                  onClick={() => handleUnlinkProperty(linkingProperty.id)}
+                  className="px-3 py-2 text-sm rounded-md border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+                >
+                  Unlink
+                </button>
+                <button
+                  onClick={handleSavePropertyLink}
+                  className="px-4 py-2 rounded-md bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700"
+                >
+                  Save Link
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // EXPORTS VIEW
+  // ---------------------------------------------------------------------------
+  if (mode === "Exports") {
+    return (
+      <div className="h-screen flex flex-col bg-slate-50 dark:bg-slate-900">
+        <TopBar title="Exports" projectName="Data Exports" onModeChange={setMode} currentMode={mode} />
+        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+          <div className="rounded-lg border border-slate-300 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-bold text-slate-900 dark:text-slate-50">Export Data</h2>
+                <p className="text-sm text-slate-600 dark:text-slate-300">Choose what to export and the format (CSV or XLSX).</p>
+              </div>
+              <button
+                onClick={() => setExportModalOpen(true)}
+                className="px-4 py-2 rounded-md bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700"
+              >
+                New Export
+              </button>
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-slate-300 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-50">Export History</h3>
+              {exportHistory.length === 0 && (
+                <span className="text-xs text-slate-500 dark:text-slate-400">No exports yet.</span>
+              )}
+            </div>
+            {exportHistory.length > 0 && (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 uppercase text-[11px]">
+                    <tr>
+                      <th className="px-3 py-2 text-left">Timestamp</th>
+                      <th className="px-3 py-2 text-left">Type</th>
+                      <th className="px-3 py-2 text-left">Format</th>
+                      <th className="px-3 py-2 text-left">Filename</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {exportHistory.map((h, idx) => (
+                      <tr key={h.id} className={idx % 2 === 0 ? "" : "bg-slate-50 dark:bg-slate-800/60"}>
+                        <td className="px-3 py-2 text-slate-800 dark:text-slate-100">{new Date(h.timestamp).toLocaleString()}</td>
+                        <td className="px-3 py-2 text-slate-700 dark:text-slate-200">{h.type}</td>
+                        <td className="px-3 py-2 text-slate-700 dark:text-slate-200">{h.format}</td>
+                        <td className="px-3 py-2 text-slate-700 dark:text-slate-200">{h.filename}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {exportModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setExportModalOpen(false)}>
+            <div className="w-full max-w-lg mx-4 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-2xl p-6" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-50">Export Options</h3>
+                <button
+                  onClick={() => setExportModalOpen(false)}
+                  className="text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+                >
+                  <IconX />
+                </button>
+              </div>
+              <div className="space-y-3">
+                <div>
+                  <label className="text-xs text-slate-500 dark:text-slate-400">Export Type</label>
+                  <select
+                    value={exportType}
+                    onChange={(e) => setExportType(e.target.value as any)}
+                    className="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm"
+                  >
+                    <option value="main">Main Ledger</option>
+                    <option value="property">Property Ledgers</option>
+                    <option value="rentroll">Rent Roll Ledgers</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs text-slate-500 dark:text-slate-400">Format</label>
+                  <div className="flex items-center gap-3 mt-1">
+                    <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
+                      <input type="radio" name="export-format" value="csv" checked={exportFormat === "csv"} onChange={() => setExportFormat("csv")} />
+                      CSV
+                    </label>
+                    <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
+                      <input type="radio" name="export-format" value="xlsx" checked={exportFormat === "xlsx"} onChange={() => setExportFormat("xlsx")} />
+                      XLSX
+                    </label>
+                  </div>
+                </div>
+              </div>
+              <div className="flex justify-end gap-2 mt-4">
+                <button
+                  onClick={() => setExportModalOpen(false)}
+                  className="px-3 py-2 text-sm rounded-md border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    if (exportType === "main") exportMainLedger();
+                    if (exportType === "property") exportPropertyLedger();
+                    if (exportType === "rentroll") exportRentRollLedger();
+                    setExportModalOpen(false);
+                  }}
+                  className="px-4 py-2 rounded-md bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700"
+                >
+                  Export
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // BANK STATEMENTS VIEW
+  // ---------------------------------------------------------------------------
+  if (mode === "Statements") {
+    const parseCsvContent = (content: string) => {
+      const lines = content.split(/\r?\n/).filter(Boolean);
+      const rows: { date: string; description: string; amount: number }[] = [];
+      const header = lines[0]?.toLowerCase() || "";
+      const hasHeader = header.includes("date") || header.includes("amount");
+      const dataLines = hasHeader ? lines.slice(1) : lines;
+      dataLines.forEach((line) => {
+        const parts = line.split(",").map((p) => p.trim().replace(/^"|"$/g, ""));
+        if (parts.length < 2) return;
+        const [dateRaw, descRaw, amountRaw] = parts;
+        const amount = parseFloat(amountRaw ?? parts[parts.length - 1] ?? "0") || 0;
+        const date = dateRaw && dateRaw.includes("-") ? dateRaw : toDateString(getCentralTodayMs());
+        const desc = descRaw || "Statement line";
+        rows.push({ date, description: desc, amount });
+      });
+      return rows;
+    };
+    const parsePdfContent = (content: string) => {
+      const lines = content.split(/\r?\n/).filter(Boolean);
+      const rows: { date: string; description: string; amount: number }[] = [];
+      lines.forEach((line) => {
+        const match = line.match(/([0-9]{4}-[0-9]{2}-[0-9]{2}).*?(-?\$?[0-9,]+\.\d{2})/);
+        if (match) {
+          const date = match[1];
+          const amtRaw = match[2].replace(/[$,]/g, "");
+          const amount = parseFloat(amtRaw) || 0;
+          rows.push({ date, description: line.trim(), amount });
+        }
+      });
+      return rows;
+    };
+
+    const handleFileUpload = async (files: FileList | null) => {
+      if (!files || files.length === 0) return;
+      const uploaded: { id: string; name: string; size: number; uploadedAt: string }[] = [];
+      const parsed: { uploadId: string; rows: { date: string; description: string; amount: number }[] }[] = [];
+
+      const readFile = (file: File) =>
+        new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onload = () => {
+            if (typeof reader.result === "string") {
+              resolve(reader.result);
+            } else if (reader.result instanceof ArrayBuffer) {
+              const decoder = new TextDecoder("utf-8", { fatal: false });
+              resolve(decoder.decode(reader.result));
+            } else {
+              resolve("");
+            }
+          };
+          if (file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")) {
+            reader.readAsArrayBuffer(file);
+          } else {
+            reader.readAsText(file);
+          }
+        });
+
+      for (const f of Array.from(files)) {
+        const id = `stmt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+        const upload = { id, name: f.name, size: f.size, uploadedAt: new Date().toISOString() };
+        uploaded.push(upload);
+        if (f.name.toLowerCase().endsWith(".csv")) {
+          const content = await readFile(f);
+          const rows = parseCsvContent(content);
+          parsed.push({ uploadId: id, rows });
+        } else {
+          const content = await readFile(f);
+          const rows = parsePdfContent(content);
+          if (!rows || rows.length === 0) {
+            parsed.push({
+              uploadId: id,
+              rows: [{ date: toDateString(getCentralTodayMs()), description: "Unable to parse PDF (image-only or unsupported format)", amount: 0 }],
+            });
+          } else {
+            parsed.push({ uploadId: id, rows });
+          }
+        }
+      }
+
+      // persist to API
+      try {
+        await fetch("/api/statements", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            uploads: uploaded.map((u) => ({ tempId: u.id, name: u.name, size: u.size, uploadedAt: u.uploadedAt })),
+            lines: parsed.flatMap((p) =>
+              p.rows.map((r) => ({
+                tempUploadId: p.uploadId,
+                date: r.date,
+                description: r.description,
+                amount: r.amount,
+              }))
+            ),
+          }),
+        });
+        await loadStatements();
+      } catch (err) {
+        console.error("Failed to save statements", err);
+        setStatementUploads((prev) => [...uploaded, ...prev]);
+        setParsedStatements((prev) => [...parsed, ...prev]);
+      }
+    };
+
+    return (
+      <div className="h-screen flex flex-col bg-slate-50 dark:bg-slate-900">
+        <TopBar title="Bank Statements" projectName="Uploads" onModeChange={setMode} currentMode={mode} />
+        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+          <div className="rounded-lg border border-slate-300 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+            <h2 className="text-xl font-bold text-slate-900 dark:text-slate-50 mb-2">Upload Bank Statements</h2>
+            <p className="text-sm text-slate-600 dark:text-slate-300 mb-4">
+              Upload PDF or CSV statements to store for reconciliation. Files are tracked locally in this demo.
+            </p>
+            <label className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 cursor-pointer">
+              <input
+                type="file"
+                accept=".pdf,.csv"
+                multiple
+                className="hidden"
+                onChange={(e) => handleFileUpload(e.target.files)}
+              />
+              Upload Statements
+            </label>
+          </div>
+
+          <div className="rounded-lg border border-slate-300 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-50">Upload History</h3>
+              {statementUploads.length === 0 && (
+                <span className="text-xs text-slate-500 dark:text-slate-400">No statements uploaded yet.</span>
+              )}
+            </div>
+            {statementUploads.length > 0 && (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 uppercase text-[11px]">
+                    <tr>
+                      <th className="px-3 py-2 text-left">File</th>
+                      <th className="px-3 py-2 text-left">Size</th>
+                      <th className="px-3 py-2 text-left">Uploaded</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {statementUploads.map((s, idx) => (
+                      <tr key={s.id} className={idx % 2 === 0 ? "" : "bg-slate-50 dark:bg-slate-800/60"}>
+                        <td className="px-3 py-2 text-slate-800 dark:text-slate-100">{s.name}</td>
+                        <td className="px-3 py-2 text-slate-700 dark:text-slate-200">{(s.size / 1024).toFixed(1)} KB</td>
+                        <td className="px-3 py-2 text-slate-700 dark:text-slate-200">{new Date(s.uploadedAt).toLocaleString()}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {parsedStatements.length > 0 && (
+            <div className="rounded-lg border border-slate-300 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+              <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-50 mb-3">Parsed Statement Lines (Demo)</h3>
+                    {parsedStatements.map((parsed) => {
+                      const upload = statementUploads.find((s) => s.id === parsed.uploadId);
+                      return (
+                        <div key={parsed.uploadId} className="mb-5">
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+                              {upload?.name || "Statement"} — {parsed.rows.length} lines
+                            </div>
+                            <div className="text-xs text-slate-500 dark:text-slate-400">
+                              Uploaded {upload ? new Date(upload.uploadedAt).toLocaleString() : ""}
+                            </div>
+                          </div>
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-sm">
+                              <thead className="bg-slate-50 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 uppercase text-[11px]">
+                                <tr>
+                                  <th className="px-3 py-2 text-left">Date</th>
+                                  <th className="px-3 py-2 text-left">Description</th>
+                                  <th className="px-3 py-2 text-left">Amount</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                              {parsed.rows.length === 0 && (
+                                <tr>
+                                  <td colSpan={3} className="px-3 py-2 text-slate-500 dark:text-slate-400">No lines parsed.</td>
+                                </tr>
+                              )}
+                              {parsed.rows.map((r, idx) => (
+                                <tr key={`${parsed.uploadId}-${idx}`} className={idx % 2 === 0 ? "" : "bg-slate-50 dark:bg-slate-800/60"}>
+                                  <td className="px-3 py-2 text-slate-800 dark:text-slate-100">{r.date}</td>
+                                  <td className="px-3 py-2 text-slate-700 dark:text-slate-200">{r.description}</td>
+                                  <td className="px-3 py-2 text-slate-700 dark:text-slate-200">{formatCurrency(r.amount)}</td>
+                                </tr>
+                              ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      );
+                    })}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // ---------------------------------------------------------------------------
   // RESOURCES VIEW
   // ---------------------------------------------------------------------------
   if (mode === "Resources") {
@@ -3966,6 +7975,15 @@ export default function DashboardPage() {
           projectName={activeProject?.name}
           onModeChange={setMode}
           currentMode={mode}
+        />
+        <ActionRibbon
+          onOpenTaxRates={() => setTaxRateDialogOpen(true)}
+          onManagePresets={() => setFormulaPresetDialogOpen(true)}
+          onCreateFormula={handleCreateFormula}
+          onAddPresetToProject={openPresetPicker}
+          taxRateCount={taxRates.length}
+          presetCount={formulaPresets.length}
+          hasActiveProject={!!resolveActiveProjectId()}
         />
 
         <div className="flex-1 overflow-y-auto p-6">
@@ -4092,6 +8110,316 @@ export default function DashboardPage() {
           resources={resources}
           onSave={handleSaveAllResources}
         />
+
+        <TaxRatesDialog
+          open={taxRateDialogOpen}
+          onClose={() => setTaxRateDialogOpen(false)}
+          taxRates={taxRates}
+          onSave={handleSaveTaxRate}
+          onDelete={handleDeleteTaxRate}
+        />
+
+        <FormulaPresetDialog
+          open={formulaPresetDialogOpen}
+          onClose={() => setFormulaPresetDialogOpen(false)}
+          presets={formulaPresets}
+          onDelete={handleDeletePreset}
+        />
+
+        <PresetPicker
+          open={presetPickerOpen}
+          onClose={() => setPresetPickerOpen(false)}
+          presets={formulaPresets}
+          onApply={handleApplyPresetToProject}
+        />
+
+        <AcquisitionConfirmModal
+          open={acquireConfirmOpen}
+          onConfirm={confirmAcquire}
+          onCancel={() => { setAcquireConfirmOpen(false); setPendingAcquireProjectId(null); }}
+        />
+      </div>
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // LABOR VIEW
+  // ---------------------------------------------------------------------------
+  if (mode === "Labor") {
+    return (
+      <div className="h-screen flex flex-col bg-slate-50 dark:bg-slate-900">
+        <TopBar
+          title="Labor"
+          projectName={activeProject?.name}
+          onModeChange={setMode}
+          currentMode={mode}
+        />
+        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-50">Labor Tracking</h1>
+              <p className="text-sm text-slate-500 dark:text-slate-400">Manage employees, weekly hours, and payroll checks.</p>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2">
+                <label className="text-sm text-slate-600 dark:text-slate-300">Week of</label>
+                <input
+                  type="date"
+                  value={laborWeekStart}
+                  onChange={(e) => setLaborWeekStart(getWeekStart(toDateMs(e.target.value)))}
+                  className="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5 text-sm"
+                />
+              </div>
+              <button
+                onClick={() => { setEmployeeFormOpen(true); setEditingEmployee(null); setEmployeeNameInput(""); setEmployeeRateInput(""); }}
+                className="px-3 py-2 bg-blue-600 text-white rounded-md text-sm font-semibold hover:bg-blue-700"
+              >
+                Add Employee
+              </button>
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-sm">
+            <div className="p-4 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100">Employees</h3>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-slate-50 dark:bg-slate-800 text-xs uppercase text-slate-500 dark:text-slate-300">
+                  <tr>
+                    <th className="px-4 py-2 text-left">Name</th>
+                    <th className="px-4 py-2 text-left">Rate (hr)</th>
+                    <th className="px-4 py-2 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {employees.map((emp, idx) => (
+                    <tr key={emp.id} className={idx % 2 === 0 ? "" : "bg-slate-50 dark:bg-slate-800/50"}>
+                      <td className="px-4 py-2 text-sm font-medium text-slate-800 dark:text-slate-100">{emp.name}</td>
+                      <td className="px-4 py-2 text-sm text-slate-600 dark:text-slate-300">${emp.rate.toFixed(2)}</td>
+                      <td className="px-4 py-2 text-sm text-right space-x-2">
+                        <button
+                          onClick={() => handleEditEmployee(emp)}
+                          className="px-2 py-1 text-xs rounded-md bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200 hover:bg-blue-200"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => handleDeleteEmployee(emp.id)}
+                          className="px-2 py-1 text-xs rounded-md bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300 hover:bg-red-200"
+                        >
+                          Delete
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  {employees.length === 0 && (
+                    <tr>
+                      <td colSpan={3} className="px-4 py-4 text-center text-sm text-slate-500 dark:text-slate-400">
+                        No employees yet. Add your first employee.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-sm">
+            <div className="p-4 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100">Weekly Hours & Tags</h3>
+              <span className="text-xs text-slate-500 dark:text-slate-400">Assign project tags per day. You can split a day across multiple projects.</span>
+            </div>
+            <div className="overflow-x-auto">
+              <div className="space-y-4">
+                {employees.map((emp, idx) => {
+                  const bg = idx % 2 === 0 ? "bg-white dark:bg-slate-900" : "bg-slate-50 dark:bg-slate-800/60";
+                  return (
+                    <div key={emp.id} className={`rounded border border-slate-200 dark:border-slate-700 ${bg} p-3`}>
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="font-semibold text-slate-800 dark:text-slate-100">{emp.name}</div>
+                        <div className="text-xs text-slate-500 dark:text-slate-400">Total this week: {weekHoursForEmployee(emp.id).toFixed(2)} hrs</div>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-7 gap-2">
+                        {weekDays.map((d) => {
+                          const entries = timeEntries.filter(t => t.employeeId === emp.id && t.date === d.date);
+                          return (
+                            <div key={d.date} className="rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-2">
+                              <div className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 mb-1">{d.label}</div>
+                              <div className="space-y-2">
+                                {entries.map((entry) => (
+                                  <div key={entry.id} className="space-y-1">
+                                    <select
+                                      value={entry.projectId ?? ""}
+                                      onChange={(e) => updateTimeEntry(entry.id, "projectId", e.target.value ? Number(e.target.value) : null)}
+                                      className="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs px-2 py-1"
+                                    >
+                                      <option value="">Select project</option>
+                                      {laborProjects.map(p => (
+                                        <option key={p.id} value={p.id}>{p.name}</option>
+                                      ))}
+                                    </select>
+                                    <div className="flex items-center gap-1">
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        step="0.25"
+                                        value={entry.hours || ""}
+                                        onChange={(e) => updateTimeEntry(entry.id, "hours", parseFloat(e.target.value) || 0)}
+                                        className="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs px-2 py-1"
+                                        placeholder="hrs"
+                                      />
+                                      <button
+                                        onClick={() => deleteTimeEntry(entry.id)}
+                                        className="px-2 py-1 text-[11px] rounded bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300 hover:bg-red-200"
+                                      >
+                                        ✕
+                                      </button>
+                                    </div>
+                                  </div>
+                                ))}
+                                <button
+                                  onClick={() => addTimeEntry(emp.id, d.date, laborProjects[0]?.id ?? null)}
+                                  className="w-full text-[11px] px-2 py-1 rounded border border-dashed border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
+                                >
+                                  + Add entry
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+                {employees.length === 0 && (
+                  <div className="px-4 py-4 text-center text-sm text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 rounded">
+                    Add employees to track hours.
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-sm">
+            <div className="p-4 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100">Paychecks</h3>
+              <span className="text-xs text-slate-500 dark:text-slate-400">Record per-employee weekly checks.</span>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead className="bg-slate-50 dark:bg-slate-800 text-xs uppercase text-slate-500 dark:text-slate-300">
+                  <tr>
+                    <th className="px-3 py-2 text-left">Employee</th>
+                    <th className="px-3 py-2 text-left">Hours (week)</th>
+                    <th className="px-3 py-2 text-left">Amount</th>
+                    <th className="px-3 py-2 text-left">Check #</th>
+                    <th className="px-3 py-2 text-right">Record</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {employees.map((emp, idx) => {
+                    const hours = weekHoursForEmployee(emp.id);
+                    const amount = hours * emp.rate;
+                    return (
+                      <tr key={emp.id} className={idx % 2 === 0 ? "" : "bg-slate-50 dark:bg-slate-800/50"}>
+                        <td className="px-3 py-2 font-medium text-slate-800 dark:text-slate-100">{emp.name}</td>
+                        <td className="px-3 py-2 text-slate-700 dark:text-slate-300">{hours.toFixed(2)} hrs</td>
+                        <td className="px-3 py-2 text-slate-700 dark:text-slate-300">${amount.toFixed(2)}</td>
+                        <td className="px-3 py-2">
+                          <input
+                            value={paycheckNumbers[emp.id] || ""}
+                            onChange={(e) => setPaycheckNumbers(prev => ({ ...prev, [emp.id]: e.target.value }))}
+                            className="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs px-2 py-1"
+                            placeholder="Check #"
+                          />
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          <button
+                            onClick={() => handleRecordPaycheck(emp)}
+                            className="px-3 py-1 rounded-md bg-green-600 text-white hover:bg-green-700 text-xs"
+                          >
+                            Record
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {employees.length === 0 && (
+                    <tr>
+                      <td colSpan={5} className="px-4 py-4 text-center text-sm text-slate-500 dark:text-slate-400">
+                        Add employees to record paychecks.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            {paychecks.length > 0 && (
+              <div className="p-4 border-t border-slate-200 dark:border-slate-700">
+                <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-2">Recent Paychecks</h4>
+                <div className="space-y-1 text-sm text-slate-600 dark:text-slate-300">
+                  {paychecks.slice(-5).reverse().map(pc => {
+                    const emp = employees.find(e => e.id === pc.employeeId);
+                    return (
+                      <div key={pc.id} className="flex items-center justify-between rounded bg-slate-50 dark:bg-slate-800/60 px-3 py-2">
+                        <span>{emp?.name || pc.employeeId} • Week of {pc.weekStart} • Check #{pc.checkNumber}</span>
+                        <span className="font-semibold">${pc.amount.toFixed(2)}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {employeeFormOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+            <div className="w-full max-w-md rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-2xl p-5 space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-50">{editingEmployee ? "Edit Employee" : "Add Employee"}</h3>
+                <button onClick={() => { setEmployeeFormOpen(false); setEditingEmployee(null); }} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded">
+                  <IconX />
+                </button>
+              </div>
+              <div>
+                <label className="text-xs text-slate-500 dark:text-slate-400">Name</label>
+                <input
+                  value={employeeNameInput}
+                  onChange={(e) => setEmployeeNameInput(e.target.value)}
+                  className="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm"
+                  placeholder="Employee name"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-500 dark:text-slate-400">Hourly Rate</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={employeeRateInput}
+                  onChange={(e) => setEmployeeRateInput(e.target.value)}
+                  className="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm"
+                  placeholder="e.g., 40"
+                />
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  onClick={() => { setEmployeeFormOpen(false); setEditingEmployee(null); }}
+                  className="px-4 py-2 text-sm rounded-md border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSaveEmployee}
+                  className="px-4 py-2 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700"
+                >
+                  Save
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -4104,9 +8432,28 @@ export default function DashboardPage() {
     const projectTransactions = transactions[activeProject.id] || [];
     const currentProjectDetails = projectDetails[activeProject.id] || [];
     const currentCustomFormulas = customFormulas[activeProject.id] || [];
+    const projectMeta = pipelineMeta[activeProject.id] || { status: "under_contract", seller: { name: "", phone: "", email: "" }, selectedEmailOptionIds: [] };
 
     const { totalActualCost } = calculateProjectStats(projectActivities, projectTransactions);
     const { totalBudget, totalActualCost: totalActualCostFin, totalRevenue, profit } = calculateFinancialKPIs(projectActivities, projectTransactions);
+    const todayWeekStart = getWeekStart(getCentralTodayMs());
+    const todayWeekEnd = toDateString(toDateMs(todayWeekStart) + 6 * DAY_MS);
+    const todayMonthLabel = new Date(toDateMs(todayWeekStart)).toLocaleString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
+    const draftDuration = newActivityDraft
+      ? Math.max(1, Math.round((toDateMs(newActivityDraft.finish) - toDateMs(newActivityDraft.start)) / DAY_MS) + 1)
+      : null;
+
+    const handleGanttCreateRange = (start: string, finish: string) => {
+      setNewActivityDraft({ start, finish });
+      setNewActivityDialog(true);
+      setGanttCreateMode(false);
+    };
+
+    const closeNewActivityDialog = () => {
+      setNewActivityDialog(false);
+      setNewActivityDraft(null);
+      setGanttCreateMode(false);
+    };
 
     const handleGanttMenuOpen = (activity: Activity, clientX: number, clientY: number) => {
       setGanttMenu({ x: clientX, y: clientY, activity });
@@ -4145,6 +8492,94 @@ export default function DashboardPage() {
       closeGanttMenu();
     };
 
+    if (projectMeta.status === "under_contract") {
+      return (
+        <div className="h-screen flex flex-col bg-slate-50 dark:bg-slate-900">
+          <TopBar
+            title="Activities"
+            projectName={activeProject.name}
+            onModeChange={setMode}
+            currentMode={mode}
+            isDetailsPanelVisible={isDetailsPanelVisible}
+            onToggleDetailsPanel={() => setIsDetailsPanelVisible(prev => !prev)}
+          />
+          <ActionRibbon
+            onOpenTaxRates={() => setTaxRateDialogOpen(true)}
+            onManagePresets={() => setFormulaPresetDialogOpen(true)}
+            onCreateFormula={handleCreateFormula}
+            onAddPresetToProject={openPresetPicker}
+            taxRateCount={taxRates.length}
+            presetCount={formulaPresets.length}
+            hasActiveProject={!!resolveActiveProjectId()}
+          />
+          <div className="flex flex-1 overflow-hidden">
+            <aside className={`w-80 border-r border-slate-300 bg-white dark:border-slate-700 dark:bg-slate-950 flex-shrink-0 overflow-y-auto ${isDetailsPanelVisible ? 'block' : 'hidden'}`}>
+              <ProjectDetailsPanel
+                projectId={activeProject.id}
+                details={currentProjectDetails}
+                onUpdate={handleUpdateProjectDetails}
+                onAutoPopulate={handleAutoPopulateProjectDetails}
+                isVisible={isDetailsPanelVisible}
+                onToggle={() => setIsDetailsPanelVisible(prev => !prev)}
+                hiddenVariables={projectMeta.status === "under_contract" ? HIDE_WHEN_UNDER_CONTRACT : []}
+              />
+            </aside>
+            <main className={`flex-1 flex flex-col overflow-hidden transition-[padding] duration-300 ${isDetailsPanelVisible ? 'md:pr-80' : 'pr-0'}`}>
+              <ContractView
+                projectId={activeProject.id}
+                projectName={activeProject.name}
+                meta={projectMeta}
+                emailOptions={emailOptions}
+                details={currentProjectDetails}
+                onStatusChange={(status) => handleProjectStatusChange(activeProject.id, status)}
+                onSellerChange={(field, value) => handleSellerFieldChange(activeProject.id, field, value)}
+                onToggleOption={(optionId) => handleToggleEmailOptionForProject(activeProject.id, optionId)}
+                onSend={() => handleSendSellerEmail(activeProject.id)}
+                onManageOptions={() => setEmailOptionsDialogOpen(true)}
+                onUpdateDetail={(variable, value) => upsertProjectDetail(activeProject.id, variable, value)}
+              />
+            </main>
+          </div>
+
+        <EmailOptionsDialog
+          open={emailOptionsDialogOpen}
+          onClose={() => setEmailOptionsDialogOpen(false)}
+          options={emailOptions}
+          onSave={handleSaveEmailOption}
+          onDelete={handleDeleteEmailOption}
+        />
+
+        <TaxRatesDialog
+          open={taxRateDialogOpen}
+          onClose={() => setTaxRateDialogOpen(false)}
+          taxRates={taxRates}
+          onSave={handleSaveTaxRate}
+          onDelete={handleDeleteTaxRate}
+        />
+
+        <FormulaPresetDialog
+          open={formulaPresetDialogOpen}
+          onClose={() => setFormulaPresetDialogOpen(false)}
+          presets={formulaPresets}
+          onDelete={handleDeletePreset}
+        />
+
+        <PresetPicker
+          open={presetPickerOpen}
+          onClose={() => setPresetPickerOpen(false)}
+          presets={formulaPresets}
+          onApply={handleApplyPresetToProject}
+        />
+
+        <AcquisitionConfirmModal
+          open={acquireConfirmOpen}
+          onConfirm={confirmAcquire}
+          onCancel={() => { setAcquireConfirmOpen(false); setPendingAcquireProjectId(null); }}
+        />
+        </div>
+      );
+    }
+
     return (
       <div className="h-screen flex flex-col bg-slate-50 dark:bg-slate-900">
         <TopBar
@@ -4155,6 +8590,31 @@ export default function DashboardPage() {
           isDetailsPanelVisible={isDetailsPanelVisible}
           onToggleDetailsPanel={() => setIsDetailsPanelVisible(prev => !prev)}
         />
+        <ActionRibbon
+          onOpenTaxRates={() => setTaxRateDialogOpen(true)}
+          onManagePresets={() => setFormulaPresetDialogOpen(true)}
+          onCreateFormula={handleCreateFormula}
+          onAddPresetToProject={openPresetPicker}
+          taxRateCount={taxRates.length}
+          presetCount={formulaPresets.length}
+          hasActiveProject={!!resolveActiveProjectId()}
+        />
+        {activityView !== "gantt" && (
+          <div className="px-4 py-2 bg-slate-100 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between text-sm">
+            <div className="flex items-center gap-3">
+              <span className="px-2 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200">
+                Acquired
+              </span>
+              <span className="text-slate-600 dark:text-slate-300">Project is acquired. You can revert to Not Acquired if needed.</span>
+            </div>
+            <button
+              onClick={() => handleProjectStatusChange(activeProject.id, "under_contract")}
+              className="px-3 py-1.5 text-xs rounded border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700"
+            >
+              Mark Not Acquired
+            </button>
+          </div>
+        )}
 
         <div className="flex-1 flex overflow-hidden">
           <aside className="w-80 border-r border-slate-300 bg-white dark:border-slate-700 dark:bg-slate-950 flex flex-col flex-shrink-0 overflow-y-auto">
@@ -4220,25 +8680,60 @@ export default function DashboardPage() {
                 <h4 className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-2 flex items-center gap-1">
                   <IconFunction /> Custom Formulas
                 </h4>
-                <div className="space-y-2">
-                  {currentCustomFormulas.slice(0, 3).map((formula) => {
-                    const result = evaluateFormula(formula.formula, currentProjectDetails, currentCustomFormulas);
+                <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                  {currentCustomFormulas.length === 0 && (
+                    <div className="text-xs text-slate-500 dark:text-slate-400">
+                      No formulas yet. Create one or add a preset.
+                    </div>
+                  )}
+                  {currentCustomFormulas.map((formula) => {
+                    const result = evaluateFormula(
+                      formula.formula,
+                      currentProjectDetails,
+                      currentCustomFormulas,
+                      taxVariableMap
+                    );
                     return (
-                      <div key={formula.id} className="text-xs p-2 bg-slate-50 dark:bg-slate-800 rounded">
-                        <div className="flex justify-between">
-                          <span className="text-slate-600 dark:text-slate-400">{formula.name}</span>
+                      <div key={formula.id} className="text-xs p-2 bg-slate-50 dark:bg-slate-800 rounded border border-slate-200 dark:border-slate-700">
+                        <div className="flex justify-between items-start gap-2">
+                          <div>
+                            <span className="text-slate-700 dark:text-slate-200 font-semibold">{formula.name}</span>
+                            <p className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">{formula.formula}</p>
+                          </div>
                           <span className={`font-semibold ${result.error ? 'text-red-500' : 'text-green-600 dark:text-green-400'}`}>
                             {result.error ? 'Error' : formula.resultType === 'currency' ? formatCurrency(result.value) : formula.resultType === 'percentage' ? `${result.value.toFixed(1)}%` : result.value.toFixed(2)}
                           </span>
                         </div>
+                        <div className="flex gap-2 mt-2">
+                          <button
+                            onClick={() => handleEditFormula(formula)}
+                            className="px-2 py-1 rounded bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200 hover:bg-blue-200 dark:hover:bg-blue-900/60"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => handleDeleteFormula(formula.id)}
+                            className="px-2 py-1 rounded bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300 hover:bg-red-200 dark:hover:bg-red-900/60"
+                          >
+                            Delete
+                          </button>
+                        </div>
                       </div>
                     );
                   })}
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
                   <button
                     onClick={handleCreateFormula}
-                    className="w-full text-xs flex items-center justify-center gap-1 p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded"
+                    className="w-full text-xs flex items-center justify-center gap-1 p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded border border-blue-200 dark:border-blue-700"
                   >
                     <IconPlus /> {currentCustomFormulas.length > 0 ? 'Manage Formulas' : 'Create Formula'}
+                  </button>
+                  <button
+                    onClick={openPresetPicker}
+                    className="w-full text-xs flex items-center justify-center gap-1 p-1.5 text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-900/40 rounded border border-amber-200 dark:border-amber-700"
+                  >
+                    <IconCopy /> Add Preset
                   </button>
                 </div>
               </div>
@@ -4247,22 +8742,26 @@ export default function DashboardPage() {
 
           <main className={`flex-1 flex flex-col overflow-hidden transition-[padding] duration-300 ${isDetailsPanelVisible ? 'md:pr-80' : 'pr-0'}`}>
         <div className="flex-1 overflow-hidden p-4 flex flex-col gap-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="inline-flex rounded-full border border-slate-300 bg-white p-1 text-sm shadow-sm dark:border-slate-700 dark:bg-slate-900">
-              <button
-                onClick={() => setActivityView("details")}
-                    className={`px-3 py-1.5 rounded-full transition-colors ${activityView === "details" ? "bg-blue-600 text-white shadow" : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"}`}
-                  >
-                    Activity Details
-                  </button>
-                  <button
-                    onClick={() => setActivityView("gantt")}
-                    className={`px-3 py-1.5 rounded-full transition-colors ${activityView === "gantt" ? "bg-blue-600 text-white shadow" : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"}`}
-                  >
-                    Gantt Chart
-                  </button>
-                </div>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="inline-flex rounded-full border border-slate-300 bg-white p-1 text-sm shadow-sm dark:border-slate-700 dark:bg-slate-900">
+                <button
+                  onClick={() => setActivityView("details")}
+                  className={`px-3 py-1.5 rounded-full transition-colors ${activityView === "details" ? "bg-blue-600 text-white shadow" : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"}`}
+                >
+                  Activity Details
+                </button>
+                <button
+                  onClick={() => setActivityView("gantt")}
+                  className={`px-3 py-1.5 rounded-full transition-colors ${activityView === "gantt" ? "bg-blue-600 text-white shadow" : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"}`}
+                >
+                  Gantt Chart
+                </button>
               </div>
+              <div className="flex items-center gap-3 text-xs text-slate-600 dark:text-slate-300">
+                <span className="px-2 py-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">Week: {todayWeekStart} – {todayWeekEnd}</span>
+                <span className="px-2 py-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">Month: {todayMonthLabel}</span>
+              </div>
+            </div>
 
             <div className="flex flex-col gap-4 h-full">
               {activityView === "details" && (
@@ -4459,11 +8958,30 @@ export default function DashboardPage() {
 
                 {activityView === "gantt" && (
                 <div className="rounded-lg border border-slate-300 bg-white p-4 dark:border-slate-800 dark:bg-slate-900 shadow-md flex flex-col h-full">
-                  <div className="flex items-center justify-between mb-3">
-                    <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-2">
-                      <IconGantt />  
-                    </h3>
-                    <span className="text-xs text-slate-500 dark:text-slate-400">Drag bars to move, drag edges to resize.</span>
+                  <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                        <IconGantt />
+                        Gantt Chart
+                      </h3>
+                      <div className="flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+                        <button
+                          type="button"
+                          aria-pressed={ganttCreateMode}
+                          onClick={() => setGanttCreateMode((prev) => !prev)}
+                          className={`p-2 rounded-md transition border ${ganttCreateMode ? "bg-emerald-100 border-emerald-300 text-emerald-700 shadow-inner dark:bg-emerald-900/40 dark:border-emerald-700 dark:text-emerald-200" : "bg-white border-transparent text-slate-600 hover:bg-slate-100 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"}`}
+                          title="Click, then left-click + drag on the chart to create a new activity"
+                        >
+                          <IconMarqueePlus />
+                        </button>
+                      </div>
+                      {ganttCreateMode && (
+                        <span className="text-xs font-medium text-emerald-700 bg-emerald-100 px-2 py-1 rounded-full border border-emerald-200 dark:bg-emerald-900/40 dark:text-emerald-200 dark:border-emerald-700">
+                          Draw mode active
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-xs text-slate-500 dark:text-slate-400">Drag bars to move or resize. Use the green marquee icon to draw a new activity. Hold middle mouse to pan.</span>
                   </div>
                   <GanttChart
                     activities={projectActivities}
@@ -4473,6 +8991,8 @@ export default function DashboardPage() {
                     onSelect={setSelectedActivityId}
                     dragging={draggingActivity}
                     setDragging={setDraggingActivity}
+                    creationMode={ganttCreateMode}
+                    onCreateRange={handleGanttCreateRange}
                   />
                 </div>
                 )}
@@ -4483,7 +9003,9 @@ export default function DashboardPage() {
               projectId={activeProject.id}
               activities={projectActivities}
               transactions={projectTransactions}
-              onAddTransaction={handleAddTransaction}
+              onAddTransaction={(t) => handleAddTransaction(t, activeProject.id)}
+              onUpdateTransaction={(t) => handleUpdateTransaction(t, activeProject.id)}
+              onDeleteTransaction={(id) => handleDeleteTransaction(id, activeProject.id)}
               isOpen={ledgerOpen}
               setIsOpen={setLedgerOpen}
               draftActivityId={quickLedgerActivityId}
@@ -4518,8 +9040,13 @@ export default function DashboardPage() {
           projectId={activeProject.id}
           existingActivities={projectActivities}
           allResources={resources}
-          onClose={() => setNewActivityDialog(false)}
-          onConfirm={handleAddActivity}
+          initialStart={newActivityDraft?.start}
+          initialDuration={draftDuration}
+          onClose={closeNewActivityDialog}
+          onConfirm={(activity) => {
+            handleAddActivity(activity);
+            setNewActivityDraft(null);
+          }}
         />
 
         <ResourceAssignmentDialog
@@ -4534,9 +9061,33 @@ export default function DashboardPage() {
           open={formulaDialogOpen}
           onClose={() => { setFormulaDialogOpen(false); setEditingFormula(null); }}
           onSave={handleSaveFormula}
+          onSavePreset={handleSaveFormulaPreset}
           editingFormula={editingFormula}
           projectDetails={currentProjectDetails}
           existingFormulas={currentCustomFormulas}
+          taxRates={taxRates}
+        />
+
+        <TaxRatesDialog
+          open={taxRateDialogOpen}
+          onClose={() => setTaxRateDialogOpen(false)}
+          taxRates={taxRates}
+          onSave={handleSaveTaxRate}
+          onDelete={handleDeleteTaxRate}
+        />
+
+        <FormulaPresetDialog
+          open={formulaPresetDialogOpen}
+          onClose={() => setFormulaPresetDialogOpen(false)}
+          presets={formulaPresets}
+          onDelete={handleDeletePreset}
+        />
+
+        <PresetPicker
+          open={presetPickerOpen}
+          onClose={() => setPresetPickerOpen(false)}
+          presets={formulaPresets}
+          onApply={handleApplyPresetToProject}
         />
 
         <EditModal
@@ -4644,6 +9195,15 @@ export default function DashboardPage() {
   return (
     <div className="h-screen flex flex-col bg-slate-50 dark:bg-slate-900">
       <TopBar title="EPS" currentMode={mode} onModeChange={setMode} />
+      <ActionRibbon
+        onOpenTaxRates={() => setTaxRateDialogOpen(true)}
+        onManagePresets={() => setFormulaPresetDialogOpen(true)}
+        onCreateFormula={handleCreateFormula}
+        onAddPresetToProject={openPresetPicker}
+        taxRateCount={taxRates.length}
+        presetCount={formulaPresets.length}
+        hasActiveProject={!!resolveActiveProjectId()}
+      />
 
       <div className="flex-1 flex overflow-hidden">
         <aside className="w-80 border-r border-slate-300 bg-white dark:border-slate-700 dark:bg-slate-950 flex flex-col flex-shrink-0">
@@ -4663,6 +9223,7 @@ export default function DashboardPage() {
                 onNodeClick={handleNodeClick}
                 onContextMenu={handleContextMenu}
                 onToggleExpand={handleToggleExpand}
+                pipelineMetaMap={pipelineMeta}
               />
             ))}
             {!treeNodes.length && (
@@ -4745,12 +9306,31 @@ export default function DashboardPage() {
                     </div>
                   </div>
                   {selectedNode.type === "project" && (
-                    <button
-                      onClick={() => handleProjectSelect(selectedNode.id)}
-                      className="mt-4 rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
-                    >
-                      Open Project Activities →
-                    </button>
+                    <>
+                      <div className="mt-3 flex items-center gap-2 text-sm">
+                        <span className="text-slate-500 dark:text-slate-400">Status:</span>
+                        <div className="inline-flex rounded-full bg-slate-200/60 dark:bg-slate-800/60 p-1 text-xs">
+                          <button
+                            onClick={() => handleProjectStatusChange(selectedNode.id, "under_contract")}
+                            className={`px-3 py-1 rounded-full ${pipelineMeta[selectedNode.id]?.status === "under_contract" ? "bg-amber-500 text-white" : "text-slate-700 dark:text-slate-300"}`}
+                          >
+                            Not Acquired
+                          </button>
+                          <button
+                            onClick={() => handleProjectStatusChange(selectedNode.id, "acquired")}
+                            className={`px-3 py-1 rounded-full ${pipelineMeta[selectedNode.id]?.status === "acquired" ? "bg-blue-600 text-white" : "text-slate-700 dark:text-slate-300"}`}
+                          >
+                            Acquired
+                          </button>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => handleProjectSelect(selectedNode.id)}
+                        className="mt-3 rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                      >
+                        Open Project View
+                      </button>
+                    </>
                   )}
                 </div>
               )}
@@ -4778,6 +9358,11 @@ export default function DashboardPage() {
                     setActiveProjectId(selectedNode.id);
                     handleCreateFormula();
                   }}
+                  onAddPreset={() => {
+                    setActiveProjectId(selectedNode.id);
+                    setPresetPickerOpen(true);
+                  }}
+                  taxRates={taxRates}
                 />
               )}
             </div>
@@ -4886,8 +9471,19 @@ export default function DashboardPage() {
                   No activities scheduled for projects in this company yet.
                 </div>
               )}
-                {selectedCompany && companyProjectSpans.length > 0 && (
-                  <div ref={companyGanttRef} className="relative rounded-md border border-slate-200 dark:border-slate-700 bg-slate-900 p-3 overflow-hidden">
+                  {selectedCompany && companyProjectSpans.length > 0 && (
+                    <div
+                    ref={companyGanttRef}
+                    className="relative rounded-md border border-slate-200 dark:border-slate-700 bg-slate-900 p-3 overflow-auto cursor-grab"
+                    data-company-scroll
+                    style={{ maxHeight: "calc(100vh - 300px)", scrollbarWidth: "none", msOverflowStyle: "none" }}
+                    onPointerDown={handleCompanyPanStart}
+                    onPointerMove={handleCompanyPanMove}
+                    onPointerUp={handleCompanyPanEnd}
+                    onPointerCancel={handleCompanyPanEnd}
+                    onPointerLeave={handleCompanyPanEnd}
+                    onScroll={updateCompanyThumb}
+                  >
                     <div className="relative h-8 border-b border-slate-700/60">
                       {epsMonths.map((m, idx) => {
                         const left = epsDateToXPct(m.start);
@@ -4959,6 +9555,18 @@ export default function DashboardPage() {
                         );
                       })}
                     </div>
+                    <div className="pointer-events-none absolute bottom-2 left-3 right-3 h-1.5 bg-slate-700/50 rounded-full">
+                      <div
+                        className="h-full bg-blue-400/80 rounded-full"
+                        style={{
+                          width: `${companyScrollThumb.widthPct}%`,
+                          transform: `translateX(${companyScrollThumb.leftPct}%)`,
+                        }}
+                      />
+                    </div>
+                    <style>{`
+                      [data-company-scroll]::-webkit-scrollbar { display: none; }
+                    `}</style>
                   </div>
                 )}
               </div>
@@ -4982,9 +9590,47 @@ export default function DashboardPage() {
         open={formulaDialogOpen}
         onClose={() => { setFormulaDialogOpen(false); setEditingFormula(null); }}
         onSave={handleSaveFormula}
+        onSavePreset={handleSaveFormulaPreset}
         editingFormula={editingFormula}
         projectDetails={selectedProjectDetails}
         existingFormulas={selectedCustomFormulas}
+        taxRates={taxRates}
+      />
+
+      <TaxRatesDialog
+        open={taxRateDialogOpen}
+        onClose={() => setTaxRateDialogOpen(false)}
+        taxRates={taxRates}
+        onSave={handleSaveTaxRate}
+        onDelete={handleDeleteTaxRate}
+      />
+
+      <FormulaPresetDialog
+        open={formulaPresetDialogOpen}
+        onClose={() => setFormulaPresetDialogOpen(false)}
+        presets={formulaPresets}
+        onDelete={handleDeletePreset}
+      />
+
+      <EmailOptionsDialog
+        open={emailOptionsDialogOpen}
+        onClose={() => setEmailOptionsDialogOpen(false)}
+        options={emailOptions}
+        onSave={handleSaveEmailOption}
+        onDelete={handleDeleteEmailOption}
+      />
+
+      <PresetPicker
+        open={presetPickerOpen}
+        onClose={() => setPresetPickerOpen(false)}
+        presets={formulaPresets}
+        onApply={handleApplyPresetToProject}
+      />
+
+      <AcquisitionConfirmModal
+        open={acquireConfirmOpen}
+        onConfirm={confirmAcquire}
+        onCancel={() => { setAcquireConfirmOpen(false); setPendingAcquireProjectId(null); }}
       />
 
       <EditModal

@@ -6,6 +6,7 @@ import {
   date,
   timestamp,
   numeric,
+  text,
 } from "drizzle-orm/pg-core";
 import { sql, relations } from "drizzle-orm";
 
@@ -33,6 +34,36 @@ export const projects = pgTable("projects", {
 });
 
 // ----------------------------
+// PROJECT PIPELINE META
+// ----------------------------
+export const projectPipelineMeta = pgTable("project_pipeline_meta", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id")
+    .notNull()
+    .references(() => projects.id, { onDelete: "cascade" }),
+  status: varchar("status", { length: 32 }).default("under_contract").notNull(),
+  sellerName: varchar("seller_name", { length: 255 }).default(""),
+  sellerPhone: varchar("seller_phone", { length: 64 }).default(""),
+  sellerEmail: varchar("seller_email", { length: 255 }).default(""),
+  selectedEmailOptionIds: text("selected_email_option_ids").default(""),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).default(sql`now()`),
+});
+
+// ----------------------------
+// PROJECT DETAILS (variable/value pairs)
+// ----------------------------
+export const projectDetails = pgTable("project_details", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id")
+    .notNull()
+    .references(() => projects.id, { onDelete: "cascade" }),
+  variable: varchar("variable", { length: 255 }).notNull(),
+  value: text("value").default(""),
+  createdAt: timestamp("created_at", { withTimezone: true }).default(sql`now()`),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).default(sql`now()`),
+});
+
+// ----------------------------
 // WBS NODES
 // ----------------------------
 
@@ -46,6 +77,7 @@ export const wbsNodes = pgTable("wbs_nodes", {
   parentId: integer("parent_id"),
   sortOrder: integer("sort_order").default(0).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).default(sql`now()`),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).default(sql`now()`),
 });
 
 export type WbsNode = typeof wbsNodes.$inferSelect;
@@ -125,6 +157,122 @@ export const resources = pgTable("resources", {
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .default(sql`now()`)
     .notNull(),
+});
+
+// ----------------------------
+// STATEMENTS (UPLOADS) & LINES
+// ----------------------------
+export const statementUploads = pgTable("statement_uploads", {
+  id: serial("id").primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  size: integer("size").default(0).notNull(),
+  uploadedAt: timestamp("uploaded_at", { withTimezone: true }).default(sql`now()`).notNull(),
+});
+
+export const statementLines = pgTable("statement_lines", {
+  id: serial("id").primaryKey(),
+  uploadId: integer("upload_id")
+    .notNull()
+    .references(() => statementUploads.id, { onDelete: "cascade" }),
+  date: date("date").notNull(),
+  description: text("description").notNull(),
+  amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
+});
+
+// ----------------------------
+// RENT ROLL
+// ----------------------------
+export const rentProperties = pgTable("rent_properties", {
+  id: serial("id").primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  linkedProjectId: integer("linked_project_id").references(() => projects.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).default(sql`now()`),
+});
+
+export const rentUnits = pgTable("rent_units", {
+  id: serial("id").primaryKey(),
+  propertyId: integer("property_id")
+    .notNull()
+    .references(() => rentProperties.id, { onDelete: "cascade" }),
+  unit: varchar("unit", { length: 128 }).notNull(),
+  tenant: varchar("tenant", { length: 255 }),
+  status: varchar("status", { length: 32 }).default("Occupied").notNull(), // Occupied | Vacant | Notice
+  rent: numeric("rent", { precision: 12, scale: 2 }).notNull(),
+  leaseEnd: varchar("lease_end", { length: 64 }), // keep as string to match existing UI input
+  initialDueMonthDay: varchar("initial_due_month_day", { length: 8 }).default("01-01").notNull(),
+  bedrooms: integer("bedrooms").default(0),
+  bathrooms: integer("bathrooms").default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).default(sql`now()`),
+});
+
+export const rentPayments = pgTable("rent_payments", {
+  id: serial("id").primaryKey(),
+  rentUnitId: integer("rent_unit_id")
+    .notNull()
+    .references(() => rentUnits.id, { onDelete: "cascade" }),
+  amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
+  date: date("date").notNull(),
+  note: text("note"),
+  createdAt: timestamp("created_at", { withTimezone: true }).default(sql`now()`),
+});
+
+// ----------------------------
+// TRANSACTIONS / LEDGER
+// ----------------------------
+export const ledgerTransactions = pgTable("ledger_transactions", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").references(() => projects.id, { onDelete: "set null" }),
+  activityId: integer("activity_id").references(() => activities.id, { onDelete: "set null" }),
+  type: varchar("type", { length: 16 }).notNull(), // Income | Outcome
+  category: varchar("category", { length: 128 }).notNull(),
+  subCategory: varchar("sub_category", { length: 128 }),
+  date: date("date").notNull(),
+  amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
+  description: text("description"),
+  createdAt: timestamp("created_at", { withTimezone: true }).default(sql`now()`),
+});
+
+// ----------------------------
+// EMPLOYEES / LABOR
+// ----------------------------
+export const employees = pgTable("employees", {
+  id: serial("id").primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  rate: numeric("rate", { precision: 12, scale: 2 }).default("0").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).default(sql`now()`),
+});
+
+export const timeEntries = pgTable("time_entries", {
+  id: serial("id").primaryKey(),
+  employeeId: integer("employee_id")
+    .notNull()
+    .references(() => employees.id, { onDelete: "cascade" }),
+  projectId: integer("project_id").references(() => projects.id, { onDelete: "set null" }),
+  date: date("date").notNull(),
+  hours: numeric("hours", { precision: 8, scale: 2 }).default("0").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).default(sql`now()`),
+});
+
+export const paychecks = pgTable("paychecks", {
+  id: serial("id").primaryKey(),
+  employeeId: integer("employee_id")
+    .notNull()
+    .references(() => employees.id, { onDelete: "cascade" }),
+  weekStart: date("week_start").notNull(),
+  amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
+  checkNumber: varchar("check_number", { length: 64 }),
+  createdAt: timestamp("created_at", { withTimezone: true }).default(sql`now()`),
+});
+
+// ----------------------------
+// EXPORT LOGS
+// ----------------------------
+export const exportLogs = pgTable("export_logs", {
+  id: serial("id").primaryKey(),
+  type: varchar("type", { length: 64 }).notNull(),
+  format: varchar("format", { length: 16 }).notNull(),
+  filename: varchar("filename", { length: 255 }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).default(sql`now()`),
 });
 
 // ----------------------------
