@@ -110,7 +110,12 @@ export async function GET() {
   } catch (err: unknown) {
     console.error("Seed error:", err);
     return NextResponse.json(
-      { ok: false, error: err?.message || "Unknown error" },
+      {
+        ok: false,
+        error: typeof err === "object" && err && "message" in err
+          ? String((err as { message?: unknown }).message)
+          : "Unknown error",
+      },
       { status: 500 }
     );
   }
