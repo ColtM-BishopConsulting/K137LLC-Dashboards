@@ -8,6 +8,20 @@
       "when": 1764659005484,
       "tag": "0000_elite_wiccan",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1765050000000,
+      "tag": "0001_add_formulas",
+      "breakpoints": false
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1765050001000,
+      "tag": "0002_add_formula_presets",
+      "breakpoints": false
     }
   ]
 }

@@ -65,6 +65,35 @@ export const projectDetails = pgTable("project_details", {
 });
 
 // ----------------------------
+// PROJECT CUSTOM FORMULAS
+// ----------------------------
+export const formulas = pgTable("formulas", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id")
+    .notNull()
+    .references(() => projects.id, { onDelete: "cascade" }),
+  name: varchar("name", { length: 255 }).notNull(),
+  formula: text("formula").notNull(),
+  description: text("description"),
+  resultType: varchar("result_type", { length: 32 }).default("currency").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).default(sql`now()`),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).default(sql`now()`),
+});
+
+// ----------------------------
+// FORMULA PRESETS (GLOBAL)
+// ----------------------------
+export const formulaPresets = pgTable("formula_presets", {
+  id: serial("id").primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  formula: text("formula").notNull(),
+  description: text("description"),
+  resultType: varchar("result_type", { length: 32 }).default("currency").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).default(sql`now()`),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).default(sql`now()`),
+});
+
+// ----------------------------
 // EPS NODES (ENTERPRISE TREE)
 // ----------------------------
 export const epsNodes = pgTable("eps_nodes", {

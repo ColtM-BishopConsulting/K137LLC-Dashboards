@@ -107,7 +107,7 @@ export async function GET() {
     ]);
 
     return NextResponse.json({ ok: true }, { status: 200 });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("Seed error:", err);
     return NextResponse.json(
       { ok: false, error: err?.message || "Unknown error" },

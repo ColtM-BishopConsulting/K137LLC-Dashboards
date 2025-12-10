@@ -39,3 +39,16 @@ export async function PATCH(req: Request) {
     return NextResponse.json({ error: "Failed to update rent property" }, { status: 500 });
   }
 }
+
+export async function DELETE(req: Request) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const id = Number(searchParams.get("id"));
+    if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
+    const deleted = await db.delete(rentProperties).where(eq(rentProperties.id, id)).returning();
+    return NextResponse.json({ property: deleted[0] });
+  } catch (err) {
+    console.error("DELETE /api/rent/properties error", err);
+    return NextResponse.json({ error: "Failed to delete rent property" }, { status: 500 });
+  }
+}

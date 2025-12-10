@@ -1,4 +1,6 @@
-"use client";
+﻿/* eslint-disable react-hooks/set-state-in-effect, @typescript-eslint/no-explicit-any */
+"use client"
+
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import React from "react";
@@ -157,6 +159,7 @@ interface RentRollEntry {
   initialDueMonthDay: string; // MM-DD
   bedrooms: number;
   bathrooms: number;
+  createdAt?: string;
 }
 
 interface RentPayment {
@@ -396,193 +399,6 @@ const ICONS: Record<EpsNodeType, React.ReactNode> = {
   company: <IconHome />,
   project: <IconProject />,
 };
-
-// ---------------------------------------------------------------------------
-// MOCK DATA
-// ---------------------------------------------------------------------------
-const MOCK_EPS: EpsNode[] = [
-  { id: 1, parentId: null, type: "enterprise", name: "Koufax 137 LLC" },
-  { id: 2, parentId: 1, type: "business_unit", name: "Real Estate Division" },
-  { id: 3, parentId: 2, type: "portfolio", name: "Brownwood Area Portfolio" },
-  { id: 4, parentId: 3, type: "company", name: "Residential Renovations" },
-  { id: 5, parentId: 4, type: "project", name: "202 Live Oak" },
-  { id: 6, parentId: 4, type: "project", name: "2905 Hemphill" },
-  { id: 7, parentId: 4, type: "project", name: "1410 Vine" },
-  { id: 8, parentId: 3, type: "company", name: "Commercial Development" },
-  { id: 9, parentId: 8, type: "project", name: "Downtown Office Complex" },
-  { id: 10, parentId: 8, type: "project", name: "Retail Strip Center" },
-];
-
-const INITIAL_RESOURCES: Resource[] = [
-  { id: "R1", name: "Project Manager", type: "Labor", rate: 85, rateUnit: "hour", availability: 8 },
-  { id: "R2", name: "Site Supervisor", type: "Labor", rate: 65, rateUnit: "hour", availability: 10 },
-  { id: "R3", name: "General Laborer", type: "Labor", rate: 35, rateUnit: "hour", availability: 8 },
-  { id: "R4", name: "Electrician", type: "Labor", rate: 75, rateUnit: "hour", availability: 8 },
-  { id: "R5", name: "Plumber", type: "Labor", rate: 70, rateUnit: "hour", availability: 8 },
-  { id: "R6", name: "Excavator", type: "Equipment", rate: 450, rateUnit: "day" },
-  { id: "R7", name: "Concrete Mixer", type: "Equipment", rate: 200, rateUnit: "day" },
-  { id: "R8", name: "Lumber Package", type: "Material", rate: 5000, rateUnit: "lump" },
-  { id: "R9", name: "Roofing Sub", type: "Subcontractor", rate: 8500, rateUnit: "lump" },
-  { id: "R10", name: "HVAC Contractor", type: "Subcontractor", rate: 12000, rateUnit: "lump" },
-];
-
-const INITIAL_ACTIVITIES: Record<number, Activity[]> = {
-  5: [
-    { id: "A1000", wbs: "1.1", name: "Project Initiation", start: "2025-01-01", finish: "2025-01-02", duration: 2, pct: 100, responsible: "PM", status: "Completed", projectedLabor: 16, projectedCost: 500, budget: 1000, revenue: 5000, resources: [{ resourceId: "R1", quantity: 16 }] },
-    { id: "A1010", wbs: "1.2", name: "Site Preparation", start: "2025-01-03", finish: "2025-01-07", duration: 5, pct: 75, responsible: "Site Super", status: "In Progress", projectedLabor: 40, projectedCost: 1500, budget: 5000, revenue: 0, resources: [{ resourceId: "R2", quantity: 40 }, { resourceId: "R3", quantity: 40 }] },
-    { id: "A1020", wbs: "1.2.1", name: "Demolition", start: "2025-01-03", finish: "2025-01-04", duration: 2, pct: 100, responsible: "Demo Crew", status: "Completed", projectedLabor: 32, projectedCost: 2500, budget: 3000, revenue: 0, resources: [{ resourceId: "R3", quantity: 32 }] },
-    { id: "A1030", wbs: "1.2.2", name: "Site Grading", start: "2025-01-05", finish: "2025-01-07", duration: 3, pct: 50, responsible: "Site Super", status: "In Progress", projectedLabor: 24, projectedCost: 1800, budget: 3500, revenue: 0, resources: [{ resourceId: "R6", quantity: 3 }] },
-    { id: "A1040", wbs: "1.3", name: "Foundation", start: "2025-01-08", finish: "2025-01-15", duration: 8, pct: 0, responsible: "Concrete Sub", status: "Not Started", projectedLabor: 120, projectedCost: 15000, budget: 18000, revenue: 0, resources: [] },
-    { id: "A1050", wbs: "1.4", name: "Framing", start: "2025-01-16", finish: "2025-01-29", duration: 14, pct: 0, responsible: "Framing Crew", status: "Not Started", projectedLabor: 240, projectedCost: 22000, budget: 25000, revenue: 0, resources: [] },
-    { id: "A1060", wbs: "1.5", name: "Roofing", start: "2025-01-30", finish: "2025-02-04", duration: 6, pct: 0, responsible: "Roofing Sub", status: "Not Started", projectedLabor: 60, projectedCost: 8500, budget: 10000, revenue: 0, resources: [{ resourceId: "R9", quantity: 1 }] },
-    { id: "A1070", wbs: "1.6", name: "MEP Rough-In", start: "2025-02-05", finish: "2025-02-13", duration: 9, pct: 0, responsible: "MEP Subs", status: "Not Started", projectedLabor: 180, projectedCost: 17500, budget: 20000, revenue: 0, resources: [{ resourceId: "R4", quantity: 40 }, { resourceId: "R5", quantity: 40 }, { resourceId: "R10", quantity: 1 }] },
-  ],
-  6: [
-    { id: "B1000", wbs: "1.1", name: "Planning & Permits", start: "2025-01-15", finish: "2025-01-22", duration: 8, pct: 25, responsible: "PM", status: "In Progress", projectedLabor: 40, projectedCost: 1200, budget: 3000, revenue: 2500, resources: [{ resourceId: "R1", quantity: 40 }] },
-    { id: "B1010", wbs: "1.2", name: "Interior Demolition", start: "2025-01-23", finish: "2025-01-26", duration: 4, pct: 0, responsible: "Demo Crew", status: "Not Started", projectedLabor: 64, projectedCost: 4000, budget: 6000, revenue: 0, resources: [] },
-    { id: "B1020", wbs: "1.3", name: "Structural Repairs", start: "2025-01-27", finish: "2025-02-05", duration: 10, pct: 0, responsible: "Structural Sub", status: "Not Started", projectedLabor: 80, projectedCost: 11000, budget: 15000, revenue: 0, resources: [] },
-  ],
-};
-
-const INITIAL_TRANSACTIONS: Record<number, Transaction[]> = {
-  5: [
-    { id: "T1000", date: "2025-01-01", description: "Initial Client Deposit", type: "Income", category: "Client Payment", amount: 10000, activityId: "A1000" },
-    { id: "T1001", date: "2025-01-02", description: "Permit Fees", type: "Outcome", category: "Materials", subCategory: "Permits", amount: 450, activityId: "A1000" },
-    { id: "T1002", date: "2025-01-04", description: "Demo Crew (Day 1-2)", type: "Outcome", category: "Labor", subCategory: "Demolition", amount: 2200, activityId: "A1020" },
-    { id: "T1003", date: "2025-01-05", description: "Gravel Delivery", type: "Outcome", category: "Materials", subCategory: "Site Work", amount: 600, activityId: "A1030" },
-    { id: "T1004", date: "2025-01-06", description: "Excavator Rental", type: "Outcome", category: "Equipment", subCategory: "Site Work", amount: 750, activityId: "A1030" },
-  ],
-  6: [
-    { id: "T2000", date: "2025-01-16", description: "Initial Client Payment", type: "Income", category: "Client Payment", amount: 5000, activityId: "B1000" },
-    { id: "T2001", date: "2025-01-16", description: "City Planning Fees", type: "Outcome", category: "Materials", subCategory: "Permits", amount: 800, activityId: "B1000" },
-  ]
-};
-
-const INITIAL_PROJECT_DETAILS: Record<number, ProjectDetail[]> = {
-  5: [
-    { id: "D1", variable: "Property Type", value: "Single Family" },
-    { id: "D2", variable: "Square Footage", value: "1800" },
-    { id: "D3", variable: "Bed/Bath", value: "3 Bed / 2 Bath" },
-    { id: "D4", variable: "Overdue Taxes", value: "0" },
-    { id: "D5", variable: "Purchase Price", value: "250000" },
-    { id: "D6", variable: "ARV Estimate", value: "450000" },
-    { id: "D7", variable: "Rehab Cost", value: "85000" },
-    { id: "D8", variable: "Holding Cost", value: "10000" },
-    { id: "D9", variable: "Exit Price Factor", value: "250" },
-  ],
-  6: [
-    { id: "D1", variable: "Property Type", value: "Duplex" },
-    { id: "D2", variable: "Square Footage", value: "2200" },
-    { id: "D3", variable: "Bed/Bath", value: "4 Bed / 3 Bath" },
-    { id: "D4", variable: "Overdue Taxes", value: "2500" },
-  ],
-};
-
-const INITIAL_CUSTOM_FORMULAS: Record<number, CustomFormula[]> = {
-  5: [
-    {
-      id: "CF1",
-      name: "All-In Cost",
-      formula: "{Purchase Price} + {Rehab Cost} + {Holding Cost}",
-      description: "Total investment including purchase, rehab, and holding costs",
-      resultType: "currency",
-    },
-    {
-      id: "CF2",
-      name: "Equity at ARV",
-      formula: "{ARV Estimate} - {All-In Cost}",
-      description: "Projected equity based on ARV minus total investment",
-      resultType: "currency",
-    },
-    {
-      id: "CF3",
-      name: "ROI Percentage",
-      formula: "(({ARV Estimate} - {All-In Cost}) / {All-In Cost}) * 100",
-      description: "Return on investment as a percentage",
-      resultType: "percentage",
-    },
-  ],
-  6: [],
-};
-
-const INITIAL_FORMULA_PRESETS: CustomFormula[] = [
-  {
-    id: "P1",
-    name: "Gross Profit",
-    formula: "{ARV Estimate} - {All-In Cost}",
-    description: "Quick profit check before taxes/fees",
-    resultType: "currency",
-  },
-  {
-    id: "P2",
-    name: "Tax Liability",
-    formula: "{Net Income} * ({County Tax Rate} / 100)",
-    description: "Applies selected county tax rate to net income",
-    resultType: "currency",
-  },
-];
-
-const INITIAL_TAX_RATES: TaxRate[] = [
-  { id: "TR1", county: "Tarrant", state: "TX", rate: 2.5, note: "Example property tax rate" },
-  { id: "TR2", county: "Harris", state: "TX", rate: 2.3 },
-];
-
-const INITIAL_PIPELINE_META: Record<number, ProjectPipelineMeta> = {
-  5: { status: "acquired", seller: { name: "", phone: "", email: "" }, selectedEmailOptionIds: [] },
-  6: { status: "under_contract", seller: { name: "John Seller", phone: "555-123-4567", email: "john@example.com" }, selectedEmailOptionIds: [] },
-};
-
-const INITIAL_EMAIL_OPTIONS: EmailOption[] = [
-  {
-    id: "EO1",
-    name: "Welcome Introduction",
-    description: "Friendly intro and confirmation of interest",
-    subject: "Great to meet you about the property",
-    body: "Hi {Seller Name},\n\nThanks for discussing {Property Name}. We're excited to move forward. I'll send next steps shortly.\n\nBest,\n{Your Name}",
-  },
-  {
-    id: "EO2",
-    name: "Request Disclosures",
-    description: "Ask for disclosures and recent repairs",
-    subject: "Disclosures and recent updates",
-    body: "Hi {Seller Name},\n\nCould you share any disclosures, recent repairs, or known issues for {Property Name}? This helps us finalize our underwriting.\n\nThanks!",
-  },
-];
-
-const INITIAL_EMPLOYEES: Employee[] = [
-  { id: "EMP1", name: "Alice Foreman", rate: 42 },
-  { id: "EMP2", name: "Bob Carpenter", rate: 38 },
-];
-
-const INITIAL_TIME_ENTRIES: TimeEntry[] = [];
-const INITIAL_PAYCHECKS: Paycheck[] = [];
-
-const INITIAL_RENT_ROLL_PROPERTIES: RentRollProperty[] = [
-  { id: "PROP-LO", name: "202 Live Oak", linkedProjectId: 5 },
-  { id: "PROP-HE", name: "2905 Hemphill", linkedProjectId: 6 },
-  { id: "PROP-VI", name: "1410 Vine", linkedProjectId: 7 },
-  { id: "PROP-DO", name: "Downtown Office Complex", linkedProjectId: 9 },
-  { id: "PROP-RS", name: "Retail Strip Center", linkedProjectId: 10 },
-  { id: "PROP-AR", name: "Arrears Demo", linkedProjectId: null },
-];
-
-const INITIAL_RENT_ROLL: RentRollEntry[] = [
-  { id: "RR1", propertyId: "PROP-LO", unit: "Unit A", tenant: "Megan Carter", status: "Occupied", rent: 1650, balance: 0, leaseEnd: "2025-11-30", initialDueMonthDay: "03-01", bedrooms: 3, bathrooms: 2 },
-  { id: "RR2", propertyId: "PROP-LO", unit: "Unit B", tenant: "Vacant", status: "Vacant", rent: 1450, balance: 0, leaseEnd: "Listing", initialDueMonthDay: "03-01", bedrooms: 2, bathrooms: 1 },
-  { id: "RR3", propertyId: "PROP-HE", unit: "Unit 1", tenant: "Sergio Patel", status: "Occupied", rent: 1350, balance: 120, leaseEnd: "2025-06-30", initialDueMonthDay: "03-05", bedrooms: 2, bathrooms: 1 },
-  { id: "RR4", propertyId: "PROP-VI", unit: "Unit 3", tenant: "Danielle Wu", status: "Notice", rent: 1200, balance: 350, leaseEnd: "2025-04-30", initialDueMonthDay: "02-28", bedrooms: 1, bathrooms: 1 },
-  { id: "RR5", propertyId: "PROP-DO", unit: "Suite 210", tenant: "Northwind Legal", status: "Occupied", rent: 4800, balance: 0, leaseEnd: "2026-01-31", initialDueMonthDay: "03-03", bedrooms: 0, bathrooms: 1 },
-  { id: "RR6", propertyId: "PROP-RS", unit: "Unit 5", tenant: "Vacant", status: "Vacant", rent: 3200, balance: 0, leaseEnd: "Marketing", initialDueMonthDay: "03-10", bedrooms: 0, bathrooms: 1 },
-  { id: "RR7", propertyId: "PROP-AR", unit: "Unit 301", tenant: "Arrears Tenant", status: "Occupied", rent: 1800, balance: 0, leaseEnd: "2025-12-31", initialDueMonthDay: "02-05", bedrooms: 2, bathrooms: 2 },
-];
-
-const INITIAL_RENT_PAYMENTS: RentPayment[] = [
-  { id: "PAY1", rentRollEntryId: "RR1", amount: 1650, date: "2025-12-01", note: "ACH" },
-  { id: "PAY2", rentRollEntryId: "RR3", amount: 1230, date: "2025-11-06", note: "Partial" },
-  { id: "PAY3", rentRollEntryId: "RR5", amount: 4800, date: "2025-12-03", note: "Check" },
-  { id: "PAY4", rentRollEntryId: "RR7", amount: 1800, date: "2025-11-05", note: "Feb Rent" },
-  { id: "PAY5", rentRollEntryId: "RR7", amount: 1800, date: "2025-12-05", note: "Mar Rent" },
-];
 
 const DEFAULT_BRRRR_FIELDS: Omit<ProjectDetail, 'id'>[] = [
   { variable: "Purchase Price", value: "0" },
@@ -972,17 +788,16 @@ const getCentralDateParts = () => {
 };
 const getCentralTodayMs = () => {
   const { year, month, day } = getCentralDateParts();
-  // Midnight in Central converted to absolute ms via UTC (central midnight = 06:00 UTC in CST/05:00 in CDT)
-  return Date.UTC(year, month - 1, day);
+  // Use midday UTC for the given local/Central date to avoid timezone rollovers
+  return Date.UTC(year, month - 1, day, 12);
 };
 const toDateMs = (date: string) => {
   const [year, month, day] = date.split("-").map(Number);
-  return Date.UTC(year, (month || 1) - 1, day || 1);
+  // Use midday UTC to avoid shifting a day due to TZ differences
+  return Date.UTC(year, (month || 1) - 1, day || 1, 12);
 };
 const toDateString = (ms: number) => {
-  const d = new Date(ms);
-  const iso = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate())).toISOString();
-  return iso.slice(0, 10);
+  return new Date(ms).toISOString().slice(0, 10);
 };
 const getMonthKey = (date: string) => {
   const ms = toDateMs(date);
@@ -1032,23 +847,6 @@ const csvEscape = (val: string | number) => {
   return s;
 };
 const slugify = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "sheet";
-const toExcelXml = (sheets: { name: string; rows: (string | number)[][] }[]) => {
-  const worksheetXml = sheets.map(sheet => {
-    const rowsXml = sheet.rows.map(row => {
-      const cells = row.map(cell => `<Cell><Data ss:Type="${typeof cell === "number" ? "Number" : "String"}">${String(cell ?? "")}</Data></Cell>`).join("");
-      return `<Row>${cells}</Row>`;
-    }).join("");
-    return `<Worksheet ss:Name="${sheet.name}"><Table>${rowsXml}</Table></Worksheet>`;
-  }).join("");
-  return `<?xml version="1.0"?>
-<?mso-application progid="Excel.Sheet"?>
-<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
- xmlns:o="urn:schemas-microsoft-com:office:office"
- xmlns:x="urn:schemas-microsoft-com:office:excel"
- xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
- ${worksheetXml}
-</Workbook>`;
-};
 const getWeekStart = (ms: number) => {
   const d = new Date(ms);
   const day = d.getUTCDay(); // 0 (Sun) - 6 (Sat)
@@ -1340,7 +1138,7 @@ const CustomFormulaDialog: React.FC<CustomFormulaDialogProps> = ({
 
     onSave(newFormula);
     if (saveAsPreset && onSavePreset) {
-      onSavePreset({ ...newFormula, id: editingFormula?.id?.startsWith("P") ? editingFormula.id : `P${Date.now()}` });
+      onSavePreset({ ...newFormula, id: "" });
     }
     onClose();
   };
@@ -2532,7 +2330,7 @@ const ProjectLedger: React.FC<ProjectLedgerProps> = ({
   const bodyClasses = `flex overflow-hidden bg-white dark:bg-slate-900 transition-[max-height,height,opacity] duration-400 ease-in-out`;
 
   return (
-    <div className={`border-t border-slate-300 dark:border-slate-700 ${containerClasses}`}>
+    <div data-project-id={projectId} className={`border-t border-slate-300 dark:border-slate-700 ${containerClasses}`}>
       <div className="flex justify-between items-center bg-slate-100 dark:bg-slate-800 p-2 cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-700" onClick={() => setIsOpen(!isOpen)}>
         <h4 className="text-sm font-semibold flex items-center gap-2">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -2749,7 +2547,6 @@ const GanttChart: React.FC<GanttChartProps> = ({
   const panState = useRef({ startX: 0, startY: 0, scrollLeft: 0, scrollTop: 0 });
   const pointerLockActive = useRef(false);
   const [scrollThumb, setScrollThumb] = useState({ widthPct: 100, leftPct: 0 });
-  const [companyScrollThumb, setCompanyScrollThumb] = useState({ widthPct: 100, leftPct: 0 });
   const [chartWidth, setChartWidth] = useState(1000);
   const [creationDraft, setCreationDraft] = useState<{ startMs: number; endMs: number; y: number } | null>(null);
   const creationDraftRef = useRef<typeof creationDraft>(null);
@@ -2769,7 +2566,6 @@ const GanttChart: React.FC<GanttChartProps> = ({
   }, [activities]);
 
   const totalSpan = Math.max(DAY_MS, timeline.end - timeline.start);
-  const dayWidthPct = (DAY_MS / totalSpan) * 100;
 
   const days = useMemo(() => {
     const arr: { ms: number; label: string; weekday: string }[] = [];
@@ -2972,6 +2768,7 @@ const GanttChart: React.FC<GanttChartProps> = ({
     const handleGlobalMouseUp = () => {
       if (isPanning.current) endPan();
     };
+    const lockTarget = scrollRef.current;
     document.addEventListener("pointerlockchange", handleLockChange);
     document.addEventListener("pointerlockerror", handleLockChange);
     window.addEventListener("mousemove", handlePointerLockMove);
@@ -2981,7 +2778,7 @@ const GanttChart: React.FC<GanttChartProps> = ({
       document.removeEventListener("pointerlockerror", handleLockChange);
       window.removeEventListener("mousemove", handlePointerLockMove);
       window.removeEventListener("mouseup", handleGlobalMouseUp);
-      if (document.pointerLockElement === scrollRef.current) {
+      if (document.pointerLockElement === lockTarget) {
         document.exitPointerLock?.();
       }
     };
@@ -3080,26 +2877,6 @@ const GanttChart: React.FC<GanttChartProps> = ({
       );
     }
     return ticks;
-  };
-
-  const renderMonths = () => {
-    const months = [];
-    let cursor = new Date(timeline.start);
-    cursor.setUTCDate(1);
-    while (cursor.getTime() < timeline.end) {
-      const startMs = cursor.getTime();
-      const next = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth() + 1, 1)).getTime();
-      const endMs = Math.min(next, timeline.end);
-      const width = ((endMs - startMs) / totalSpan) * 100;
-      months.push(
-        <div key={startMs} className="absolute top-0 left-0 h-6 border-r border-slate-300/60 dark:border-slate-600/60 text-[11px] flex items-center px-2 text-slate-600 dark:text-slate-300 font-semibold"
-          style={{ width: `${width}%`, transform: `translateX(${dateToX(startMs)}%)` }}>
-          {cursor.toLocaleString("en-US", { month: "short", year: "numeric" })}
-        </div>
-      );
-      cursor = new Date(next);
-    }
-    return months;
   };
 
   return (
@@ -3683,6 +3460,7 @@ const ProjectDetailsPanel: React.FC<ProjectDetailsPanelProps> = ({
 
   return (
     <div
+      data-project-id={projectId}
       className={`w-80 border-l border-slate-300 bg-white dark:border-slate-700 dark:bg-slate-900 flex flex-col overflow-hidden fixed right-0 top-[122px] bottom-0 transform transition-transform duration-300 ease-in-out ${visibilityClasses}`}
       style={{ bottom: "-5px" }}
     >
@@ -4138,7 +3916,7 @@ const FormulaPresetDialog: React.FC<FormulaPresetDialogProps> = ({
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60">
           <div>
             <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-50">Formula Presets</h3>
-            <p className="text-sm text-slate-500 dark:text-slate-400">Saved formulas available across all projects. Create new presets from the formula dialog using “Save as preset”.</p>
+            <p className="text-sm text-slate-500 dark:text-slate-400">Saved formulas available across all projects. Create new presets from the formula dialog using â€œSave as presetâ€.</p>
           </div>
           <button onClick={onClose} className="p-2 rounded hover:bg-slate-200 dark:hover:bg-slate-700">
             <IconX />
@@ -4838,6 +4616,11 @@ export default function DashboardPage() {
     note: "",
   });
   const [rentRollDeleteModal, setRentRollDeleteModal] = useState<{ open: boolean; entry: RentRollEntry | null }>({ open: false, entry: null });
+  const [deleteActivityModal, setDeleteActivityModal] = useState<{ open: boolean; activity: Activity | null; targetId: string }>({
+    open: false,
+    activity: null,
+    targetId: "",
+  });
   const [linkingPropertyId, setLinkingPropertyId] = useState<string | null>(null);
   const [linkTargetProjectId, setLinkTargetProjectId] = useState<string>("");
   const [exportModalOpen, setExportModalOpen] = useState(false);
@@ -4846,6 +4629,18 @@ export default function DashboardPage() {
   const [exportHistory, setExportHistory] = useState<{ id: string; type: string; format: string; filename: string; timestamp: string }[]>([]);
   const [statementUploads, setStatementUploads] = useState<{ id: string; name: string; size: number; uploadedAt: string }[]>([]);
   const [parsedStatements, setParsedStatements] = useState<{ uploadId: string; rows: { date: string; description: string; amount: number }[] }[]>([]);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const raw = window.localStorage.getItem("exportHistory");
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) setExportHistory(parsed);
+      }
+    } catch (err) {
+      console.warn("Failed to load export history", err);
+    }
+  }, []);
   const loadStatements = useCallback(async () => {
     try {
       const res = await fetch("/api/statements");
@@ -4903,6 +4698,7 @@ export default function DashboardPage() {
             initialDueMonthDay: u.initialDueMonthDay || "01-01",
             bedrooms: Number(u.bedrooms || 0),
             bathrooms: Number(u.bathrooms || 0),
+            createdAt: u.createdAt ? toDateString(toDateMs(u.createdAt)) : toDateString(getCentralTodayMs()),
           }))
         );
       }
@@ -4995,9 +4791,22 @@ export default function DashboardPage() {
   const loadActivities = useCallback(async (wbsList?: DbWbsNode[]) => {
     const wbsMap = new Map<number, string>((wbsList || []).map((n) => [n.id, n.code]));
     try {
-      const res = await fetch("/api/activities");
-      if (!res.ok) return {};
-      const data = await res.json();
+      const [resActivities, resAssignments] = await Promise.all([
+        fetch("/api/activities"),
+        fetch("/api/resource-assignments"),
+      ]);
+      if (!resActivities.ok) return {};
+      const data = await resActivities.json();
+      const assignments: any[] = resAssignments.ok ? ((await resAssignments.json()).assignments || []) : [];
+      const assignmentsByActivity = assignments.reduce<Record<string, ActivityResource[]>>((acc, a) => {
+        const key = String(a.activityId);
+        acc[key] = acc[key] || [];
+        acc[key].push({
+          resourceId: String(a.resourceId),
+          quantity: Number(a.plannedUnits ?? 0),
+        });
+        return acc;
+      }, {});
       const grouped: Record<number, Activity[]> = {};
       (data.activities || []).forEach((a: any) => {
         const projectId = Number(a.projectId);
@@ -5019,7 +4828,7 @@ export default function DashboardPage() {
           projectedCost: Number(a.projectedCost || 0),
           budget: Number(a.budget || 0),
           revenue: Number(a.revenue || 0),
-          resources: [],
+          resources: assignmentsByActivity[String(a.id)] || [],
           predecessors: a.predecessorIds ? a.predecessorIds.map((id: any) => String(id)) : [],
           successor: a.successorId ? String(a.successorId) : undefined,
         };
@@ -5110,7 +4919,7 @@ export default function DashboardPage() {
         id: String(t.id),
         employeeId: String(t.employeeId),
         projectId: t.projectId ? Number(t.projectId) : null,
-        date: toDateString(toDateMs(t.date)),
+        date: String(t.date),
         hours: Number(t.hours || 0),
       }));
       setTimeEntries(mapped);
@@ -5165,6 +4974,52 @@ export default function DashboardPage() {
     }
   }, []);
 
+  const loadFormulaPresetsDb = useCallback(async () => {
+    try {
+      const res = await fetch("/api/formula-presets");
+      if (!res.ok) return [];
+      const data = await res.json();
+      const mapped: CustomFormula[] = (data.presets || []).map((p: any) => ({
+        id: String(p.id),
+        name: p.name,
+        formula: p.formula,
+        description: p.description || "",
+        resultType: (p.resultType as CustomFormula["resultType"]) || "currency",
+      }));
+      setFormulaPresets(mapped);
+      return mapped;
+    } catch (err) {
+      console.error("Failed to load formula presets", err);
+      return [];
+    }
+  }, []);
+
+  const loadCustomFormulasDb = useCallback(async () => {
+    try {
+      const res = await fetch("/api/formulas");
+      if (!res.ok) return {};
+      const data = await res.json();
+      const grouped: Record<number, CustomFormula[]> = {};
+      (data.formulas || []).forEach((f: any) => {
+        const pid = Number(f.projectId);
+        if (!pid) return;
+        const cf: CustomFormula = {
+          id: String(f.id),
+          name: f.name,
+          formula: f.formula,
+          description: f.description || "",
+          resultType: (f.resultType as CustomFormula["resultType"]) || "currency",
+        };
+        grouped[pid] = [...(grouped[pid] || []), cf];
+      });
+      setCustomFormulas(grouped);
+      return grouped;
+    } catch (err) {
+      console.error("Failed to load custom formulas", err);
+      return {};
+    }
+  }, []);
+
   const loadPipelineMeta = useCallback(async () => {
     try {
       const res = await fetch("/api/pipeline");
@@ -5197,8 +5052,16 @@ export default function DashboardPage() {
     const epsLoaded = await loadEpsNodes();
 
     // auto-create EPS nodes for projects that don't have one yet
-    const epsProjects = new Set((epsLoaded || []).filter((n: any) => n.type === "project").map((n: any) => Number(n.projectId || n.id)));
-    const missingProjects = (projectsLoaded || []).filter((p: any) => !epsProjects.has(Number(p.id)));
+    const epsProjects = new Set(
+      (epsLoaded || [])
+        .filter((n): n is EpsNode => !!n && n.type === "project")
+        .map((n) => Number(n.projectId ?? n.id))
+    );
+    type BasicProject = { id: number | string; name?: string; code?: string };
+    const missingProjects = (projectsLoaded || []).filter((p: unknown): p is BasicProject => {
+      if (!p || typeof p !== "object" || !("id" in p)) return false;
+      return !epsProjects.has(Number((p as BasicProject).id));
+    });
     for (const p of missingProjects) {
       try {
         const res = await fetch("/api/eps", {
@@ -5236,10 +5099,12 @@ export default function DashboardPage() {
       loadTimeEntries(),
       loadPaychecks(),
       loadProjectDetailsDb(),
+      loadCustomFormulasDb(),
+      loadFormulaPresetsDb(),
       loadPipelineMeta(),
     ]);
     return { projectsLoaded, wbsLoaded };
-  }, [loadActivities, loadEpsNodes, loadEmployees, loadPaychecks, loadPipelineMeta, loadProjectDetailsDb, loadProjects, loadResourcesFromDb, loadTimeEntries, loadTransactions, loadWbs]);
+  }, [loadActivities, loadCustomFormulasDb, loadEpsNodes, loadEmployees, loadFormulaPresetsDb, loadPaychecks, loadPipelineMeta, loadProjectDetailsDb, loadProjects, loadResourcesFromDb, loadTimeEntries, loadTransactions, loadWbs]);
   const [isDetailsPanelVisible, setIsDetailsPanelVisible] = useState(true);
   const [epsViewTab, setEpsViewTab] = useState<"overview" | "gantt">("overview");
   const [activityView, setActivityView] = useState<"details" | "gantt">("details");
@@ -5292,6 +5157,12 @@ export default function DashboardPage() {
   const [pendingAcquireProjectId, setPendingAcquireProjectId] = useState<number | null>(null);
   const [laborWeekStart, setLaborWeekStart] = useState(() => getWeekStart(getCentralTodayMs()));
   const [paycheckNumbers, setPaycheckNumbers] = useState<Record<string, string>>({});
+  const [paycheckEditModal, setPaycheckEditModal] = useState<{ open: boolean; paycheck: Paycheck | null; amount: string; checkNumber: string }>({
+    open: false,
+    paycheck: null,
+    amount: "",
+    checkNumber: "",
+  });
   const [employeeFormOpen, setEmployeeFormOpen] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   const [employeeNameInput, setEmployeeNameInput] = useState("");
@@ -5299,33 +5170,67 @@ export default function DashboardPage() {
 
   const rentRollPropertyMap = useMemo(() => {
     return rentRollProperties.reduce<Record<string, RentRollProperty>>((acc, p) => {
-      acc[p.id] = p;
+      acc[String(p.id)] = { ...p, id: String(p.id) };
       return acc;
     }, {});
   }, [rentRollProperties]);
 
   const filteredRentRoll = useMemo(() => {
     if (rentRollProperty === "all") return rentRollEntries;
-    return rentRollEntries.filter((entry) => entry.propertyId === rentRollProperty);
+    const target = String(rentRollProperty);
+    return rentRollEntries.filter((entry) => String(entry.propertyId) === target);
   }, [rentRollEntries, rentRollProperty]);
+
+  const nextDueMonthKeyFromCreation = useCallback((createdAt: string, monthDay: string) => {
+    const createdMs = toDateMs(createdAt || toDateString(getCentralTodayMs()));
+    const created = new Date(createdMs);
+    const createdYear = created.getUTCFullYear();
+    const createdMonth = created.getUTCMonth() + 1;
+    const createdDay = created.getUTCDate();
+    const { month: dueMonth, day: dueDay } = parseMonthDay(monthDay || "01-01");
+
+    // Build the first due date on/after creation
+    let targetMonth = createdMonth;
+    let targetYear = createdYear;
+
+    if (dueMonth < createdMonth || (dueMonth === createdMonth && dueDay < createdDay)) {
+      targetYear = createdYear + 1;
+      targetMonth = dueMonth;
+    } else {
+      targetMonth = dueMonth;
+      targetYear = createdYear;
+    }
+    const candidateMs = Date.UTC(targetYear, targetMonth - 1, dueDay);
+    // If the chosen month/day is still before creation (e.g., creation later in same month), bump one month
+    const adjustedMs = candidateMs < createdMs ? Date.UTC(targetYear, targetMonth, dueDay) : candidateMs;
+    const adjustedDate = new Date(adjustedMs);
+    const y = adjustedDate.getUTCFullYear();
+    const m = adjustedDate.getUTCMonth() + 1;
+    return `${y}-${String(m).padStart(2, "0")}`;
+  }, []);
   const paymentRollup = useMemo(() => {
     const todayMs = getCentralTodayMs();
     const todayKey = getMonthKey(toDateString(todayMs));
-    const paymentsByEntryMonth: Record<string, Record<string, number>> = {};
+    const paymentsByEntryMonth: Record<string, Record<string, { amount: number; firstDate: string }>> = {};
     rentPayments.forEach((p) => {
       const key = getMonthKey(p.date);
       paymentsByEntryMonth[p.rentRollEntryId] = paymentsByEntryMonth[p.rentRollEntryId] || {};
-      paymentsByEntryMonth[p.rentRollEntryId][key] = (paymentsByEntryMonth[p.rentRollEntryId][key] || 0) + p.amount;
+      const existing = paymentsByEntryMonth[p.rentRollEntryId][key];
+      const dateStr = toDateString(toDateMs(p.date));
+      paymentsByEntryMonth[p.rentRollEntryId][key] = {
+        amount: (existing?.amount || 0) + p.amount,
+        firstDate: existing?.firstDate
+          ? (toDateMs(dateStr) < toDateMs(existing.firstDate) ? dateStr : existing.firstDate)
+          : dateStr,
+      };
     });
 
     const map: Record<string, { paid: number; balance: number; monthKey: string; monthLabel: string; dueDate: string; lateFee: number; totalDue: number }> = {};
     rentRollEntries.forEach((entry) => {
-      const { month } = parseMonthDay(entry.initialDueMonthDay || "01-01");
-      const todayYear = Number(todayKey.split("-")[0]);
-      const startKey = `${todayYear}-${String(month).padStart(2, "0")}`;
+      const startKey = nextDueMonthKeyFromCreation(entry.createdAt || toDateString(getCentralTodayMs()), entry.initialDueMonthDay || "01-01");
 
       const months = monthKeySequence(startKey, todayKey);
-      const paymentsForEntry = Object.entries(paymentsByEntryMonth[entry.id] || {}).reduce((sum, [, amt]) => sum + amt, 0);
+      const paymentsForEntry = Object.entries(paymentsByEntryMonth[entry.id] || {}).reduce((sum, [, info]) => sum + info.amount, 0);
 
       let totalLateFeeOutstanding = 0;
       let totalDueOutstanding = 0;
@@ -5334,12 +5239,13 @@ export default function DashboardPage() {
       let firstUnpaidKey = months[0];
       let firstUnpaidDueDate = "";
 
-      months.forEach((key, idx) => {
+      months.forEach((key) => {
         const dueDate = getMonthDayDate(key, entry.initialDueMonthDay || "01-01");
-        // For past months, assume fully late; for current month compute actual lateness
-        const daysLate = idx < months.length - 1
-          ? 30 // prior months accrue full late fee
-          : Math.max(0, Math.floor((todayMs - toDateMs(dueDate)) / DAY_MS));
+        const paymentInfoForMonth = paymentsByEntryMonth[entry.id]?.[key];
+        const paidDateMs = paymentInfoForMonth?.firstDate ? toDateMs(paymentInfoForMonth.firstDate) : null;
+        const settled = paymentInfoForMonth?.amount && paymentInfoForMonth.amount >= entry.rent;
+        const comparisonDateMs = settled && paidDateMs ? paidDateMs : todayMs;
+        const daysLate = Math.max(0, Math.floor((comparisonDateMs - toDateMs(dueDate)) / DAY_MS));
         const initialLateFee = daysLate >= 3 ? 50 : 0; // late after end of 3rd day
         const perDayLateStart = 5; // begins on 5th day
         const perDayCount = Math.max(0, daysLate - (perDayLateStart - 1));
@@ -5377,7 +5283,7 @@ export default function DashboardPage() {
       };
     });
     return map;
-  }, [rentRollEntries, rentPayments]);
+  }, [rentRollEntries, rentPayments, nextDueMonthKeyFromCreation]);
 
   const downloadCsv = useCallback((filename: string, rows: (string | number)[][]) => {
     const csv = rows.map(r => r.map(csvEscape).join(",")).join("\n");
@@ -5393,13 +5299,20 @@ export default function DashboardPage() {
   URL.revokeObjectURL(url);
 }, []);
 
-  const downloadXlsx = useCallback((filename: string, sheets: { name: string; rows: (string | number)[][] }[]) => {
-    const xml = toExcelXml(sheets);
-    const blob = new Blob([xml], { type: "application/vnd.ms-excel" });
+  const downloadXlsx = useCallback(async (filename: string, sheets: { name: string; rows: (string | number)[][] }[]) => {
+    const XLSX = await import("xlsx");
+    const wb = XLSX.utils.book_new();
+    sheets.forEach(({ name, rows }) => {
+      const safeName = slugify(name || "Sheet").slice(0, 31) || "Sheet";
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+      XLSX.utils.book_append_sheet(wb, ws, safeName);
+    });
+    const wbout = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+    const blob = new Blob([wbout], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = filename;
+    link.download = filename.endsWith(".xlsx") ? filename : `${filename}.xlsx`;
     link.style.display = "none";
     document.body.appendChild(link);
     link.click();
@@ -5408,13 +5321,18 @@ export default function DashboardPage() {
   }, []);
 
   const logExport = useCallback((type: string, format: string, filename: string) => {
-    setExportHistory((prev) => [
-      { id: `exp-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, type, format, filename, timestamp: new Date().toISOString() },
-      ...prev,
-    ]);
+    const entry = { id: `exp-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, type, format, filename, timestamp: new Date().toISOString() };
+    setExportHistory((prev) => {
+      const next = [entry, ...prev];
+      if (typeof window !== "undefined") {
+        try { window.localStorage.setItem("exportHistory", JSON.stringify(next)); } catch {}
+      }
+      return next;
+    });
   }, []);
 
-  const exportMainLedger = () => {
+  const exportMainLedger = (fmt?: "csv" | "xlsx") => {
+    const format = fmt ?? exportFormat;
     const rows: (string | number)[][] = [
       ["Date", "Type", "Amount", "Description", "Source", "Property/Project", "Category", "Note"],
     ];
@@ -5434,71 +5352,48 @@ export default function DashboardPage() {
       });
     });
     rows.sort((a, b) => toDateMs(String(b[0])) - toDateMs(String(a[0])));
-    if (exportFormat === "csv") {
+    if (format === "csv") {
       downloadCsv("main-ledger.csv", rows);
       logExport("Main Ledger", "CSV", "main-ledger.csv");
     } else {
-      downloadXlsx("main-ledger.xls", [{ name: "Main Ledger", rows }]);
-      logExport("Main Ledger", "XLSX", "main-ledger.xls");
+      downloadXlsx("main-ledger.xlsx", [{ name: "Main Ledger", rows }]);
+      logExport("Main Ledger", "XLSX", "main-ledger.xlsx");
     }
   };
 
-  const exportPropertyLedger = () => {
-    if (exportFormat === "csv") {
-      rentRollProperties.forEach((prop) => {
+  const exportPropertyLedger = (fmt?: "csv" | "xlsx") => {
+    const format = fmt ?? exportFormat;
+    const projectIds = Object.keys(transactions).map(Number).filter(Boolean);
+
+    if (format === "csv") {
+      projectIds.forEach((pid) => {
         const rows: (string | number)[][] = [["Date", "Type", "Amount", "Description", "Source", "Category", "Note"]];
-        const inferredProjectId = getPropertyProjectId(prop);
-        const includePayments = isProjectAcquired(inferredProjectId);
-        const linkedTxns = inferredProjectId ? (transactions[inferredProjectId] || []) : [];
-        linkedTxns
-          .slice()
-          .sort((a, b) => toDateMs(b.date) - toDateMs(a.date))
-          .forEach((t) => {
-            rows.push([t.date, t.type, t.amount, t.description, "Project", t.category, t.subCategory || ""]);
-          });
-        if (includePayments) {
-          rentPayments
-            .filter((p) => rentRollEntries.find((e) => e.id === p.rentRollEntryId)?.propertyId === prop.id)
-            .sort((a, b) => toDateMs(b.date) - toDateMs(a.date))
-            .forEach((p) => {
-              const entry = rentRollEntries.find((e) => e.id === p.rentRollEntryId);
-              rows.push([p.date, "Income", p.amount, entry ? `Rent payment - ${entry.unit}` : "Rent payment", "Rent Payment", "Rent", p.note || ""]);
-            });
-        }
-        const filename = `property-ledger-${slugify(prop.name)}.csv`;
+        const projTxns = (transactions[pid] || []).slice().sort((a, b) => toDateMs(b.date) - toDateMs(a.date));
+        projTxns.forEach((t) => {
+          rows.push([t.date, t.type, t.amount, t.description, "Project", t.category, t.subCategory || ""]);
+        });
+        const projName = epsProjectNameById(pid) || `Project-${pid}`;
+        const filename = `project-ledger-${slugify(projName)}.csv`;
         downloadCsv(filename, rows);
-        logExport(`Property Ledger (${prop.name})`, "CSV", filename);
+        logExport(`Project Ledger (${projName})`, "CSV", filename);
       });
     } else {
-      const sheets = rentRollProperties.map((prop) => {
+      const sheets = projectIds.map((pid) => {
         const rows: (string | number)[][] = [["Date", "Type", "Amount", "Description", "Source", "Category", "Note"]];
-        const inferredProjectId = getPropertyProjectId(prop);
-        const includePayments = isProjectAcquired(inferredProjectId);
-        const linkedTxns = inferredProjectId ? (transactions[inferredProjectId] || []) : [];
-        linkedTxns
-          .slice()
-          .sort((a, b) => toDateMs(b.date) - toDateMs(a.date))
-          .forEach((t) => {
-            rows.push([t.date, t.type, t.amount, t.description, "Project", t.category, t.subCategory || ""]);
-          });
-        if (includePayments) {
-          rentPayments
-            .filter((p) => rentRollEntries.find((e) => e.id === p.rentRollEntryId)?.propertyId === prop.id)
-            .sort((a, b) => toDateMs(b.date) - toDateMs(a.date))
-            .forEach((p) => {
-              const entry = rentRollEntries.find((e) => e.id === p.rentRollEntryId);
-              rows.push([p.date, "Income", p.amount, entry ? `Rent payment - ${entry.unit}` : "Rent payment", "Rent Payment", "Rent", p.note || ""]);
-            });
-        }
-        return { name: prop.name.slice(0, 28) || "Property", rows };
+        const projTxns = (transactions[pid] || []).slice().sort((a, b) => toDateMs(b.date) - toDateMs(a.date));
+        projTxns.forEach((t) => rows.push([t.date, t.type, t.amount, t.description, "Project", t.category, t.subCategory || ""]));
+        const projName = epsProjectNameById(pid) || `Project-${pid}`;
+        return { name: projName.slice(0, 28) || `Project-${pid}`, rows };
       });
-      downloadXlsx("property-ledgers.xls", sheets);
-      logExport("Property Ledgers", "XLSX", "property-ledgers.xls");
+      downloadXlsx("project-ledgers.xlsx", sheets);
+      logExport("Project Ledgers", "XLSX", "project-ledgers.xlsx");
     }
   };
 
-  const exportRentRollLedger = () => {
-    if (exportFormat === "csv") {
+  const exportRentRollLedger = (fmt?: "csv" | "xlsx") => {
+    const format = fmt ?? exportFormat;
+
+    if (format === "csv") {
       rentRollProperties.forEach((prop) => {
         const rows: (string | number)[][] = [["Date", "Tenant/Unit", "Amount", "Note"]];
         rentRollEntries
@@ -5530,8 +5425,24 @@ export default function DashboardPage() {
           });
         return { name: prop.name.slice(0, 28), rows };
       });
-      downloadXlsx("rent-roll-ledger.xls", sheets);
-      logExport("Rent Roll Ledgers", "XLSX", "rent-roll-ledger.xls");
+      downloadXlsx("rent-roll-ledger.xlsx", sheets);
+      logExport("Rent Roll Ledgers", "XLSX", "rent-roll-ledger.xlsx");
+    }
+  };
+
+  const rerunExport = (h: { type: string; format: string }) => {
+    const fmt = h.format.toLowerCase() === "xlsx" ? "xlsx" : "csv";
+    if (h.type.toLowerCase().includes("main ledger")) {
+      exportMainLedger(fmt as "csv" | "xlsx");
+      return;
+    }
+    if (h.type.toLowerCase().includes("project ledger")) {
+      exportPropertyLedger(fmt as "csv" | "xlsx");
+      return;
+    }
+    if (h.type.toLowerCase().includes("rent roll")) {
+      exportRentRollLedger(fmt as "csv" | "xlsx");
+      return;
     }
   };
   const rentRollSummary = useMemo(() => {
@@ -5624,12 +5535,6 @@ export default function DashboardPage() {
   const handleStartAdd = () => {
     const target = getAddTarget(contextMenu.node || null);
     setPendingAddConfig({ type: target.type, parentId: target.parentId });
-    setModalMode("add");
-    setModalValue("");
-  };
-
-  const handleStartAddWithType = (type: EpsNodeType, parentId: number | null) => {
-    setPendingAddConfig({ type, parentId });
     setModalMode("add");
     setModalValue("");
   };
@@ -5995,7 +5900,7 @@ export default function DashboardPage() {
       ? parseFloat(value)
       : value;
 
-    const payload: any = { id: Number(activityId) };
+    const payload: Record<string, unknown> = { id: Number(activityId) };
     if (field === "name") payload.name = value;
     if (field === "status") payload.status = value;
     if (field === "responsible") payload.responsible = value;
@@ -6031,16 +5936,50 @@ export default function DashboardPage() {
 
   const handleDeleteActivity = () => {
     if (!activeProjectId || !contextMenu.activity) return;
+    setDeleteActivityModal({ open: true, activity: contextMenu.activity, targetId: "" });
+    setContextMenu({ x: 0, y: 0, node: null, type: null, activity: null });
+  };
 
-    fetch(`/api/activities?id=${Number(contextMenu.activity.id)}`, { method: "DELETE" })
-      .catch(err => console.error("Failed to delete activity", err));
+  const handleConfirmDeleteActivity = async () => {
+    if (!deleteActivityModal.activity || !activeProjectDbId) {
+      setDeleteActivityModal({ open: false, activity: null, targetId: "" });
+      return;
+    }
+    const activityId = deleteActivityModal.activity.id;
+    const targetId = deleteActivityModal.targetId || null;
+    const projectKey = activeProjectDbId;
+    const projectTxns = transactions[projectKey] || [];
+    const toReassign = projectTxns.filter(t => t.activityId === activityId);
 
-    setActivities(prev => ({
-      ...prev,
-      [activeProjectId]: (prev[activeProjectId] || []).filter(a => a.id !== contextMenu.activity!.id)
+    // Reassign transactions if needed
+    await Promise.all(toReassign.map(async (t) => {
+      try {
+        await fetch("/api/transactions", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: Number(t.id), activityId: targetId ? Number(targetId) : null }),
+        });
+      } catch (err) {
+        console.error("Failed to reassign transaction", err);
+      }
     }));
 
-    setContextMenu({ x: 0, y: 0, node: null, type: null, activity: null });
+    // Delete activity
+    try {
+      await fetch(`/api/activities?id=${Number(activityId)}`, { method: "DELETE" });
+    } catch (err) {
+      console.error("Failed to delete activity", err);
+    }
+
+    setTransactions(prev => ({
+      ...prev,
+      [projectKey]: projectTxns.map(t => t.activityId === activityId ? { ...t, activityId: targetId || undefined } : t),
+    }));
+    setActivities(prev => ({
+      ...prev,
+      [projectKey]: (prev[projectKey] || []).filter(a => a.id !== activityId)
+    }));
+    setDeleteActivityModal({ open: false, activity: null, targetId: "" });
   };
 
   const handleDuplicateActivity = () => {
@@ -6070,6 +6009,24 @@ export default function DashboardPage() {
     }));
   };
 
+  const epsProjects = useMemo(() => epsNodes.filter(n => n.type === "project"), [epsNodes]);
+  const epsProjectMap = useMemo(() => {
+    const map: Record<number, string> = {};
+    epsProjects.forEach((p) => {
+      if (p.projectId) map[p.projectId] = p.name; // map DB id
+      map[p.id] = p.name; // also map EPS node id
+    });
+    return map;
+  }, [epsProjects]);
+
+  const epsProjectNameById = useCallback((id: number | null | undefined) => (id && epsProjectMap[id]) || "", [epsProjectMap]);
+  const getProjectDbIdFromNode = useCallback((nodeId: number | null | undefined) => {
+    if (!nodeId) return null;
+    const node = findNode(epsNodes, nodeId);
+    if (node && node.type === "project" && node.projectId) return node.projectId;
+    return null;
+  }, [epsNodes]);
+
   const handleAddTransaction = useCallback(async (transaction: Omit<Transaction, "id">, projectIdOverride?: number) => {
     const mappedOverride = projectIdOverride ? (getProjectDbIdFromNode(projectIdOverride) ?? projectIdOverride) : null;
     const projectKey = mappedOverride || activeProjectDbId || resolveProjectId();
@@ -6098,7 +6055,7 @@ export default function DashboardPage() {
     } catch (err) {
       console.error("Failed to add transaction", err);
     }
-  }, [activeProjectDbId, resolveProjectId]);
+  }, [activeProjectDbId, resolveProjectId, getProjectDbIdFromNode]);
 
   const handleUpdateTransaction = (transaction: Transaction, projectIdOverride?: number) => {
     const mappedOverride = projectIdOverride ? (getProjectDbIdFromNode(projectIdOverride) ?? projectIdOverride) : null;
@@ -6145,14 +6102,28 @@ export default function DashboardPage() {
   };
 
   const handleSaveActivityResources = (activityId: string, newResources: ActivityResource[]) => {
-    if (!activeProjectId) return;
+    const projectKey = activeProjectDbId ?? resolveProjectId();
+    if (!projectKey) return;
 
+    // Optimistic update
     setActivities(prev => ({
       ...prev,
-      [activeProjectId]: (prev[activeProjectId] || []).map(a =>
+      [projectKey]: (prev[projectKey] || []).map(a =>
         a.id === activityId ? { ...a, resources: newResources } : a
       )
     }));
+
+    fetch("/api/resource-assignments", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        activityId: Number(activityId),
+        resources: newResources.map((r) => ({
+          resourceId: Number(r.resourceId),
+          quantity: r.quantity,
+        })),
+      }),
+    }).catch(err => console.error("Failed to save resource assignments", err));
   };
 
   const handleSaveAllResources = (updatedResources: Resource[]) => {
@@ -6246,10 +6217,9 @@ export default function DashboardPage() {
 
   // --- Project Details Operations ---
   const handleUpdateProjectDetails = (updatedDetails: ProjectDetail[]) => {
-    const projectKey = activeProjectDbId ?? resolveProjectId();
-    if (!projectKey) return;
-    const prevDetails = projectDetails[projectKey] || [];
-    const prevIds = new Set(prevDetails.map(d => d.id));
+    const projectDbId = activeProjectDbId ?? resolveProjectId();
+    if (!projectDbId) return;
+    const prevDetails = projectDetails[projectDbId] || [];
     const updatedIds = new Set(updatedDetails.map(d => d.id));
 
     // deletions
@@ -6261,7 +6231,7 @@ export default function DashboardPage() {
 
     // upserts
     updatedDetails.forEach((d) => {
-      const payload = { projectId: activeProjectId, variable: d.variable, value: d.value };
+      const payload = { projectId: projectDbId, variable: d.variable, value: d.value };
       if (d.id && !isNaN(Number(d.id))) {
         fetch("/api/project-details", {
           method: "PATCH",
@@ -6280,7 +6250,7 @@ export default function DashboardPage() {
             if (detail?.id) {
               setProjectDetails(prev => ({
                 ...prev,
-                [projectKey]: updatedDetails.map(ud => ud === d ? { ...ud, id: String(detail.id) } : ud),
+                [projectDbId]: updatedDetails.map(ud => ud === d ? { ...ud, id: String(detail.id) } : ud),
               }));
             }
           })
@@ -6290,7 +6260,7 @@ export default function DashboardPage() {
 
     setProjectDetails(prev => ({
       ...prev,
-      [projectKey]: updatedDetails,
+      [projectDbId]: updatedDetails,
     }));
   };
 
@@ -6350,47 +6320,120 @@ export default function DashboardPage() {
     setFormulaDialogOpen(true);
   };
 
-  const handleDeleteFormula = (formulaId: string) => {
-    if (!activeProjectId && !selectedNodeId) return;
-    const projectId = activeProjectId || selectedNodeId;
-    if (!projectId) return;
+  const handleDeleteFormula = async (formulaId: string) => {
+    const projectDbId = activeProjectDbId ?? resolveProjectId();
+    if (!projectDbId) return;
 
     const confirmed = window.confirm("Are you sure you want to delete this formula?");
     if (!confirmed) return;
 
     setCustomFormulas(prev => ({
       ...prev,
-      [projectId]: (prev[projectId] || []).filter(f => f.id !== formulaId)
+      [projectDbId]: (prev[projectDbId] || []).filter(f => f.id !== formulaId)
     }));
+
+    try {
+      await fetch(`/api/formulas?id=${encodeURIComponent(formulaId)}&projectId=${projectDbId}`, {
+        method: "DELETE",
+      });
+    } catch (err) {
+      console.error("Failed to delete formula", err);
+    }
   };
 
-  const handleSaveFormula = (formula: CustomFormula) => {
-    const projectId = activeProjectId || selectedNodeId;
-    if (!projectId) return;
+  const handleSaveFormula = async (formula: CustomFormula) => {
+    const projectDbId = activeProjectDbId ?? resolveProjectId();
+    if (!projectDbId) return;
+
+    const hasDbId = formula.id && !Number.isNaN(Number(formula.id));
+    const payload = {
+      projectId: projectDbId,
+      name: formula.name,
+      formula: formula.formula,
+      description: formula.description,
+      resultType: formula.resultType,
+    };
+
+    let saved = formula;
+    try {
+      const res = await fetch("/api/formulas", {
+        method: hasDbId ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(hasDbId ? { id: Number(formula.id), ...payload } : payload),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const apiFormula = data.formula || data?.detail || null;
+        if (apiFormula) {
+          saved = {
+            ...formula,
+            id: String(apiFormula.id ?? formula.id),
+            name: apiFormula.name ?? formula.name,
+            formula: apiFormula.formula ?? formula.formula,
+            description: apiFormula.description ?? formula.description,
+            resultType: (apiFormula.resultType as CustomFormula["resultType"]) ?? formula.resultType,
+          };
+        }
+      }
+    } catch (err) {
+      console.error("Failed to save formula", err);
+    }
 
     setCustomFormulas(prev => {
-      const existing = prev[projectId] || [];
-      const existingIndex = existing.findIndex(f => f.id === formula.id);
+      const existing = prev[projectDbId] || [];
+      const existingIndex = existing.findIndex(f => f.id === saved.id);
 
       if (existingIndex >= 0) {
         const updated = [...existing];
-        updated[existingIndex] = formula;
-        return { ...prev, [projectId]: updated };
+        updated[existingIndex] = saved;
+        return { ...prev, [projectDbId]: updated };
       } else {
-        return { ...prev, [projectId]: [...existing, formula] };
+        return { ...prev, [projectDbId]: [...existing, saved] };
       }
     });
   };
 
-  const handleSaveFormulaPreset = (formula: CustomFormula) => {
+  const handleSaveFormulaPreset = async (formula: CustomFormula) => {
+    const hasDbId = formula.id && !Number.isNaN(Number(formula.id));
+    const payload = {
+      name: formula.name,
+      formula: formula.formula,
+      description: formula.description,
+      resultType: formula.resultType,
+    };
+    let saved = formula;
+    try {
+      const res = await fetch("/api/formula-presets", {
+        method: hasDbId ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(hasDbId ? { id: Number(formula.id), ...payload } : payload),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const apiPreset = data.preset || null;
+        if (apiPreset) {
+          saved = {
+            ...formula,
+            id: String(apiPreset.id ?? formula.id),
+            name: apiPreset.name ?? formula.name,
+            formula: apiPreset.formula ?? formula.formula,
+            description: apiPreset.description ?? formula.description,
+            resultType: (apiPreset.resultType as CustomFormula["resultType"]) ?? formula.resultType,
+          };
+        }
+      }
+    } catch (err) {
+      console.error("Failed to save formula preset", err);
+    }
+
     setFormulaPresets((prev) => {
-      const existingIdx = prev.findIndex(p => p.id === formula.id);
+      const existingIdx = prev.findIndex(p => p.id === saved.id);
       if (existingIdx >= 0) {
         const next = [...prev];
-        next[existingIdx] = formula;
+        next[existingIdx] = saved;
         return next;
       }
-      return [...prev, { ...formula, id: formula.id.startsWith("P") ? formula.id : `P${Date.now()}` }];
+      return [...prev, saved];
     });
   };
 
@@ -6420,15 +6463,48 @@ export default function DashboardPage() {
     return null;
   };
 
-  const handleApplyPresetToProject = (presetId: string) => {
-    const projectId = resolveActiveProjectId();
-    if (!projectId) return;
+  const handleApplyPresetToProject = async (presetId: string) => {
+    const nodeId = resolveActiveProjectId();
+    const projectDbId = activeProjectDbId ?? (nodeId ? getProjectDbIdFromNode(nodeId) ?? null : null);
+    if (!projectDbId) return;
     const preset = formulaPresets.find(p => p.id === presetId);
     if (!preset) return;
-    const cloned: CustomFormula = { ...preset, id: `CF${Date.now()}` };
+
+    const payload = {
+      projectId: projectDbId,
+      name: preset.name,
+      formula: preset.formula,
+      description: preset.description,
+      resultType: preset.resultType,
+    };
+
+    let saved: CustomFormula = { ...preset, id: "" };
+    try {
+      const res = await fetch("/api/formulas", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const apiFormula = data.formula || null;
+        if (apiFormula) {
+          saved = {
+            id: String(apiFormula.id),
+            name: apiFormula.name ?? preset.name,
+            formula: apiFormula.formula ?? preset.formula,
+            description: apiFormula.description ?? preset.description,
+            resultType: (apiFormula.resultType as CustomFormula["resultType"]) ?? preset.resultType,
+          };
+        }
+      }
+    } catch (err) {
+      console.error("Failed to apply preset to project", err);
+    }
+
     setCustomFormulas(prev => ({
       ...prev,
-      [projectId]: [...(prev[projectId] || []), cloned],
+      [projectDbId]: [...(prev[projectDbId] || []), saved],
     }));
     setPresetPickerOpen(false);
 
@@ -6437,9 +6513,9 @@ export default function DashboardPage() {
     const taxVarNames = new Set(Object.keys(taxVariableMap));
 
     setProjectDetails(prev => {
-      const existingDetails = prev[projectId] || [];
+      const existingDetails = prev[projectDbId] || [];
       const existingDetailNames = new Set(existingDetails.map(d => d.variable));
-      const existingFormulaNames = new Set((customFormulas[projectId] || []).map(f => f.name));
+      const existingFormulaNames = new Set((customFormulas[projectDbId] || []).map(f => f.name));
 
       const missingDetailVars = placeholderVars.filter(
         (v) => !existingDetailNames.has(v) && !existingFormulaNames.has(v) && !taxVarNames.has(v)
@@ -6535,29 +6611,6 @@ export default function DashboardPage() {
     setPendingAcquireProjectId(null);
   };
 
-  const epsProjects = useMemo(() => epsNodes.filter(n => n.type === "project"), [epsNodes]);
-  const epsProjectMap = useMemo(() => {
-    const map: Record<number, string> = {};
-    epsProjects.forEach((p) => { map[p.id] = p.name; });
-    return map;
-  }, [epsProjects]);
-  const epsProjectNameById = useCallback((id: number | null | undefined) => (id && epsProjectMap[id]) || "", [epsProjectMap]);
-  const isProjectAcquired = useCallback((id: number | null | undefined) => {
-    if (!id) return true;
-    return pipelineMeta[id]?.status === "acquired";
-  }, [pipelineMeta]);
-
-  const getProjectDbIdFromNode = useCallback((nodeId: number | null | undefined) => {
-    if (!nodeId) return null;
-    const node = findNode(epsNodes, nodeId);
-    if (node && node.type === "project" && node.projectId) return node.projectId;
-    return null;
-  }, [epsNodes]);
-  const getPropertyProjectId = useCallback((prop: RentRollProperty) => {
-    const inferred = epsProjects.find(p => p.name.toLowerCase() === prop.name.toLowerCase());
-    return prop.linkedProjectId ?? inferred?.id ?? null;
-  }, [epsProjects]);
-
   const ensureRentProperty = useCallback(async (name: string) => {
     const trimmed = name.trim();
     if (!trimmed) return null;
@@ -6627,6 +6680,8 @@ export default function DashboardPage() {
               : entry
           )
         );
+        await loadRentData();
+        setRentRollProperty(String(propertyId));
       } catch (err) {
         console.error("Failed to update unit", err);
       }
@@ -6650,6 +6705,7 @@ export default function DashboardPage() {
         if (!res.ok) throw new Error("Failed to create unit");
         const data = await res.json();
         const unit = data.unit || {};
+        const now = toDateString(getCentralTodayMs());
         const newEntry: RentRollEntry = {
           id: String(unit.id || `RR${Date.now().toString(36)}`),
           propertyId,
@@ -6662,8 +6718,11 @@ export default function DashboardPage() {
           initialDueMonthDay: unit.initialDueMonthDay || initialDueMonthDay,
           bedrooms: Number(unit.bedrooms ?? bedrooms),
           bathrooms: Number(unit.bathrooms ?? bathrooms),
+          createdAt: unit.createdAt ? toDateString(toDateMs(unit.createdAt)) : now,
         };
         setRentRollEntries((prev) => [...prev, newEntry]);
+        await loadRentData();
+        setRentRollProperty(String(propertyId));
       } catch (err) {
         console.error("Failed to save unit", err);
       }
@@ -6859,6 +6918,7 @@ export default function DashboardPage() {
   }, [laborWeekStart]);
 
   const laborProjects = useMemo(() => epsNodes.filter(n => n.type === "project"), [epsNodes]);
+  const laborProjectsDb = useMemo(() => laborProjects.filter(p => p.projectId != null), [laborProjects]);
 
   const addTimeEntry = useCallback((empId: string, date: string, defaultProjectId: number | null) => {
     fetch("/api/time-entries", {
@@ -6888,15 +6948,18 @@ export default function DashboardPage() {
       .catch(err => console.error("Failed to add time entry", err));
   }, []);
 
+
+
   const updateTimeEntry = useCallback((entryId: string, field: "projectId" | "hours", value: number | null) => {
-    const patch: any = field === "projectId" ? { projectId: value } : { hours: value };
+    const mappedVal = field === "projectId" && value ? (getProjectDbIdFromNode(value) ?? value) : value;
+    const patch: Record<string, number | null> = field === "projectId" ? { projectId: mappedVal } : { hours: value };
     fetch("/api/time-entries", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id: Number(entryId), ...patch }),
     }).catch(err => console.error("Failed to update time entry", err));
     setTimeEntries(prev => prev.map(t => t.id === entryId ? { ...t, [field]: value } : t));
-  }, []);
+  }, [getProjectDbIdFromNode]);
 
   const deleteTimeEntry = useCallback((entryId: string) => {
     fetch(`/api/time-entries?id=${Number(entryId)}`, { method: "DELETE" })
@@ -6914,6 +6977,58 @@ export default function DashboardPage() {
       .reduce((sum, t) => sum + (t.hours || 0), 0);
   }, [laborWeekStart, timeEntries]);
 
+  const syncPayrollTransactions = useCallback((employee: Employee, weekStart: string, mode: "delete" | "replace", amountOverride?: number) => {
+    const startMs = toDateMs(weekStart);
+    const endMs = startMs + 6 * DAY_MS;
+    const weekEntries = timeEntries.filter(
+      t => t.employeeId === employee.id && toDateMs(t.date) >= startMs && toDateMs(t.date) <= endMs && t.projectId
+    );
+    const hoursByProject = new Map<number, number>();
+    weekEntries.forEach((t) => {
+      if (!t.projectId) return;
+      hoursByProject.set(t.projectId, (hoursByProject.get(t.projectId) || 0) + (t.hours || 0));
+    });
+
+    // remove existing payroll txns for this employee/week
+    const matchText = `Paycheck - ${employee.name} - Week ${weekStart}`;
+    Object.entries(transactions).forEach(([pidStr, txns]) => {
+      const pid = Number(pidStr);
+      const toRemove = txns.filter(t => typeof t.description === "string" && t.description.includes(matchText));
+      if (toRemove.length) {
+        toRemove.forEach(t => {
+          const tid = Number(t.id);
+          if (!isNaN(tid)) {
+            fetch(`/api/transactions?id=${tid}`, { method: "DELETE" }).catch(err => console.error("Failed to delete payroll txn", err));
+          }
+        });
+        setTransactions(prev => ({
+          ...prev,
+          [pid]: prev[pid].filter(t => !toRemove.includes(t)),
+        }));
+      }
+    });
+
+    if (mode === "delete") return;
+
+    // re-add based on hours per project (or total override distributed evenly)
+    const totalHours = Array.from(hoursByProject.values()).reduce((s, h) => s + h, 0);
+    hoursByProject.forEach((projHours, projId) => {
+      const proportion = totalHours > 0 ? projHours / totalHours : 1 / Math.max(hoursByProject.size, 1);
+      const amount = amountOverride != null ? amountOverride * proportion : projHours * employee.rate;
+      handleAddTransaction(
+        {
+          date: weekStart,
+          description: `${matchText}`,
+          type: "Outcome",
+          category: "Labor",
+          subCategory: "Payroll",
+          amount,
+        },
+        projId
+      );
+    });
+  }, [handleAddTransaction, timeEntries, transactions]);
+
   const handleRecordPaycheck = (emp: Employee) => {
     const hours = weekHoursForEmployee(emp.id);
     const amount = hours * emp.rate;
@@ -6923,32 +7038,7 @@ export default function DashboardPage() {
       return;
     }
 
-    // group hours by project for the selected week
-    const startMs = toDateMs(laborWeekStart);
-    const endMs = startMs + 6 * DAY_MS;
-    const weekEntries = timeEntries.filter(
-      t => t.employeeId === emp.id && toDateMs(t.date) >= startMs && toDateMs(t.date) <= endMs && t.projectId
-    );
-    const hoursByProject = new Map<number, number>();
-    weekEntries.forEach((t) => {
-      if (!t.projectId) return;
-      hoursByProject.set(t.projectId, (hoursByProject.get(t.projectId) || 0) + (t.hours || 0));
-    });
-
-    hoursByProject.forEach((projHours, projId) => {
-      const projAmount = projHours * emp.rate;
-      handleAddTransaction(
-        {
-          date: laborWeekStart,
-          description: `Paycheck - ${emp.name} - ${formatCurrencyCents(projAmount)}`,
-          type: "Outcome",
-          category: "Labor",
-          subCategory: "Payroll",
-          amount: projAmount,
-        },
-        projId
-      );
-    });
+    syncPayrollTransactions(emp, laborWeekStart, "replace", amount);
 
     fetch("/api/paychecks", {
       method: "POST",
@@ -6975,6 +7065,60 @@ export default function DashboardPage() {
     setPaycheckNumbers(prev => ({ ...prev, [emp.id]: "" }));
   };
 
+  const handleOpenEditPaycheck = (pc: Paycheck) => {
+    setPaycheckEditModal({
+      open: true,
+      paycheck: pc,
+      amount: pc.amount.toString(),
+      checkNumber: pc.checkNumber || "",
+    });
+  };
+
+  const handleSavePaycheck = async () => {
+    if (!paycheckEditModal.paycheck) return;
+    const amt = parseFloat(paycheckEditModal.amount) || 0;
+    const checkNum = paycheckEditModal.checkNumber.trim();
+    const pc = paycheckEditModal.paycheck;
+    try {
+      const res = await fetch("/api/paychecks", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: Number(pc.id),
+          amount: amt,
+          checkNumber: checkNum,
+        }),
+      });
+      if (!res.ok) throw new Error("Failed to update paycheck");
+      const data = await res.json();
+      const updated = data.paycheck || {};
+      const employee = employees.find(e => e.id === pc.employeeId);
+      if (employee) {
+        syncPayrollTransactions(employee, pc.weekStart, "replace", amt);
+      }
+      setPaychecks(prev => prev.map(p => p.id === pc.id ? {
+        ...p,
+        amount: Number(updated.amount ?? amt),
+        checkNumber: updated.checkNumber ?? checkNum,
+      } : p));
+    } catch (err) {
+      console.error("Failed to update paycheck", err);
+    } finally {
+      setPaycheckEditModal({ open: false, paycheck: null, amount: "", checkNumber: "" });
+    }
+  };
+
+  const handleDeletePaycheck = async (pc: Paycheck) => {
+    try {
+      await fetch(`/api/paychecks?id=${Number(pc.id)}`, { method: "DELETE" });
+      const employee = employees.find(e => e.id === pc.employeeId);
+      if (employee) syncPayrollTransactions(employee, pc.weekStart, "delete");
+      setPaychecks(prev => prev.filter(p => p.id !== pc.id));
+    } catch (err) {
+      console.error("Failed to delete paycheck", err);
+    }
+  }; 
+  
   const handleSellerFieldChange = (projectId: number, field: keyof ProjectPipelineMeta["seller"], value: string) => {
     setPipelineMeta(prev => {
       const next = {
@@ -7143,10 +7287,16 @@ export default function DashboardPage() {
     return null;
   }, [selectedNode, epsNodes]);
 
-  const selectedProjectActivities = (selectedNode && activities[selectedNode.id]) || [];
-  const selectedProjectTransactions = (selectedNode && transactions[selectedNode.id]) || [];
-  const selectedProjectDetails = (selectedNode && selectedNode.type === "project" && projectDetails[selectedNode.id]) || [];
-  const selectedCustomFormulas = (selectedNode && selectedNode.type === "project" && customFormulas[selectedNode.id]) || [];
+  const selectedProjectDbId = useMemo(() => {
+    if (selectedNode?.type !== "project") return null;
+    const mapped = getProjectDbIdFromNode(selectedNode.id);
+    return mapped ?? (selectedNode.projectId ?? null);
+  }, [getProjectDbIdFromNode, selectedNode]);
+
+  const selectedProjectActivities = (selectedProjectDbId && activities[selectedProjectDbId]) || [];
+  const selectedProjectTransactions = (selectedProjectDbId && transactions[selectedProjectDbId]) || [];
+  const selectedProjectDetails = (selectedProjectDbId && projectDetails[selectedProjectDbId]) || [];
+  const selectedCustomFormulas = (selectedProjectDbId && customFormulas[selectedProjectDbId]) || [];
 
   const companyProjects = useMemo(() => {
     if (!selectedCompany) return [];
@@ -7373,26 +7523,6 @@ export default function DashboardPage() {
                 >
                   + New Rental
                 </button>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={exportMainLedger}
-                    className="px-3 py-2 text-xs rounded-md border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
-                  >
-                    Export Main Ledger
-                  </button>
-                  <button
-                    onClick={exportPropertyLedger}
-                    className="px-3 py-2 text-xs rounded-md border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
-                  >
-                    Export Property Ledgers
-                  </button>
-                  <button
-                    onClick={exportRentRollLedger}
-                    className="px-3 py-2 text-xs rounded-md border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
-                  >
-                    Export Rent Roll Ledger
-                  </button>
-                </div>
               </div>
             </div>
 
@@ -7856,6 +7986,7 @@ export default function DashboardPage() {
                       <th className="px-3 py-2 text-left">Type</th>
                       <th className="px-3 py-2 text-left">Format</th>
                       <th className="px-3 py-2 text-left">Filename</th>
+                      <th className="px-3 py-2 text-left">Re-run</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -7865,6 +7996,14 @@ export default function DashboardPage() {
                         <td className="px-3 py-2 text-slate-700 dark:text-slate-200">{h.type}</td>
                         <td className="px-3 py-2 text-slate-700 dark:text-slate-200">{h.format}</td>
                         <td className="px-3 py-2 text-slate-700 dark:text-slate-200">{h.filename}</td>
+                        <td className="px-3 py-2">
+                          <button
+                            onClick={() => rerunExport(h)}
+                            className="px-2 py-1 text-xs rounded bg-blue-600 text-white hover:bg-blue-700"
+                          >
+                            Re-export
+                          </button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -7891,7 +8030,7 @@ export default function DashboardPage() {
                   <label className="text-xs text-slate-500 dark:text-slate-400">Export Type</label>
                   <select
                     value={exportType}
-                    onChange={(e) => setExportType(e.target.value as any)}
+                    onChange={(e) => setExportType(e.target.value as "main" | "property" | "rentroll")}
                     className="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm"
                   >
                     <option value="main">Main Ledger</option>
@@ -8108,7 +8247,7 @@ export default function DashboardPage() {
                         <div key={parsed.uploadId} className="mb-5">
                           <div className="flex items-center justify-between mb-2">
                             <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">
-                              {upload?.name || "Statement"} — {parsed.rows.length} lines
+                              {upload?.name || "Statement"} â€” {parsed.rows.length} lines
                             </div>
                             <div className="text-xs text-slate-500 dark:text-slate-400">
                               Uploaded {upload ? new Date(upload.uploadedAt).toLocaleString() : ""}
@@ -8311,18 +8450,49 @@ export default function DashboardPage() {
           onDelete={handleDeletePreset}
         />
 
-        <PresetPicker
-          open={presetPickerOpen}
-          onClose={() => setPresetPickerOpen(false)}
-          presets={formulaPresets}
-          onApply={handleApplyPresetToProject}
-        />
+      <PresetPicker
+        open={presetPickerOpen}
+        onClose={() => setPresetPickerOpen(false)}
+        presets={formulaPresets}
+        onApply={handleApplyPresetToProject}
+      />
 
-        <AcquisitionConfirmModal
-          open={acquireConfirmOpen}
-          onConfirm={confirmAcquire}
-          onCancel={() => { setAcquireConfirmOpen(false); setPendingAcquireProjectId(null); }}
-        />
+      {paycheckEditModal.open && paycheckEditModal.paycheck && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setPaycheckEditModal({ open: false, paycheck: null, amount: "", checkNumber: "" })}>
+          <div className="bg-white dark:bg-slate-900 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 w-[380px] p-5" onClick={(e) => e.stopPropagation()}>
+            <h4 className="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-3">Edit Paycheck</h4>
+            <div className="space-y-3 text-sm">
+              <div>
+                <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">Amount</div>
+                <input
+                  type="number"
+                  value={paycheckEditModal.amount}
+                  onChange={(e) => setPaycheckEditModal(prev => ({ ...prev, amount: e.target.value }))}
+                  className="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1"
+                />
+              </div>
+              <div>
+                <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">Check #</div>
+                <input
+                  value={paycheckEditModal.checkNumber}
+                  onChange={(e) => setPaycheckEditModal(prev => ({ ...prev, checkNumber: e.target.value }))}
+                  className="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1"
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 mt-4">
+              <button onClick={() => setPaycheckEditModal({ open: false, paycheck: null, amount: "", checkNumber: "" })} className="px-3 py-1.5 text-sm rounded border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300">Cancel</button>
+              <button onClick={handleSavePaycheck} className="px-3 py-1.5 text-sm rounded bg-blue-600 text-white hover:bg-blue-700">Save</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <AcquisitionConfirmModal
+        open={acquireConfirmOpen}
+        onConfirm={confirmAcquire}
+        onCancel={() => { setAcquireConfirmOpen(false); setPendingAcquireProjectId(null); }}
+      />
       </div>
     );
   }
@@ -8440,8 +8610,8 @@ export default function DashboardPage() {
                                       className="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs px-2 py-1"
                                     >
                                       <option value="">Select project</option>
-                                      {laborProjects.map(p => (
-                                        <option key={p.id} value={p.id}>{p.name}</option>
+                                      {laborProjectsDb.map(p => (
+                                        <option key={p.id} value={p.projectId ?? p.id}>{p.name}</option>
                                       ))}
                                     </select>
                                     <div className="flex items-center gap-1">
@@ -8458,13 +8628,13 @@ export default function DashboardPage() {
                                         onClick={() => deleteTimeEntry(entry.id)}
                                         className="px-2 py-1 text-[11px] rounded bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300 hover:bg-red-200"
                                       >
-                                        ✕
+                                        Delete
                                       </button>
                                     </div>
                                   </div>
                                 ))}
                                 <button
-                                  onClick={() => addTimeEntry(emp.id, d.date, laborProjects[0]?.id ?? null)}
+                                  onClick={() => addTimeEntry(emp.id, d.date, laborProjectsDb[0]?.projectId ?? null)}
                                   className="w-full text-[11px] px-2 py-1 rounded border border-dashed border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
                                 >
                                   + Add entry
@@ -8544,12 +8714,19 @@ export default function DashboardPage() {
               <div className="p-4 border-t border-slate-200 dark:border-slate-700">
                 <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-2">Recent Paychecks</h4>
                 <div className="space-y-1 text-sm text-slate-600 dark:text-slate-300">
-                  {paychecks.slice(-5).reverse().map(pc => {
-                    const emp = employees.find(e => e.id === pc.employeeId);
+                  {paychecks.slice(-5).reverse().map((pc) => {
+                    const emp = employees.find((e) => e.id === pc.employeeId);
                     return (
                       <div key={pc.id} className="flex items-center justify-between rounded bg-slate-50 dark:bg-slate-800/60 px-3 py-2">
-                        <span>{emp?.name || pc.employeeId} • Week of {pc.weekStart} • Check #{pc.checkNumber}</span>
-                        <span className="font-semibold">${pc.amount.toFixed(2)}</span>
+                        <div className="space-y-1">
+                          <div>{emp?.name || pc.employeeId} • Week of {pc.weekStart}</div>
+                          <div className="text-xs text-slate-500 dark:text-slate-400">Check #{pc.checkNumber}</div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold">${pc.amount.toFixed(2)}</span>
+                          <button onClick={() => handleOpenEditPaycheck(pc)} className="px-2 py-1 text-xs rounded bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-100 hover:bg-slate-300 dark:hover:bg-slate-600">Edit</button>
+                          <button onClick={() => handleDeletePaycheck(pc)} className="px-2 py-1 text-xs rounded bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-200 hover:bg-red-200">Delete</button>
+                        </div>
                       </div>
                     );
                   })}
@@ -8614,7 +8791,9 @@ export default function DashboardPage() {
   // ---------------------------------------------------------------------------
   if (mode === "Activities" && activeProject && activeProjectDbId) {
     const projectKey = activeProjectDbId;
-    const projectActivities = activities[projectKey] || [];
+    const projectActivitiesRaw = activities[projectKey] || [];
+    const compareWbs = (a: string, b: string) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
+    const projectActivities = [...projectActivitiesRaw].sort((a, b) => compareWbs(a.wbs, b.wbs));
     const projectTransactions = transactions[projectKey] || [];
     const currentProjectDetails = projectDetails[projectKey] || [];
     const currentCustomFormulas = customFormulas[projectKey] || [];
@@ -8817,7 +8996,7 @@ export default function DashboardPage() {
                   onClick={() => setMode("EPS")}
                   className="text-xs text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
                 >
-                  ← Back to EPS
+                  Back to EPS
                 </button>
               </div>
             </div>
@@ -8948,7 +9127,7 @@ export default function DashboardPage() {
                 </button>
               </div>
               <div className="flex items-center gap-3 text-xs text-slate-600 dark:text-slate-300">
-                <span className="px-2 py-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">Week: {todayWeekStart} – {todayWeekEnd}</span>
+                <span className="px-2 py-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">Week: {todayWeekStart} â€“ {todayWeekEnd}</span>
                 <span className="px-2 py-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">Month: {todayMonthLabel}</span>
               </div>
             </div>
@@ -9376,6 +9555,46 @@ export default function DashboardPage() {
                   className="px-3 py-1 text-sm rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
                 >
                   Save
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {deleteActivityModal.open && deleteActivityModal.activity && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setDeleteActivityModal({ open: false, activity: null, targetId: "" })}>
+            <div className="bg-white dark:bg-slate-900 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 w-[420px] p-5" onClick={(e) => e.stopPropagation()}>
+              <h4 className="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-2">Delete activity</h4>
+              <p className="text-sm text-slate-600 dark:text-slate-300 mb-3">
+                Delete <span className="font-semibold">{deleteActivityModal.activity.name}</span>? You can reassign its transactions to another activity or leave them unassigned.
+              </p>
+              <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">Reassign transactions to</label>
+              <select
+                className="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm p-2 text-slate-800 dark:text-slate-100"
+                value={deleteActivityModal.targetId}
+                onChange={(e) => setDeleteActivityModal((prev) => ({ ...prev, targetId: e.target.value }))}
+              >
+                <option value="">-- Leave unassigned --</option>
+                {projectActivities
+                  .filter(a => a.id !== deleteActivityModal.activity?.id)
+                  .map(a => (
+                    <option key={a.id} value={a.id}>
+                      {a.wbs} - {a.name}
+                    </option>
+                  ))}
+              </select>
+              <div className="flex justify-end gap-2 mt-4">
+                <button
+                  onClick={() => setDeleteActivityModal({ open: false, activity: null, targetId: "" })}
+                  className="px-3 py-1.5 text-sm rounded border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleConfirmDeleteActivity}
+                  className="px-3 py-1.5 text-sm rounded bg-red-600 text-white hover:bg-red-700"
+                >
+                  Delete
                 </button>
               </div>
             </div>
@@ -9858,6 +10077,37 @@ export default function DashboardPage() {
         onApply={handleApplyPresetToProject}
       />
 
+      {paycheckEditModal.open && paycheckEditModal.paycheck && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setPaycheckEditModal({ open: false, paycheck: null, amount: "", checkNumber: "" })}>
+          <div className="bg-white dark:bg-slate-900 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 w-[380px] p-5" onClick={(e) => e.stopPropagation()}>
+            <h4 className="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-3">Edit Paycheck</h4>
+            <div className="space-y-3 text-sm">
+              <div>
+                <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">Amount</div>
+                <input
+                  type="number"
+                  value={paycheckEditModal.amount}
+                  onChange={(e) => setPaycheckEditModal(prev => ({ ...prev, amount: e.target.value }))}
+                  className="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1"
+                />
+              </div>
+              <div>
+                <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">Check #</div>
+                <input
+                  value={paycheckEditModal.checkNumber}
+                  onChange={(e) => setPaycheckEditModal(prev => ({ ...prev, checkNumber: e.target.value }))}
+                  className="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1"
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 mt-4">
+              <button onClick={() => setPaycheckEditModal({ open: false, paycheck: null, amount: "", checkNumber: "" })} className="px-3 py-1.5 text-sm rounded border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300">Cancel</button>
+              <button onClick={handleSavePaycheck} className="px-3 py-1.5 text-sm rounded bg-blue-600 text-white hover:bg-blue-700">Save</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <AcquisitionConfirmModal
         open={acquireConfirmOpen}
         onConfirm={confirmAcquire}
@@ -9877,3 +10127,8 @@ export default function DashboardPage() {
     </div>
   );
 }
+
+
+
+
+
