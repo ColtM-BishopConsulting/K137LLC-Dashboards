@@ -4959,7 +4959,7 @@ export default function DashboardPage() {
       const firstRootId = nodes.find((n) => n.parentId === null)?.id ?? null;
       const firstProject = nodes.find((n) => n.type === "project");
       setSelectedNodeId(firstProject?.id ?? firstRootId);
-      setActiveProjectId(firstProject?.projectId ?? firstProject?.id ?? null);
+      setActiveProjectId(firstProject?.projectId ?? null);
       setExpanded(
         nodes.length
           ? new Set(nodes.filter((n) => n.parentId !== null).map((n) => n.parentId!))
@@ -5601,7 +5601,7 @@ export default function DashboardPage() {
   const handleNodeClick = useCallback((node: EpsNode) => {
     setSelectedNodeId(node.id);
     if (node.type === "project") {
-      setActiveProjectId(node.projectId ?? node.id);
+      setActiveProjectId(node.projectId ?? null);
     }
   }, []);
 
@@ -5721,7 +5721,7 @@ export default function DashboardPage() {
 
       setEpsNodes((prev) => [...prev, newNode]);
       setSelectedNodeId(newNode.id);
-      setActiveProjectId(project.id ? Number(project.id) : newNode.id);
+      setActiveProjectId(project.id ? Number(project.id) : null);
       if (pendingAddConfig.parentId != null) {
         setExpanded((prev) => {
           const next = new Set(prev);
@@ -5805,7 +5805,8 @@ export default function DashboardPage() {
 
     fetch(`/api/eps?id=${contextMenu.node.id}`, { method: "DELETE" }).catch(err => console.error("Failed to delete eps node", err));
     if (contextMenu.node.type === "project") {
-      fetch(`/api/projects?id=${contextMenu.node.id}`, { method: "DELETE" })
+      const projectDbId = contextMenu.node.projectId ?? contextMenu.node.id;
+      fetch(`/api/projects?id=${projectDbId}`, { method: "DELETE" })
         .catch(err => console.error("Failed to delete project", err));
     }
 
@@ -5882,19 +5883,36 @@ export default function DashboardPage() {
   };
 
   // --- Activity & Transaction Operations ---
+  const activeProject = useMemo(() => {
+    if (!activeProjectId) return null;
+    return epsNodes.find((n) => n.type === "project" && (n.projectId === activeProjectId || n.id === activeProjectId)) || null;
+  }, [activeProjectId, epsNodes]);
+  const activeProjectDbId = useMemo(() => activeProject?.projectId ?? null, [activeProject]);
+
+  const resolveProjectId = useCallback(() => {
+    if (activeProjectDbId) return activeProjectDbId;
+    const node = selectedNodeId ? findNode(epsNodes, selectedNodeId) : null;
+    if (node && node.type === "project" && node.projectId) {
+      return node.projectId;
+    }
+    alert("This project is missing a linked projectId. Please re-create or relink the project.");
+    return null;
+  }, [activeProjectDbId, epsNodes, selectedNodeId]);
+
   const handleStartNewActivity = () => {
-    if (!activeProjectId) return;
+    if (!resolveProjectId()) return;
     setGanttCreateMode(false);
     setNewActivityDraft(null);
     setNewActivityDialog(true);
   };
 
   const handleAddActivity = useCallback(async (activity: Activity) => {
-    if (!activeProjectId) return;
+    const projectId = resolveProjectId();
+    if (!projectId) return;
 
     try {
       const existingWbs = wbsNodesDb.find(
-        (n) => n.projectId === activeProjectId && n.code === activity.wbs
+        (n) => n.projectId === projectId && n.code === activity.wbs
       );
       let wbsId = existingWbs?.id;
       if (!wbsId) {
@@ -5902,25 +5920,27 @@ export default function DashboardPage() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            projectId: activeProjectId,
+            projectId,
             code: activity.wbs || "1.0",
             name: activity.name,
             parentId: null,
             sortOrder: 0,
           }),
         });
-        if (resWbs.ok) {
-          const data = await resWbs.json();
-          wbsId = Number(data.node?.id);
-          const createdNode: DbWbsNode = {
-            id: wbsId,
-            projectId: activeProjectId,
-            code: activity.wbs || "1.0",
-            name: activity.name,
-            parentId: null,
-          };
-          setWbsNodesDb((prev) => [...prev, createdNode]);
+        if (!resWbs.ok) {
+          const msg = await resWbs.text();
+          throw new Error(`Failed to create WBS: ${msg || resWbs.statusText}`);
         }
+        const data = await resWbs.json();
+        wbsId = Number(data.node?.id);
+        const createdNode: DbWbsNode = {
+          id: wbsId,
+          projectId,
+          code: activity.wbs || "1.0",
+          name: activity.name,
+          parentId: null,
+        };
+        setWbsNodesDb((prev) => [...prev, createdNode]);
       }
 
       if (!wbsId) throw new Error("Unable to resolve WBS for activity");
@@ -5929,7 +5949,7 @@ export default function DashboardPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          projectId: activeProjectId,
+          projectId,
           wbsId: wbsId,
           code: activity.wbs || activity.id,
           name: activity.name,
@@ -5939,12 +5959,15 @@ export default function DashboardPage() {
           status: activity.status,
           startDate: activity.start,
           finishDate: activity.finish,
-          durationDays: activity.duration,
-          percentComplete: activity.pct,
+          durationDays: Number(activity.duration || 0),
+          percentComplete: Number(activity.pct || 0),
           responsible: activity.responsible,
         }),
       });
-      if (!res.ok) throw new Error("Failed to create activity");
+      if (!res.ok) {
+        const msg = await res.text();
+        throw new Error(msg || "Failed to create activity");
+      }
       const data = await res.json();
       const saved = data.activity || {};
       const mapped: Activity = {
@@ -5954,12 +5977,12 @@ export default function DashboardPage() {
       };
       setActivities(prev => ({
         ...prev,
-        [activeProjectId]: [...(prev[activeProjectId] || []), mapped]
+        [projectId]: [...(prev[projectId] || []), mapped]
       }));
     } catch (err) {
       console.error("Failed to add activity", err);
     }
-  }, [activeProjectId, wbsNodesDb]);
+  }, [resolveProjectId, wbsNodesDb]);
 
   const handleUpdateActivity = (
     activityId: string,
@@ -5978,6 +6001,15 @@ export default function DashboardPage() {
     if (field === "responsible") payload.responsible = value;
     if (field === "duration") payload.durationDays = newValue;
     if (field === "pct") payload.percentComplete = newValue;
+    if (field === "wbs") {
+      const target = wbsNodesDb.find(n => n.code === value);
+      if (!target) {
+        alert("WBS code not found. Please create it in the WBS tree first.");
+        return;
+      }
+      payload.wbsId = Number(target.id);
+      payload.code = value;
+    }
     if (field === "start" || field === "finish") {
       const act = activities[activeProjectId]?.find(a => a.id === activityId);
       payload.startDate = field === "start" ? value : act?.start;
@@ -6039,15 +6071,16 @@ export default function DashboardPage() {
   };
 
   const handleAddTransaction = useCallback(async (transaction: Omit<Transaction, "id">, projectIdOverride?: number) => {
-    const targetProjectId = projectIdOverride || activeProjectId;
-    if (!targetProjectId) return;
+    const mappedOverride = projectIdOverride ? (getProjectDbIdFromNode(projectIdOverride) ?? projectIdOverride) : null;
+    const projectKey = mappedOverride || activeProjectDbId || resolveProjectId();
+    if (!projectKey) return;
     try {
       const res = await fetch("/api/transactions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...transaction,
-          projectId: targetProjectId,
+          projectId: projectKey,
           activityId: transaction.activityId ? Number(transaction.activityId) : null,
         }),
       });
@@ -6060,22 +6093,23 @@ export default function DashboardPage() {
       };
       setTransactions(prev => ({
         ...prev,
-        [targetProjectId]: [...(prev[targetProjectId] || []), newTransaction]
+        [projectKey]: [...(prev[projectKey] || []), newTransaction]
       }));
     } catch (err) {
       console.error("Failed to add transaction", err);
     }
-  }, [activeProjectId]);
+  }, [activeProjectDbId, resolveProjectId]);
 
   const handleUpdateTransaction = (transaction: Transaction, projectIdOverride?: number) => {
-    const targetProjectId = projectIdOverride || activeProjectId;
-    if (!targetProjectId) return;
+    const mappedOverride = projectIdOverride ? (getProjectDbIdFromNode(projectIdOverride) ?? projectIdOverride) : null;
+    const projectKey = mappedOverride || activeProjectDbId || resolveProjectId();
+    if (!projectKey) return;
     fetch("/api/transactions", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         id: Number(transaction.id),
-        projectId: targetProjectId,
+        projectId: projectKey,
         activityId: transaction.activityId ? Number(transaction.activityId) : null,
         type: transaction.type,
         category: transaction.category,
@@ -6087,17 +6121,18 @@ export default function DashboardPage() {
     }).catch(err => console.error("Failed to update transaction", err));
     setTransactions(prev => ({
       ...prev,
-      [targetProjectId]: (prev[targetProjectId] || []).map(t => t.id === transaction.id ? transaction : t),
+      [projectKey]: (prev[projectKey] || []).map(t => t.id === transaction.id ? transaction : t),
     }));
   };
 
   const handleDeleteTransaction = (transactionId: string, projectIdOverride?: number) => {
-    const targetProjectId = projectIdOverride || activeProjectId;
-    if (!targetProjectId) return;
+    const mappedOverride = projectIdOverride ? (getProjectDbIdFromNode(projectIdOverride) ?? projectIdOverride) : null;
+    const projectKey = mappedOverride || activeProjectDbId || resolveProjectId();
+    if (!projectKey) return;
     fetch(`/api/transactions?id=${Number(transactionId)}`, { method: "DELETE" }).catch(err => console.error("Failed to delete transaction", err));
     setTransactions(prev => ({
       ...prev,
-      [targetProjectId]: (prev[targetProjectId] || []).filter(t => t.id !== transactionId),
+      [projectKey]: (prev[projectKey] || []).filter(t => t.id !== transactionId),
     }));
   };
 
@@ -6211,8 +6246,9 @@ export default function DashboardPage() {
 
   // --- Project Details Operations ---
   const handleUpdateProjectDetails = (updatedDetails: ProjectDetail[]) => {
-    if (!activeProjectId) return;
-    const prevDetails = projectDetails[activeProjectId] || [];
+    const projectKey = activeProjectDbId ?? resolveProjectId();
+    if (!projectKey) return;
+    const prevDetails = projectDetails[projectKey] || [];
     const prevIds = new Set(prevDetails.map(d => d.id));
     const updatedIds = new Set(updatedDetails.map(d => d.id));
 
@@ -6244,7 +6280,7 @@ export default function DashboardPage() {
             if (detail?.id) {
               setProjectDetails(prev => ({
                 ...prev,
-                [activeProjectId]: updatedDetails.map(ud => ud === d ? { ...ud, id: String(detail.id) } : ud),
+                [projectKey]: updatedDetails.map(ud => ud === d ? { ...ud, id: String(detail.id) } : ud),
               }));
             }
           })
@@ -6254,13 +6290,14 @@ export default function DashboardPage() {
 
     setProjectDetails(prev => ({
       ...prev,
-      [activeProjectId]: updatedDetails,
+      [projectKey]: updatedDetails,
     }));
   };
 
   const handleAutoPopulateProjectDetails = (fields: Omit<ProjectDetail, 'id'>[]) => {
-    if (!activeProjectId) return;
-    const currentDetails = projectDetails[activeProjectId] || [];
+    const projectKey = activeProjectDbId ?? resolveProjectId();
+    if (!projectKey) return;
+    const currentDetails = projectDetails[projectKey] || [];
     const existingVariables = new Set(currentDetails.map(d => d.variable));
 
     const nextIdNum = currentDetails.length > 0 ? Math.max(...currentDetails.map(d => parseInt(d.id.substring(1)))) + 1 : 1;
@@ -6278,7 +6315,7 @@ export default function DashboardPage() {
 
     setProjectDetails(prev => ({
       ...prev,
-      [activeProjectId]: [...currentDetails, ...newDetails],
+      [projectKey]: [...currentDetails, ...newDetails],
     }));
   };
 
@@ -6457,19 +6494,28 @@ export default function DashboardPage() {
     }).catch(err => console.error("Failed to persist pipeline meta", err));
   };
 
-  const handleProjectStatusChange = (projectId: number, status: ProjectStatus) => {
-    const existing = pipelineMeta[projectId] || { seller: { name: "", phone: "", email: "" }, selectedEmailOptionIds: [] as string[], status: "under_contract" as ProjectStatus };
+  const handleProjectStatusChange = (epsOrProjectId: number, status: ProjectStatus) => {
+    const projectDbId = getProjectDbIdFromNode(epsOrProjectId);
+    if (!projectDbId) {
+      alert("This project node is missing a linked project. Please recreate or relink the project.");
+      return;
+    }
+    const existing = pipelineMeta[projectDbId] || { seller: { name: "", phone: "", email: "" }, selectedEmailOptionIds: [] as string[], status: "under_contract" as ProjectStatus };
     if (existing.status === "under_contract" && status === "acquired") {
-      setPendingAcquireProjectId(projectId);
+      setPendingAcquireProjectId(projectDbId);
       setAcquireConfirmOpen(true);
       return;
     }
     const nextMeta = { ...existing, status };
     setPipelineMeta(prev => ({
       ...prev,
-      [projectId]: nextMeta,
+      [projectDbId]: nextMeta,
     }));
-    persistPipelineMeta(projectId, nextMeta);
+    persistPipelineMeta(projectDbId, nextMeta);
+    if (status === "acquired") {
+      setActiveProjectId(projectDbId);
+      setMode("Activities");
+    }
   };
 
   const confirmAcquire = () => {
@@ -6483,6 +6529,8 @@ export default function DashboardPage() {
       persistPipelineMeta(pendingAcquireProjectId, next);
       return { ...prev, [pendingAcquireProjectId]: next };
     });
+    setActiveProjectId(pendingAcquireProjectId);
+    setMode("Activities");
     setAcquireConfirmOpen(false);
     setPendingAcquireProjectId(null);
   };
@@ -6498,6 +6546,13 @@ export default function DashboardPage() {
     if (!id) return true;
     return pipelineMeta[id]?.status === "acquired";
   }, [pipelineMeta]);
+
+  const getProjectDbIdFromNode = useCallback((nodeId: number | null | undefined) => {
+    if (!nodeId) return null;
+    const node = findNode(epsNodes, nodeId);
+    if (node && node.type === "project" && node.projectId) return node.projectId;
+    return null;
+  }, [epsNodes]);
   const getPropertyProjectId = useCallback((prop: RentRollProperty) => {
     const inferred = epsProjects.find(p => p.name.toLowerCase() === prop.name.toLowerCase());
     return prop.linkedProjectId ?? inferred?.id ?? null;
@@ -7057,7 +7112,6 @@ export default function DashboardPage() {
   // --- RENDERING LOGIC ---
   const treeNodes = buildTree(epsNodes);
   const selectedNode = selectedNodeId ? findNode(epsNodes, selectedNodeId) : null;
-  const activeProject = activeProjectId ? findNode(epsNodes, activeProjectId) : null;
   const parentMap = useMemo(() => {
     const map = new Map<number, number | null>();
     epsNodes.forEach((n) => map.set(n.id, n.parentId));
@@ -8558,12 +8612,13 @@ export default function DashboardPage() {
   // ---------------------------------------------------------------------------
   // ACTIVITIES VIEW
   // ---------------------------------------------------------------------------
-  if (mode === "Activities" && activeProject) {
-    const projectActivities = activities[activeProject.id] || [];
-    const projectTransactions = transactions[activeProject.id] || [];
-    const currentProjectDetails = projectDetails[activeProject.id] || [];
-    const currentCustomFormulas = customFormulas[activeProject.id] || [];
-    const projectMeta = pipelineMeta[activeProject.id] || { status: "under_contract", seller: { name: "", phone: "", email: "" }, selectedEmailOptionIds: [] };
+  if (mode === "Activities" && activeProject && activeProjectDbId) {
+    const projectKey = activeProjectDbId;
+    const projectActivities = activities[projectKey] || [];
+    const projectTransactions = transactions[projectKey] || [];
+    const currentProjectDetails = projectDetails[projectKey] || [];
+    const currentCustomFormulas = customFormulas[projectKey] || [];
+    const projectMeta = pipelineMeta[projectKey] || { status: "under_contract", seller: { name: "", phone: "", email: "" }, selectedEmailOptionIds: [] };
 
     const { totalActualCost } = calculateProjectStats(projectActivities, projectTransactions);
     const { totalBudget, totalActualCost: totalActualCostFin, totalRevenue, profit } = calculateFinancialKPIs(projectActivities, projectTransactions);
@@ -8667,7 +8722,11 @@ export default function DashboardPage() {
                 onToggleOption={(optionId) => handleToggleEmailOptionForProject(activeProject.id, optionId)}
                 onSend={() => handleSendSellerEmail(activeProject.id)}
                 onManageOptions={() => setEmailOptionsDialogOpen(true)}
-                onUpdateDetail={(variable, value) => upsertProjectDetail(activeProject.id, variable, value)}
+                onUpdateDetail={(variable, value) => {
+                  if (activeProjectDbId) {
+                    upsertProjectDetail(activeProjectDbId, variable, value);
+                  }
+                }}
               />
             </main>
           </div>
@@ -8937,6 +8996,7 @@ export default function DashboardPage() {
                             <th className="border-r border-slate-300 px-3 py-2 text-left dark:border-slate-600">Finish</th>
                             <th className="border-r border-slate-300 px-3 py-2 text-center dark:border-slate-600">%</th>
                             <th className="border-r border-slate-300 px-3 py-2 text-center dark:border-slate-600">Resources</th>
+                            <th className="border-r border-slate-300 px-3 py-2 text-right dark:border-slate-600">Budget</th>
                             <th className="border-r border-slate-300 px-3 py-2 text-right dark:border-slate-600">Res. Cost</th>
                             <th className="border-r border-slate-300 px-3 py-2 text-right dark:border-slate-600">Actual</th>
                             <th className="border-r border-slate-300 px-3 py-2 text-left dark:border-slate-600">Resp.</th>
@@ -9041,6 +9101,22 @@ export default function DashboardPage() {
                                     <span className="text-slate-400">-</span>
                                   )}
                                 </td>
+                                <td
+                                  onClick={() => setEditingCell({ activityId: activity.id, field: 'budget', value: activity.budget.toString() })}
+                                  className={`border-r border-slate-200 px-3 py-2 text-right font-medium text-slate-800 dark:border-slate-700 dark:text-slate-200 cursor-text hover:bg-blue-50 dark:hover:bg-blue-900/30 ${ACTIVITY_ROW_HEIGHT_CLASS}`}
+                                >
+                                  {editingCell?.activityId === activity.id && editingCell.field === 'budget' ? (
+                                    <input
+                                      autoFocus
+                                      type="number"
+                                      value={editingCell.value}
+                                      onChange={(e) => setEditingCell({ ...editingCell, value: e.target.value })}
+                                      onBlur={() => { handleUpdateActivity(activity.id, 'budget', editingCell.value); setEditingCell(null); }}
+                                      onKeyDown={(e) => { if (e.key === 'Enter') { handleUpdateActivity(activity.id, 'budget', editingCell.value); setEditingCell(null); } else if (e.key === 'Escape') { setEditingCell(null); } }}
+                                      className="w-full bg-transparent outline-none ring-1 ring-blue-500 px-1 rounded text-right"
+                                    />
+                                  ) : formatCurrency(activity.budget)}
+                                </td>
                                 <td className={`border-r border-slate-200 px-3 py-2 text-right font-medium text-slate-800 dark:border-slate-700 dark:text-slate-200 ${ACTIVITY_ROW_HEIGHT_CLASS}`}>
                                   {formatCurrency(resourceCost)}
                                 </td>
@@ -9131,12 +9207,12 @@ export default function DashboardPage() {
             </div>
 
             <ProjectLedger
-              projectId={activeProject.id}
+              projectId={activeProjectDbId ?? activeProject.id}
               activities={projectActivities}
               transactions={projectTransactions}
-              onAddTransaction={(t) => handleAddTransaction(t, activeProject.id)}
-              onUpdateTransaction={(t) => handleUpdateTransaction(t, activeProject.id)}
-              onDeleteTransaction={(id) => handleDeleteTransaction(id, activeProject.id)}
+              onAddTransaction={(t) => handleAddTransaction(t, activeProjectDbId ?? undefined)}
+              onUpdateTransaction={(t) => handleUpdateTransaction(t, activeProjectDbId ?? undefined)}
+              onDeleteTransaction={(id) => handleDeleteTransaction(id, activeProjectDbId ?? undefined)}
               isOpen={ledgerOpen}
               setIsOpen={setLedgerOpen}
               draftActivityId={quickLedgerActivityId}
@@ -9305,6 +9381,22 @@ export default function DashboardPage() {
             </div>
           </div>
         )}
+      </div>
+    );
+  }
+  if (mode === "Activities") {
+    return (
+      <div className="h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-900 text-slate-700 dark:text-slate-200">
+        <div className="text-center space-y-2">
+          <div className="text-lg font-semibold">Project link is missing.</div>
+          <div className="text-sm text-slate-500 dark:text-slate-400">Recreate or relink the project node to a valid project before using Activities.</div>
+          <button
+            onClick={() => setMode("EPS")}
+            className="mt-2 px-3 py-1.5 text-xs rounded border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700"
+          >
+            Back to EPS
+          </button>
+        </div>
       </div>
     );
   }

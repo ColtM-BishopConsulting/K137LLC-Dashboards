@@ -33,7 +33,11 @@ export async function PATCH(req: Request) {
       .set(rest)
       .where(id ? eq(projectPipelineMeta.id, id) : eq(projectPipelineMeta.projectId, projectId))
       .returning();
-    return NextResponse.json({ pipeline: updated[0] });
+    const row = Array.isArray(updated) ? updated[0] : updated;
+    if (row) return NextResponse.json({ pipeline: row });
+
+    const inserted = await db.insert(projectPipelineMeta).values(body).returning();
+    return NextResponse.json({ pipeline: Array.isArray(inserted) ? inserted[0] : inserted });
   } catch (err) {
     console.error("PATCH /api/pipeline error", err);
     return NextResponse.json({ error: "Failed to update pipeline meta" }, { status: 500 });
