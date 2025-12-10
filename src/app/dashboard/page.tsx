@@ -6533,7 +6533,7 @@ export default function DashboardPage() {
 
       return {
         ...prev,
-        [projectId]: [...existingDetails, ...newDetails],
+        [projectDbId]: [...existingDetails, ...newDetails],
       };
     });
   };
