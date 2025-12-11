@@ -3635,6 +3635,7 @@ const TopBar: React.FC<{
   currentUser?: { name: string; email: string; role: string } | null;
   onLogout?: () => void;
   onOpenCommit?: () => void;
+  commitDraftCount?: number;
 }> = ({
   title,
   projectName,
@@ -3645,6 +3646,7 @@ const TopBar: React.FC<{
   currentUser,
   onLogout,
   onOpenCommit,
+  commitDraftCount = 0,
 }) => {
   const { theme, setTheme } = useTheme();
 
@@ -3773,7 +3775,7 @@ const TopBar: React.FC<{
             }}
             className="px-3 py-1 text-xs rounded bg-emerald-600 text-white hover:bg-emerald-700"
           >
-            {`Commit${commitDraft.changes.length ? ` - ${commitDraft.changes.length} Change${commitDraft.changes.length === 1 ? "" : "s"}` : ""}`}
+            {`Commit${commitDraftCount ? ` - ${commitDraftCount} Change${commitDraftCount === 1 ? "" : "s"}` : ""}`}
           </button>
         )}
         {onLogout && (
@@ -4724,6 +4726,11 @@ export default function DashboardPage() {
     description: "",
     changes: [],
   });
+  const commitDraftCount = commitDraft.changes.length;
+  const openCommitModal = useCallback(() => {
+    setMode("Commits");
+    setCommitDraftOpen(true);
+  }, [setMode]);
   const derivedCommitTags = useMemo(
     () => Array.from(new Set(commitDraft.changes.map((c) => (c.entity ? String(c.entity) : "misc")))),
     [commitDraft.changes]
@@ -8657,7 +8664,8 @@ export default function DashboardPage() {
           currentMode={mode}
           currentUser={currentUser}
           onLogout={handleLogout}
-          onOpenCommit={() => setCommitDraftOpen(true)}
+          onOpenCommit={openCommitModal}
+          commitDraftCount={commitDraftCount}
         />
 
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
@@ -9122,7 +9130,8 @@ export default function DashboardPage() {
           currentMode={mode}
           currentUser={currentUser}
           onLogout={handleLogout}
-          onOpenCommit={() => setCommitDraftOpen(true)}
+          onOpenCommit={openCommitModal}
+          commitDraftCount={commitDraftCount}
         />
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
           <div className="rounded-lg border border-slate-300 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-800">
@@ -9365,7 +9374,8 @@ export default function DashboardPage() {
           currentMode={mode}
           currentUser={currentUser}
           onLogout={handleLogout}
-          onOpenCommit={() => setCommitDraftOpen(true)}
+          onOpenCommit={openCommitModal}
+          commitDraftCount={commitDraftCount}
         />
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
           <div className="rounded-lg border border-slate-300 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-800">
@@ -9981,7 +9991,8 @@ export default function DashboardPage() {
           currentMode={mode}
           currentUser={currentUser}
           onLogout={handleLogout}
-          onOpenCommit={() => setCommitDraftOpen(true)}
+          onOpenCommit={openCommitModal}
+          commitDraftCount={commitDraftCount}
         />
         <ActionRibbon
           onOpenTaxRates={() => setTaxRateDialogOpen(true)}
@@ -10193,7 +10204,8 @@ export default function DashboardPage() {
           currentMode={mode}
           currentUser={currentUser}
           onLogout={handleLogout}
-          onOpenCommit={() => setCommitDraftOpen(true)}
+          onOpenCommit={openCommitModal}
+          commitDraftCount={commitDraftCount}
         />
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
           <div className="flex items-center justify-between">
@@ -10546,16 +10558,17 @@ export default function DashboardPage() {
     if (projectMeta.status === "under_contract") {
       return (
         <div className="h-screen flex flex-col bg-slate-50 dark:bg-slate-900">
-          <TopBar
-            title="Activities"
-          projectName={activeProject.name}
-          onModeChange={setMode}
-          currentMode={mode}
-          isDetailsPanelVisible={isDetailsPanelVisible}
-          onToggleDetailsPanel={() => setIsDetailsPanelVisible(prev => !prev)}
-          currentUser={currentUser}
-          onLogout={handleLogout}
-          onOpenCommit={() => setCommitDraftOpen(true)}
+        <TopBar
+          title="Activities"
+        projectName={activeProject.name}
+        onModeChange={setMode}
+        currentMode={mode}
+        isDetailsPanelVisible={isDetailsPanelVisible}
+        onToggleDetailsPanel={() => setIsDetailsPanelVisible(prev => !prev)}
+        currentUser={currentUser}
+        onLogout={handleLogout}
+        onOpenCommit={openCommitModal}
+        commitDraftCount={commitDraftCount}
         />
           <ActionRibbon
             onOpenTaxRates={() => setTaxRateDialogOpen(true)}
@@ -10649,7 +10662,8 @@ export default function DashboardPage() {
           onToggleDetailsPanel={() => setIsDetailsPanelVisible(prev => !prev)}
           currentUser={currentUser}
           onLogout={handleLogout}
-          onOpenCommit={() => setCommitDraftOpen(true)}
+          onOpenCommit={openCommitModal}
+          commitDraftCount={commitDraftCount}
         />
         <ActionRibbon
           onOpenTaxRates={() => setTaxRateDialogOpen(true)}
@@ -11328,7 +11342,7 @@ export default function DashboardPage() {
 
   return (
     <div className="h-screen flex flex-col bg-slate-50 dark:bg-slate-900">
-      <TopBar title="EPS" currentMode={mode} onModeChange={setMode} currentUser={currentUser} onLogout={handleLogout} onOpenCommit={() => setCommitDraftOpen(true)} />
+      <TopBar title="EPS" currentMode={mode} onModeChange={setMode} currentUser={currentUser} onLogout={handleLogout} onOpenCommit={openCommitModal} commitDraftCount={commitDraftCount} />
       <ActionRibbon
         onOpenTaxRates={() => setTaxRateDialogOpen(true)}
         onManagePresets={() => setFormulaPresetDialogOpen(true)}

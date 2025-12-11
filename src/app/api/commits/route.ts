@@ -130,11 +130,12 @@ const applyCommitChanges = async (commitId: number) => {
       await applyCrud(projectPipelineMeta, ch);
     } else if (entity === "activities") {
       const op = String(ch.operation || "").toLowerCase();
-      const after = ch.after ? { ...ch.after } : {};
-      const before = ch.before ? { ...ch.before } : {};
+      const chAny: any = ch as any;
+      const after: any = chAny.after ? { ...chAny.after } : {};
+      const before: any = chAny.before ? { ...chAny.before } : {};
       if (op === "create" || op === "update") {
         // Resolve wbsId from wbs/code, create if missing
-        const projectId = Number(after.projectId || after.project_id || ch.entityId || ch.after?.projectId || before.projectId);
+        const projectId = Number(after.projectId || after.project_id || chAny.entityId || chAny.after?.projectId || before.projectId);
         let wbsId = after.wbsId || after.wbs_id || before.wbsId || before.wbs_id || null;
         const wbsCode = after.wbs || after.code || before.wbs || before.code || null;
         if (!wbsId && projectId && wbsCode) {
