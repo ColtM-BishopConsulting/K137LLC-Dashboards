@@ -8,6 +8,7 @@ import {
   numeric,
   text,
   foreignKey,
+  jsonb,
 } from "drizzle-orm/pg-core";
 import { sql, relations } from "drizzle-orm";
 
@@ -91,6 +92,57 @@ export const formulaPresets = pgTable("formula_presets", {
   resultType: varchar("result_type", { length: 32 }).default("currency").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).default(sql`now()`),
   updatedAt: timestamp("updated_at", { withTimezone: true }).default(sql`now()`),
+});
+
+// ----------------------------
+// TAX RATES
+// ----------------------------
+export const taxRates = pgTable("tax_rates", {
+  id: serial("id").primaryKey(),
+  county: varchar("county", { length: 255 }).notNull(),
+  state: varchar("state", { length: 64 }),
+  rate: numeric("rate", { precision: 6, scale: 3 }).notNull(),
+  note: text("note"),
+  createdAt: timestamp("created_at", { withTimezone: true }).default(sql`now()`),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).default(sql`now()`),
+});
+
+// ----------------------------
+// USERS (AUTH)
+// ----------------------------
+export const users = pgTable("users", {
+  id: serial("id").primaryKey(),
+  email: varchar("email", { length: 255 }).notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  role: varchar("role", { length: 32 }).notNull().default("viewer"),
+  passwordHash: text("password_hash").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).default(sql`now()`),
+});
+
+// ----------------------------
+// COMMITS (STAGING) + CHANGES
+// ----------------------------
+export const commits = pgTable("commits", {
+  id: serial("id").primaryKey(),
+  serial: varchar("serial", { length: 64 }).notNull().unique(),
+  description: text("description"),
+  tags: text("tags").array(),
+  status: varchar("status", { length: 32 }).notNull().default("pending"),
+  authorId: integer("author_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).default(sql`now()`),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).default(sql`now()`),
+  appliedAt: timestamp("applied_at", { withTimezone: true }),
+});
+
+export const commitChanges = pgTable("commit_changes", {
+  id: serial("id").primaryKey(),
+  commitId: integer("commit_id").notNull().references(() => commits.id, { onDelete: "cascade" }),
+  entity: varchar("entity", { length: 64 }).notNull(),
+  entityId: integer("entity_id"),
+  operation: varchar("operation", { length: 32 }).notNull(),
+  before: jsonb("before"),
+  after: jsonb("after"),
+  impact: text("impact"),
 });
 
 // ----------------------------

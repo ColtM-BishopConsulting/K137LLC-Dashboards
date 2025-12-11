@@ -22,6 +22,20 @@
       "when": 1765050001000,
       "tag": "0002_add_formula_presets",
       "breakpoints": false
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1765050002000,
+      "tag": "0003_add_tax_rates",
+      "breakpoints": false
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1765050003000,
+      "tag": "0004_add_users",
+      "breakpoints": false
     }
   ]
 }

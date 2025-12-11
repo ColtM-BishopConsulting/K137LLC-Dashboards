@@ -139,6 +139,48 @@ interface TaxRate {
   note?: string;
 }
 
+interface UserSummary {
+  id: number;
+  email: string;
+  name: string;
+  role: string;
+  createdAt?: string;
+}
+
+interface CommitChange {
+  id: number;
+  entity: string;
+  entityId?: number | null;
+  operation: string;
+  before?: any;
+  after?: any;
+  impact?: string | null;
+}
+
+interface CommitItem {
+  id: number;
+  serial: string;
+  description?: string;
+  tags: string[];
+  status: "pending" | "approved" | "rejected" | "applied";
+  authorId?: number | null;
+  authorName?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+  appliedAt?: string | null;
+  changes?: CommitChange[];
+}
+
+interface DraftChange {
+  id: string;
+  entity: string;
+  entityId: string;
+  operation: string;
+  impact: string;
+  beforeText: string;
+  afterText: string;
+}
+
 type RentRollStatus = "Occupied" | "Vacant" | "Notice";
 
 interface RentRollProperty {
@@ -410,6 +452,17 @@ const DEFAULT_BRRRR_FIELDS: Omit<ProjectDetail, 'id'>[] = [
   { variable: "Property Taxes", value: "0" },
   { variable: "Insurance Cost", value: "0" },
 ];
+
+type DashboardMode =
+  | "EPS"
+  | "Activities"
+  | "Resources"
+  | "Labor"
+  | "RentRoll"
+  | "Exports"
+  | "Statements"
+  | "Users"
+  | "Commits";
 
 const UNDER_CONTRACT_DETAIL_FIELDS: Omit<ProjectDetail, 'id'>[] = [
   { variable: "Address", value: "" },
@@ -3575,17 +3628,25 @@ const ProjectDetailsPanel: React.FC<ProjectDetailsPanelProps> = ({
 const TopBar: React.FC<{
   title: string;
   projectName?: string;
-  onModeChange?: (mode: "EPS" | "Activities" | "Resources" | "Labor" | "RentRoll" | "Exports" | "Statements") => void;
-  currentMode: "EPS" | "Activities" | "Resources" | "Labor" | "RentRoll" | "Exports" | "Statements";
+  onModeChange?: (mode: DashboardMode) => void;
+  currentMode: DashboardMode;
   isDetailsPanelVisible?: boolean;
   onToggleDetailsPanel?: () => void;
+  currentUser?: { name: string; email: string; role: string } | null;
+  onLogout?: () => void;
+  onOpenCommit?: () => void;
+  commitDraftCount?: number;
 }> = ({
   title,
   projectName,
   onModeChange,
   currentMode,
   isDetailsPanelVisible,
-  onToggleDetailsPanel
+  onToggleDetailsPanel,
+  currentUser,
+  onLogout,
+  onOpenCommit,
+  commitDraftCount = 0,
 }) => {
   const { theme, setTheme } = useTheme();
 
@@ -3664,6 +3725,28 @@ const TopBar: React.FC<{
           >
             Bank Statements
           </button>
+          <button
+            onClick={() => onModeChange && onModeChange("Commits")}
+            className={`rounded px-3 py-1 transition-colors ${
+              currentMode === "Commits"
+                ? "bg-blue-600 text-white"
+                : "text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
+            }`}
+          >
+            Commits
+          </button>
+          {currentUser?.role === "admin" && (
+            <button
+              onClick={() => onModeChange && onModeChange("Users")}
+              className={`rounded px-3 py-1 transition-colors ${
+                currentMode === "Users"
+                  ? "bg-blue-600 text-white"
+                  : "text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
+              }`}
+            >
+              Users
+            </button>
+          )}
         </nav>
 
         {projectName && (
@@ -3679,6 +3762,30 @@ const TopBar: React.FC<{
       </div>
 
       <div className="flex items-center gap-3">
+        {currentUser && (
+          <div className="text-right leading-tight">
+            <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">{currentUser.name}</div>
+            <div className="text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400">{currentUser.role}</div>
+          </div>
+        )}
+        {currentUser && onOpenCommit && (
+          <button
+            onClick={() => {
+              onOpenCommit();
+            }}
+            className="px-3 py-1 text-xs rounded bg-emerald-600 text-white hover:bg-emerald-700"
+          >
+            {`Commit${commitDraftCount ? ` - ${commitDraftCount} Change${commitDraftCount === 1 ? "" : "s"}` : ""}`}
+          </button>
+        )}
+        {onLogout && (
+          <button
+            onClick={onLogout}
+            className="px-3 py-1 text-xs rounded border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+          >
+            Logout
+          </button>
+        )}
         {currentMode === "Activities" && onToggleDetailsPanel && (
           <button
             onClick={onToggleDetailsPanel}
@@ -4573,7 +4680,7 @@ const EpsNodeComponent: React.FC<EpsNodeProps> = ({
 // MAIN DASHBOARD
 // ---------------------------------------------------------------------------
 export default function DashboardPage() {
-  const [mode, setMode] = useState<"EPS" | "Activities" | "Resources" | "Labor" | "RentRoll" | "Exports" | "Statements">("EPS");
+  const [mode, setMode] = useState<DashboardMode>("EPS");
   const [activeProjectId, setActiveProjectId] = useState<number | null>(null);
   const [epsNodes, setEpsNodes] = useState<EpsNode[]>([]);
   const [wbsNodesDb, setWbsNodesDb] = useState<DbWbsNode[]>([]);
@@ -4585,6 +4692,44 @@ export default function DashboardPage() {
   const [customFormulas, setCustomFormulas] = useState<Record<number, CustomFormula[]>>({});
   const [formulaPresets, setFormulaPresets] = useState<CustomFormula[]>([]);
   const [taxRates, setTaxRates] = useState<TaxRate[]>([]);
+  const [currentUser, setCurrentUser] = useState<{ id: number; name: string; email: string; role: string } | null>(null);
+  const [authChecked, setAuthChecked] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [loginForm, setLoginForm] = useState({ email: "", password: "" });
+  const [showPassword, setShowPassword] = useState(false);
+  const [usersList, setUsersList] = useState<UserSummary[]>([]);
+  const [userModalOpen, setUserModalOpen] = useState(false);
+  const [userForm, setUserForm] = useState<{ id: number | null; email: string; name: string; role: string; password: string }>({
+    id: null,
+    email: "",
+    name: "",
+    role: "viewer",
+    password: "",
+  });
+  const [userDeleteTarget, setUserDeleteTarget] = useState<UserSummary | null>(null);
+  const [userSaving, setUserSaving] = useState(false);
+  const [userError, setUserError] = useState<string | null>(null);
+  const resetUserForm = useCallback(() => {
+    setUserForm({ id: null, email: "", name: "", role: "viewer", password: "" });
+  }, []);
+  const [commitList, setCommitList] = useState<CommitItem[]>([]);
+  const [commitSelectedId, setCommitSelectedId] = useState<number | null>(null);
+  const [commitLoading, setCommitLoading] = useState(false);
+  const [commitError, setCommitError] = useState<string | null>(null);
+  const [commitDraftOpen, setCommitDraftOpen] = useState(false);
+  const [commitDraftSaving, setCommitDraftSaving] = useState(false);
+  const [commitDraftError, setCommitDraftError] = useState<string | null>(null);
+  const [commitDraft, setCommitDraft] = useState<{
+    description: string;
+    changes: DraftChange[];
+  }>({
+    description: "",
+    changes: [],
+  });
+  const derivedCommitTags = useMemo(
+    () => Array.from(new Set(commitDraft.changes.map((c) => (c.entity ? String(c.entity) : "misc")))),
+    [commitDraft.changes]
+  );
   const [pipelineMeta, setPipelineMeta] = useState<Record<number, ProjectPipelineMeta>>({});
   const [emailOptions, setEmailOptions] = useState<EmailOption[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -4950,6 +5095,334 @@ export default function DashboardPage() {
     }
   }, []);
 
+  const checkAuth = useCallback(async () => {
+    try {
+      const res = await fetch("/api/auth/me", { credentials: "include" });
+      if (res.ok) {
+        const data = await res.json();
+        const normalizedUser = data.user
+          ? { ...data.user, role: String(data.user.role || "").trim().toLowerCase() }
+          : null;
+        setCurrentUser(normalizedUser);
+      } else {
+        setCurrentUser(null);
+      }
+    } catch {
+      setCurrentUser(null);
+    } finally {
+      setAuthChecked(true);
+    }
+  }, []);
+
+  const handleLogout = useCallback(async () => {
+    try {
+      await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
+    } catch {
+      // ignore
+    }
+    setCurrentUser(null);
+    setAuthChecked(true);
+    setMode("EPS");
+  }, [setMode]);
+
+  const handleLogin = useCallback(async () => {
+    setAuthError(null);
+    try {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: loginForm.email.trim(), password: loginForm.password }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.error || "Invalid credentials");
+      }
+      const normalizedUser = data.user
+        ? { ...data.user, role: String(data.user.role || "").trim().toLowerCase() }
+        : null;
+      setCurrentUser(normalizedUser);
+      setAuthChecked(true);
+      setMode("EPS");
+    } catch (err: any) {
+      setAuthError(err?.message || "Login failed");
+      setCurrentUser(null);
+      setAuthChecked(true);
+    }
+  }, [loginForm, setMode]);
+
+  const loadUsers = useCallback(async () => {
+    if (!currentUser || currentUser.role !== "admin") return [];
+    setUserError(null);
+    try {
+      const res = await fetch("/api/users");
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setUserError(data?.error || "Failed to load users");
+        return [];
+      }
+      const mapped: UserSummary[] = (data.users || []).map((u: any) => ({
+        id: Number(u.id),
+        email: u.email,
+        name: u.name,
+        role: u.role,
+        createdAt: u.createdAt,
+      }));
+      setUsersList(mapped);
+      return mapped;
+    } catch {
+      setUserError("Failed to load users");
+      return [];
+    }
+  }, [currentUser]);
+
+  const handleSaveUser = useCallback(async () => {
+    if (!currentUser || currentUser.role !== "admin") {
+      setUserError("Admin access required");
+      return;
+    }
+    setUserSaving(true);
+    setUserError(null);
+    try {
+      const payload: Record<string, unknown> = {
+        id: userForm.id ?? undefined,
+        email: userForm.email.trim(),
+        name: userForm.name.trim(),
+        role: userForm.role,
+      };
+      if (userForm.password.trim()) {
+        payload.password = userForm.password.trim();
+      }
+      const method = userForm.id ? "PATCH" : "POST";
+      const res = await fetch("/api/users", {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.error || "Failed to save user");
+      }
+      await loadUsers();
+      setUserModalOpen(false);
+      resetUserForm();
+    } catch (err: any) {
+      setUserError(err?.message || "Failed to save user");
+    } finally {
+      setUserSaving(false);
+    }
+  }, [currentUser, userForm, loadUsers, resetUserForm]);
+
+  const handleDeleteUser = useCallback(async () => {
+    if (!currentUser || currentUser.role !== "admin" || !userDeleteTarget) {
+      setUserError("Admin access required");
+      return;
+    }
+    try {
+      const res = await fetch(`/api/users?id=${userDeleteTarget.id}`, { method: "DELETE" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.error || "Failed to delete user");
+      }
+      await loadUsers();
+    } catch (err: any) {
+      setUserError(err?.message || "Failed to delete user");
+    } finally {
+      setUserDeleteTarget(null);
+    }
+  }, [currentUser, userDeleteTarget, loadUsers]);
+
+  const loadCommits = useCallback(async (withChanges = false) => {
+    if (!currentUser) return [];
+    setCommitError(null);
+    setCommitLoading(true);
+    try {
+      const res = await fetch(`/api/commits${withChanges ? "?includeChanges=1" : ""}`);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.error || "Failed to load commits");
+      }
+      const list: CommitItem[] = (data.commits || []).map((c: any) => ({
+        id: Number(c.id),
+        serial: c.serial,
+        description: c.description,
+        tags: Array.isArray(c.tags) ? c.tags : [],
+        status: c.status,
+        authorId: c.authorId ?? null,
+        authorName: c.authorName ?? null,
+        createdAt: c.createdAt,
+        updatedAt: c.updatedAt,
+        appliedAt: c.appliedAt,
+        changes: c.changes,
+      }));
+      setCommitList(list);
+      if (withChanges && list.length && commitSelectedId) {
+        const match = list.find((c) => c.id === commitSelectedId);
+        if (!match && list.length) setCommitSelectedId(list[0].id);
+      }
+      return list;
+    } catch (err: any) {
+      setCommitError(err?.message || "Failed to load commits");
+      return [];
+    } finally {
+      setCommitLoading(false);
+    }
+  }, [currentUser, commitSelectedId]);
+
+  const updateCommitStatus = useCallback(async (id: number, status: CommitItem["status"]) => {
+    try {
+      const res = await fetch("/api/commits", {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, status }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || "Failed to update commit");
+      setCommitList((prev) => prev.map((c) => (c.id === id ? { ...c, status, appliedAt: status === "applied" ? new Date().toISOString() : c.appliedAt } : c)));
+    } catch (err: any) {
+      setCommitError(err?.message || "Failed to update commit");
+    }
+  }, []);
+
+  const stageChange = useCallback((change: { entity: string; entityId?: string | number | null; operation: string; impact?: string; before?: any; after?: any }) => {
+    setCommitDraftOpen(true);
+    setCommitDraft((prev) => ({
+      ...prev,
+      changes: [
+        ...prev.changes,
+        {
+          id: `chg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          entity: change.entity,
+          entityId: change.entityId ? String(change.entityId) : "",
+          operation: change.operation,
+          impact: change.impact || "",
+          beforeText: change.before ? JSON.stringify(change.before, null, 2) : "",
+          afterText: change.after ? JSON.stringify(change.after, null, 2) : "",
+        },
+      ],
+    }));
+  }, [setMode]);
+
+  const removeDraftChange = useCallback((id: string) => {
+    setCommitDraft((prev) => ({
+      ...prev,
+      changes: prev.changes.filter((c) => c.id !== id),
+    }));
+  }, []);
+  const commitDraftCount = commitDraft.changes.length;
+  const openCommitModal = useCallback(() => {
+    setMode("Commits");
+    setCommitDraftOpen(true);
+  }, [setMode]);
+
+  // Persist staged commit draft locally so it survives reloads
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const stored = localStorage.getItem("commitDraft");
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed && typeof parsed === "object" && Array.isArray(parsed.changes)) {
+          setCommitDraft(parsed);
+        }
+      }
+    } catch {
+      // ignore bad stored data
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      localStorage.setItem("commitDraft", JSON.stringify(commitDraft));
+    } catch {
+      // ignore storage issues
+    }
+  }, [commitDraft]);
+
+  const handleSaveCommitDraft = useCallback(async () => {
+    if (!currentUser) {
+      setCommitDraftError("Login required");
+      return;
+    }
+    setCommitDraftError(null);
+    setCommitDraftSaving(true);
+    try {
+      const derivedTags = Array.from(
+        new Set(commitDraft.changes.map((c) => (c.entity ? String(c.entity) : "misc")))
+      );
+      const changesPayload = commitDraft.changes.map((c) => {
+        let beforeParsed: any = null;
+        let afterParsed: any = null;
+        if (c.beforeText.trim()) {
+          try { beforeParsed = JSON.parse(c.beforeText); } catch { throw new Error("Invalid JSON in Before"); }
+        }
+        if (c.afterText.trim()) {
+          try { afterParsed = JSON.parse(c.afterText); } catch { throw new Error("Invalid JSON in After"); }
+        }
+        return {
+          entity: c.entity || "unknown",
+          entityId: c.entityId ? Number(c.entityId) : null,
+          operation: c.operation || "update",
+          before: beforeParsed,
+          after: afterParsed,
+          impact: c.impact || "",
+        };
+      });
+
+      const res = await fetch("/api/commits", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          description: commitDraft.description,
+          tags: derivedTags,
+          changes: changesPayload,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || "Failed to create commit");
+      await loadCommits();
+      setCommitDraftOpen(false);
+      setCommitDraft({
+        description: "",
+        changes: [],
+      });
+      if (typeof window !== "undefined") {
+        try {
+          localStorage.removeItem("commitDraft");
+        } catch {
+          // ignore
+        }
+      }
+      setMode("Commits");
+    } catch (err: any) {
+      setCommitDraftError(err?.message || "Failed to create commit");
+    } finally {
+      setCommitDraftSaving(false);
+    }
+  }, [commitDraft, currentUser, loadCommits]);
+
+  const loadTaxRatesDb = useCallback(async () => {
+    try {
+      const res = await fetch("/api/tax-rates");
+      if (!res.ok) return [];
+      const data = await res.json();
+      const mapped: TaxRate[] = (data.taxRates || []).map((tr: any) => ({
+        id: String(tr.id),
+        county: tr.county,
+        state: tr.state || undefined,
+        rate: Number(tr.rate || 0),
+        note: tr.note || "",
+      }));
+      setTaxRates(mapped);
+      return mapped;
+    } catch (err) {
+      console.error("Failed to load tax rates", err);
+      return [];
+    }
+  }, []);
+
   const loadProjectDetailsDb = useCallback(async () => {
     try {
       const res = await fetch("/api/project-details");
@@ -5048,6 +5521,7 @@ export default function DashboardPage() {
   }, []);
 
   const loadDbData = useCallback(async () => {
+    await checkAuth();
     const [projectsLoaded, wbsLoaded] = await Promise.all([loadProjects(), loadWbs()]);
     const epsLoaded = await loadEpsNodes();
 
@@ -5101,10 +5575,11 @@ export default function DashboardPage() {
       loadProjectDetailsDb(),
       loadCustomFormulasDb(),
       loadFormulaPresetsDb(),
+      loadTaxRatesDb(),
       loadPipelineMeta(),
     ]);
     return { projectsLoaded, wbsLoaded };
-  }, [loadActivities, loadCustomFormulasDb, loadEpsNodes, loadEmployees, loadFormulaPresetsDb, loadPaychecks, loadPipelineMeta, loadProjectDetailsDb, loadProjects, loadResourcesFromDb, loadTimeEntries, loadTransactions, loadWbs]);
+  }, [checkAuth, loadActivities, loadCustomFormulasDb, loadEpsNodes, loadEmployees, loadFormulaPresetsDb, loadPaychecks, loadPipelineMeta, loadProjectDetailsDb, loadProjects, loadResourcesFromDb, loadTaxRatesDb, loadTimeEntries, loadTransactions, loadWbs]);
   const [isDetailsPanelVisible, setIsDetailsPanelVisible] = useState(true);
   const [epsViewTab, setEpsViewTab] = useState<"overview" | "gantt">("overview");
   const [activityView, setActivityView] = useState<"details" | "gantt">("details");
@@ -5498,7 +5973,13 @@ export default function DashboardPage() {
     if (mode === "RentRoll") {
       loadRentData();
     }
-  }, [mode, loadStatements, loadRentData]);
+    if (mode === "Users") {
+      loadUsers();
+    }
+    if (mode === "Commits") {
+      loadCommits();
+    }
+  }, [mode, loadStatements, loadRentData, loadUsers, loadCommits]);
 
   const initialLoadRef = useRef(false);
   useEffect(() => {
@@ -5551,6 +6032,73 @@ export default function DashboardPage() {
       return;
     }
 
+    // Non-admin staging path
+    if (!currentUser || currentUser.role !== "admin") {
+      if (pendingAddConfig.type === "project") {
+        const tempId = Date.now();
+        stageChange({
+          entity: "projects",
+          entityId: tempId,
+          operation: "create",
+          after: { name: trimmed, code: `PRJ-${Date.now().toString().slice(-5)}`, startDate: toDateString(getCentralTodayMs()) },
+          impact: "Staged project create",
+        });
+        stageChange({
+          entity: "eps_nodes",
+          entityId: tempId,
+          operation: "create",
+          after: { name: trimmed, parentId: pendingAddConfig.parentId, type: "project", projectId: tempId },
+          impact: "Staged EPS node create",
+        });
+        const newNode: EpsNode = {
+          id: tempId,
+          parentId: pendingAddConfig.parentId,
+          type: "project",
+          name: trimmed,
+          projectId: tempId,
+        };
+        setEpsNodes((prev) => [...prev, newNode]);
+        setSelectedNodeId(newNode.id);
+        setActiveProjectId(tempId);
+        if (pendingAddConfig.parentId != null) {
+          setExpanded((prev) => {
+            const next = new Set(prev);
+            next.add(pendingAddConfig.parentId!);
+            return next;
+          });
+        }
+      } else {
+        const tempId = Date.now();
+        stageChange({
+          entity: "eps_nodes",
+          entityId: tempId,
+          operation: "create",
+          after: { name: trimmed, parentId: pendingAddConfig.parentId, type: pendingAddConfig.type },
+          impact: "Staged EPS node create",
+        });
+        const newNode: EpsNode = {
+          id: tempId,
+          parentId: pendingAddConfig.parentId,
+          type: pendingAddConfig.type,
+          name: trimmed,
+          projectId: null,
+        };
+        setEpsNodes((prev) => [...prev, newNode]);
+        if (pendingAddConfig.parentId != null) {
+          setExpanded((prev) => {
+            const next = new Set(prev);
+            next.add(pendingAddConfig.parentId!);
+            return next;
+          });
+        }
+        setSelectedNodeId(newNode.id);
+      }
+      setPendingAddConfig(null);
+      setModalMode(null);
+      return;
+    }
+
+    // Admin path (live)
     if (pendingAddConfig.type !== "project") {
       try {
         const res = await fetch("/api/eps", {
@@ -5664,18 +6212,39 @@ export default function DashboardPage() {
       return;
     }
 
-    if (renameTarget.type === "project") {
-      fetch("/api/projects", {
+    if (!currentUser || currentUser.role !== "admin") {
+      if (renameTarget.type === "project") {
+        stageChange({
+          entity: "projects",
+          entityId: renameTarget.projectId ?? renameTarget.id,
+          operation: "update",
+          before: { name: renameTarget.name },
+          after: { name: trimmed },
+          impact: "Staged project rename",
+        });
+      }
+      stageChange({
+        entity: "eps_nodes",
+        entityId: renameTarget.id,
+        operation: "update",
+        before: { name: renameTarget.name },
+        after: { name: trimmed },
+        impact: "Staged EPS rename",
+      });
+    } else {
+      if (renameTarget.type === "project") {
+        fetch("/api/projects", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: renameTarget.id, name: trimmed }),
+        }).catch(err => console.error("Failed to rename project", err));
+      }
+      fetch("/api/eps", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: renameTarget.id, name: trimmed }),
-      }).catch(err => console.error("Failed to rename project", err));
+      }).catch(err => console.error("Failed to rename eps node", err));
     }
-    fetch("/api/eps", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: renameTarget.id, name: trimmed }),
-    }).catch(err => console.error("Failed to rename eps node", err));
 
     setEpsNodes((prev) =>
       prev.map((n) =>
@@ -5708,11 +6277,31 @@ export default function DashboardPage() {
     };
     collect(contextMenu.node.id);
 
-    fetch(`/api/eps?id=${contextMenu.node.id}`, { method: "DELETE" }).catch(err => console.error("Failed to delete eps node", err));
-    if (contextMenu.node.type === "project") {
-      const projectDbId = contextMenu.node.projectId ?? contextMenu.node.id;
-      fetch(`/api/projects?id=${projectDbId}`, { method: "DELETE" })
-        .catch(err => console.error("Failed to delete project", err));
+    if (!currentUser || currentUser.role !== "admin") {
+      stageChange({
+        entity: "eps_nodes",
+        entityId: contextMenu.node.id,
+        operation: "delete",
+        before: contextMenu.node,
+        impact: "Staged EPS delete",
+      });
+      if (contextMenu.node.type === "project") {
+        const projectDbId = contextMenu.node.projectId ?? contextMenu.node.id;
+        stageChange({
+          entity: "projects",
+          entityId: projectDbId,
+          operation: "delete",
+          before: { id: projectDbId },
+          impact: "Staged project delete",
+        });
+      }
+    } else {
+      fetch(`/api/eps?id=${contextMenu.node.id}`, { method: "DELETE" }).catch(err => console.error("Failed to delete eps node", err));
+      if (contextMenu.node.type === "project") {
+        const projectDbId = contextMenu.node.projectId ?? contextMenu.node.id;
+        fetch(`/api/projects?id=${projectDbId}`, { method: "DELETE" })
+          .catch(err => console.error("Failed to delete project", err));
+      }
     }
 
     const remaining = epsNodes.filter((n) => !idsToDelete.has(n.id));
@@ -5815,6 +6404,22 @@ export default function DashboardPage() {
     const projectId = resolveProjectId();
     if (!projectId) return;
 
+    // Staging path for non-admin
+    if (!currentUser || currentUser.role !== "admin") {
+      stageChange({
+        entity: "activities",
+        entityId: null,
+        operation: "create",
+        after: { ...activity, projectId },
+        impact: "Staged activity create",
+      });
+      setActivities((prev) => ({
+        ...prev,
+        [projectId]: [...(prev[projectId] || []), { ...activity, id: `staged-${Date.now()}` }],
+      }));
+      return;
+    }
+
     try {
       const existingWbs = wbsNodesDb.find(
         (n) => n.projectId === projectId && n.code === activity.wbs
@@ -5887,7 +6492,7 @@ export default function DashboardPage() {
     } catch (err) {
       console.error("Failed to add activity", err);
     }
-  }, [resolveProjectId, wbsNodesDb]);
+  }, [resolveProjectId, wbsNodesDb, currentUser, stageChange]);
 
   const handleUpdateActivity = (
     activityId: string,
@@ -5899,6 +6504,28 @@ export default function DashboardPage() {
     const newValue = field === 'duration' || field === 'pct' || field === 'projectedLabor' || field === 'projectedCost' || field === 'budget' || field === 'revenue'
       ? parseFloat(value)
       : value;
+
+    // Staging for non-admins
+    if (!currentUser || currentUser.role !== "admin") {
+      const existing = activities[activeProjectId]?.find(a => a.id === activityId);
+      if (!existing) return;
+      const next = { ...existing, [field]: newValue };
+      stageChange({
+        entity: "activities",
+        entityId: activityId,
+        operation: "update",
+        before: existing,
+        after: next,
+        impact: `Staged activity ${field} change`,
+      });
+      setActivities(prev => ({
+        ...prev,
+        [activeProjectId]: (prev[activeProjectId] || []).map(a =>
+          a.id === activityId ? next : a
+        )
+      }));
+      return;
+    }
 
     const payload: Record<string, unknown> = { id: Number(activityId) };
     if (field === "name") payload.name = value;
@@ -5950,6 +6577,27 @@ export default function DashboardPage() {
     const projectKey = activeProjectDbId;
     const projectTxns = transactions[projectKey] || [];
     const toReassign = projectTxns.filter(t => t.activityId === activityId);
+
+    // Staging for non-admins
+    if (!currentUser || currentUser.role !== "admin") {
+      stageChange({
+        entity: "activities",
+        entityId: activityId,
+        operation: "delete",
+        before: deleteActivityModal.activity,
+        impact: "Staged activity delete",
+      });
+      setTransactions(prev => ({
+        ...prev,
+        [projectKey]: projectTxns.map(t => t.activityId === activityId ? { ...t, activityId: targetId || undefined } : t),
+      }));
+      setActivities(prev => ({
+        ...prev,
+        [projectKey]: (prev[projectKey] || []).filter(a => a.id !== activityId)
+      }));
+      setDeleteActivityModal({ open: false, activity: null, targetId: "" });
+      return;
+    }
 
     // Reassign transactions if needed
     await Promise.all(toReassign.map(async (t) => {
@@ -6031,6 +6679,20 @@ export default function DashboardPage() {
     const mappedOverride = projectIdOverride ? (getProjectDbIdFromNode(projectIdOverride) ?? projectIdOverride) : null;
     const projectKey = mappedOverride || activeProjectDbId || resolveProjectId();
     if (!projectKey) return;
+    if (!currentUser || currentUser.role !== "admin") {
+      stageChange({
+        entity: "ledger_transactions",
+        entityId: null,
+        operation: "create",
+        after: { ...transaction, projectId: projectKey },
+        impact: "Staged ledger transaction",
+      });
+      setTransactions(prev => ({
+        ...prev,
+        [projectKey]: [...(prev[projectKey] || []), { ...transaction, id: `staged-${Date.now()}` }],
+      }));
+      return;
+    }
     try {
       const res = await fetch("/api/transactions", {
         method: "POST",
@@ -6055,12 +6717,28 @@ export default function DashboardPage() {
     } catch (err) {
       console.error("Failed to add transaction", err);
     }
-  }, [activeProjectDbId, resolveProjectId, getProjectDbIdFromNode]);
+  }, [activeProjectDbId, resolveProjectId, getProjectDbIdFromNode, currentUser, stageChange]);
 
   const handleUpdateTransaction = (transaction: Transaction, projectIdOverride?: number) => {
     const mappedOverride = projectIdOverride ? (getProjectDbIdFromNode(projectIdOverride) ?? projectIdOverride) : null;
     const projectKey = mappedOverride || activeProjectDbId || resolveProjectId();
     if (!projectKey) return;
+    if (!currentUser || currentUser.role !== "admin") {
+      const existing = (transactions[projectKey] || []).find(t => t.id === transaction.id);
+      stageChange({
+        entity: "ledger_transactions",
+        entityId: transaction.id,
+        operation: "update",
+        before: existing || null,
+        after: transaction,
+        impact: "Staged ledger transaction update",
+      });
+      setTransactions(prev => ({
+        ...prev,
+        [projectKey]: (prev[projectKey] || []).map(t => t.id === transaction.id ? transaction : t),
+      }));
+      return;
+    }
     fetch("/api/transactions", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -6086,6 +6764,21 @@ export default function DashboardPage() {
     const mappedOverride = projectIdOverride ? (getProjectDbIdFromNode(projectIdOverride) ?? projectIdOverride) : null;
     const projectKey = mappedOverride || activeProjectDbId || resolveProjectId();
     if (!projectKey) return;
+    if (!currentUser || currentUser.role !== "admin") {
+      const existing = (transactions[projectKey] || []).find(t => t.id === transactionId);
+      stageChange({
+        entity: "ledger_transactions",
+        entityId: transactionId,
+        operation: "delete",
+        before: existing || null,
+        impact: "Staged ledger transaction delete",
+      });
+      setTransactions(prev => ({
+        ...prev,
+        [projectKey]: (prev[projectKey] || []).filter(t => t.id !== transactionId),
+      }));
+      return;
+    }
     fetch(`/api/transactions?id=${Number(transactionId)}`, { method: "DELETE" }).catch(err => console.error("Failed to delete transaction", err));
     setTransactions(prev => ({
       ...prev,
@@ -6113,6 +6806,18 @@ export default function DashboardPage() {
       )
     }));
 
+    if (!currentUser || currentUser.role !== "admin") {
+      stageChange({
+        entity: "resources",
+        entityId: activityId,
+        operation: "update",
+        before: null,
+        after: { activityId: Number(activityId), resources: newResources },
+        impact: "Staged resource assignment",
+      });
+      return;
+    }
+
     fetch("/api/resource-assignments", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -6132,7 +6837,17 @@ export default function DashboardPage() {
     // deletions
     resources.forEach((r) => {
       if (!updatedIds.has(r.id) && r.id && !isNaN(Number(r.id))) {
-        fetch(`/api/resources?id=${Number(r.id)}`, { method: "DELETE" }).catch(err => console.error("Failed to delete resource", err));
+        if (!currentUser || currentUser.role !== "admin") {
+          stageChange({
+            entity: "resources",
+            entityId: r.id,
+            operation: "delete",
+            before: r,
+            impact: "Staged resource delete",
+          });
+        } else {
+          fetch(`/api/resources?id=${Number(r.id)}`, { method: "DELETE" }).catch(err => console.error("Failed to delete resource", err));
+        }
       }
     });
     // upserts
@@ -6144,26 +6859,37 @@ export default function DashboardPage() {
         unitType: r.rateUnit,
         standardRate: r.rate,
       };
-      if (r.id && !isNaN(Number(r.id)) && currentIds.has(r.id)) {
-        fetch("/api/resources", {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id: Number(r.id), ...payload }),
-        }).catch(err => console.error("Failed to update resource", err));
+      if (!currentUser || currentUser.role !== "admin") {
+        stageChange({
+          entity: "resources",
+          entityId: r.id && !isNaN(Number(r.id)) ? r.id : null,
+          operation: r.id && !isNaN(Number(r.id)) && currentIds.has(r.id) ? "update" : "create",
+          before: r.id && currentIds.has(r.id) ? resources.find(x => x.id === r.id) || null : null,
+          after: { ...payload },
+          impact: "Staged resource upsert",
+        });
       } else {
-        fetch("/api/resources", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        })
-          .then(res => res.json())
-          .then((data) => {
-            const resrc = data.resource;
-            if (resrc && resrc.id) {
-              setResources(prev => prev.map(pr => pr === r ? { ...r, id: String(resrc.id) } : pr));
-            }
+        if (r.id && !isNaN(Number(r.id)) && currentIds.has(r.id)) {
+          fetch("/api/resources", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: Number(r.id), ...payload }),
+          }).catch(err => console.error("Failed to update resource", err));
+        } else {
+          fetch("/api/resources", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
           })
-          .catch(err => console.error("Failed to create resource", err));
+            .then(res => res.json())
+            .then((data) => {
+              const resrc = data.resource;
+              if (resrc && resrc.id) {
+                setResources(prev => prev.map(pr => pr === r ? { ...r, id: String(resrc.id) } : pr));
+              }
+            })
+            .catch(err => console.error("Failed to create resource", err));
+        }
       }
     });
     setResources(updatedResources);
@@ -6221,6 +6947,56 @@ export default function DashboardPage() {
     if (!projectDbId) return;
     const prevDetails = projectDetails[projectDbId] || [];
     const updatedIds = new Set(updatedDetails.map(d => d.id));
+
+    // Non-admin users stage changes instead of writing directly
+    if (!currentUser || currentUser.role !== "admin") {
+      // deletions
+      prevDetails.forEach((d) => {
+        if (!updatedIds.has(d.id) && d.id && !isNaN(Number(d.id))) {
+          stageChange({
+            entity: "project_details",
+            entityId: Number(d.id),
+            operation: "delete",
+            impact: "Remove project detail",
+            before: { projectId: projectDbId, variable: d.variable, value: d.value },
+          });
+        }
+      });
+
+      // upserts
+      updatedDetails.forEach((d) => {
+        const payload = { projectId: projectDbId, variable: d.variable, value: d.value };
+        const existing = d.id ? prevDetails.find(pd => pd.id === d.id) : null;
+
+        if (d.id && !isNaN(Number(d.id))) {
+          // update
+          if (!existing || existing.value !== d.value || existing.variable !== d.variable) {
+            stageChange({
+              entity: "project_details",
+              entityId: Number(d.id),
+              operation: "update",
+              impact: "Update project detail",
+              before: existing ? { projectId: projectDbId, variable: existing.variable, value: existing.value } : undefined,
+              after: payload,
+            });
+          }
+        } else {
+          // create
+          stageChange({
+            entity: "project_details",
+            operation: "create",
+            impact: "Add project detail",
+            after: payload,
+          });
+        }
+      });
+
+      setProjectDetails(prev => ({
+        ...prev,
+        [projectDbId]: updatedDetails,
+      }));
+      return;
+    }
 
     // deletions
     prevDetails.forEach((d) => {
@@ -6346,6 +7122,7 @@ export default function DashboardPage() {
     if (!projectDbId) return;
 
     const hasDbId = formula.id && !Number.isNaN(Number(formula.id));
+    const existing = (customFormulas[projectDbId] || []).find(f => f.id === formula.id);
     const payload = {
       projectId: projectDbId,
       name: formula.name,
@@ -6355,6 +7132,30 @@ export default function DashboardPage() {
     };
 
     let saved = formula;
+    if (!currentUser || currentUser.role !== "admin") {
+      stageChange({
+        entity: "formulas",
+        entityId: hasDbId ? Number(formula.id) : undefined,
+        operation: hasDbId ? "update" : "create",
+        impact: hasDbId ? "Update custom formula" : "Create custom formula",
+        before: hasDbId ? existing || null : undefined,
+        after: payload,
+      });
+      // keep local state optimistic
+      setCustomFormulas(prev => {
+        const existingList = prev[projectDbId] || [];
+        const idx = existingList.findIndex(f => f.id === saved.id);
+        const nextSaved = hasDbId ? saved : { ...saved, id: saved.id || `tmp-${Date.now()}` };
+        if (idx >= 0) {
+          const next = [...existingList];
+          next[idx] = nextSaved;
+          return { ...prev, [projectDbId]: next };
+        }
+        return { ...prev, [projectDbId]: [...existingList, nextSaved] };
+      });
+      return;
+    }
+
     try {
       const res = await fetch("/api/formulas", {
         method: hasDbId ? "PATCH" : "POST",
@@ -6395,6 +7196,7 @@ export default function DashboardPage() {
 
   const handleSaveFormulaPreset = async (formula: CustomFormula) => {
     const hasDbId = formula.id && !Number.isNaN(Number(formula.id));
+    const existing = formulaPresets.find(p => p.id === formula.id);
     const payload = {
       name: formula.name,
       formula: formula.formula,
@@ -6402,6 +7204,27 @@ export default function DashboardPage() {
       resultType: formula.resultType,
     };
     let saved = formula;
+    if (!currentUser || currentUser.role !== "admin") {
+      stageChange({
+        entity: "formula_presets",
+        entityId: hasDbId ? Number(formula.id) : undefined,
+        operation: hasDbId ? "update" : "create",
+        impact: hasDbId ? "Update preset formula" : "Create preset formula",
+        before: hasDbId ? existing || null : undefined,
+        after: payload,
+      });
+      setFormulaPresets((prev) => {
+        const existingIdx = prev.findIndex(p => p.id === saved.id);
+        const nextSaved = hasDbId ? saved : { ...saved, id: saved.id || `tmp-${Date.now()}` };
+        if (existingIdx >= 0) {
+          const next = [...prev];
+          next[existingIdx] = nextSaved;
+          return next;
+        }
+        return [...prev, nextSaved];
+      });
+      return;
+    }
     try {
       const res = await fetch("/api/formula-presets", {
         method: hasDbId ? "PATCH" : "POST",
@@ -6438,23 +7261,110 @@ export default function DashboardPage() {
   };
 
   const handleDeletePreset = (presetId: string) => {
+    const preset = formulaPresets.find(p => p.id === presetId);
+    if (!currentUser || currentUser.role !== "admin") {
+      stageChange({
+        entity: "formula_presets",
+        entityId: presetId ? Number(presetId) : undefined,
+        operation: "delete",
+        impact: "Delete preset formula",
+        before: preset || undefined,
+      });
+      setFormulaPresets(prev => prev.filter(p => p.id !== presetId));
+      return;
+    }
+    if (presetId && !Number.isNaN(Number(presetId))) {
+      fetch(`/api/formula-presets?id=${Number(presetId)}`, { method: "DELETE" }).catch(err => console.error("Failed to delete formula preset", err));
+    }
     setFormulaPresets(prev => prev.filter(p => p.id !== presetId));
   };
 
-  const handleSaveTaxRate = (taxRate: TaxRate) => {
+  const handleSaveTaxRate = async (taxRate: TaxRate) => {
+    const hasDbId = taxRate.id && !Number.isNaN(Number(taxRate.id));
+    const existing = taxRates.find(tr => tr.id === taxRate.id);
+    const payload = {
+      county: taxRate.county,
+      state: taxRate.state,
+      rate: taxRate.rate,
+      note: taxRate.note,
+    };
+    let saved = taxRate;
+    if (!currentUser || currentUser.role !== "admin") {
+      stageChange({
+        entity: "tax_rates",
+        entityId: hasDbId ? Number(taxRate.id) : undefined,
+        operation: hasDbId ? "update" : "create",
+        impact: hasDbId ? "Update tax rate" : "Create tax rate",
+        before: hasDbId ? existing || null : undefined,
+        after: payload,
+      });
+      setTaxRates((prev) => {
+        const idx = prev.findIndex(tr => tr.id === saved.id);
+        const nextSaved = hasDbId ? saved : { ...saved, id: saved.id || `tmp-${Date.now()}` };
+        if (idx >= 0) {
+          const next = [...prev];
+          next[idx] = nextSaved;
+          return next;
+        }
+        return [...prev, nextSaved];
+      });
+      return;
+    }
+    try {
+      const res = await fetch("/api/tax-rates", {
+        method: hasDbId ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(hasDbId ? { id: Number(taxRate.id), ...payload } : payload),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const apiTr = data.taxRate || null;
+        if (apiTr) {
+          saved = {
+            id: String(apiTr.id ?? taxRate.id),
+            county: apiTr.county ?? taxRate.county,
+            state: apiTr.state ?? taxRate.state,
+            rate: Number(apiTr.rate ?? taxRate.rate),
+            note: apiTr.note ?? taxRate.note,
+          };
+        }
+      }
+    } catch (err) {
+      console.error("Failed to save tax rate", err);
+    }
+
     setTaxRates((prev) => {
-      const idx = prev.findIndex(tr => tr.id === taxRate.id);
+      const idx = prev.findIndex(tr => tr.id === saved.id);
       if (idx >= 0) {
         const next = [...prev];
-        next[idx] = taxRate;
+        next[idx] = saved;
         return next;
       }
-      return [...prev, taxRate];
+      return [...prev, saved];
     });
   };
 
-  const handleDeleteTaxRate = (id: string) => {
+  const handleDeleteTaxRate = async (id: string) => {
+    const existing = taxRates.find(tr => tr.id === id);
+    if (!currentUser || currentUser.role !== "admin") {
+      stageChange({
+        entity: "tax_rates",
+        entityId: id ? Number(id) : undefined,
+        operation: "delete",
+        impact: "Delete tax rate",
+        before: existing || undefined,
+      });
+      setTaxRates(prev => prev.filter(tr => tr.id !== id));
+      return;
+    }
     setTaxRates(prev => prev.filter(tr => tr.id !== id));
+    if (id && !Number.isNaN(Number(id))) {
+      try {
+        await fetch(`/api/tax-rates?id=${Number(id)}`, { method: "DELETE" });
+      } catch (err) {
+        console.error("Failed to delete tax rate", err);
+      }
+    }
   };
 
   const resolveActiveProjectId = () => {
@@ -6583,6 +7493,27 @@ export default function DashboardPage() {
       return;
     }
     const nextMeta = { ...existing, status };
+
+    if (!currentUser || currentUser.role !== "admin") {
+      stageChange({
+        entity: "pipeline_meta",
+        entityId: projectDbId,
+        operation: "update",
+        before: existing,
+        after: nextMeta,
+        impact: "Staged pipeline status change",
+      });
+      setPipelineMeta(prev => ({
+        ...prev,
+        [projectDbId]: nextMeta,
+      }));
+      if (status === "acquired") {
+        setActiveProjectId(projectDbId);
+        setMode("Activities");
+      }
+      return;
+    }
+
     setPipelineMeta(prev => ({
       ...prev,
       [projectDbId]: nextMeta,
@@ -6602,7 +7533,18 @@ export default function DashboardPage() {
     setPipelineMeta(prev => {
       const existing = prev[pendingAcquireProjectId] || { seller: { name: "", phone: "", email: "" }, selectedEmailOptionIds: [] as string[], status: "under_contract" as ProjectStatus };
       const next = { ...existing, status: "acquired" as ProjectStatus };
-      persistPipelineMeta(pendingAcquireProjectId, next);
+      if (!currentUser || currentUser.role !== "admin") {
+        stageChange({
+          entity: "pipeline_meta",
+          entityId: pendingAcquireProjectId,
+          operation: "update",
+          before: existing,
+          after: next,
+          impact: "Staged acquisition",
+        });
+      } else {
+        persistPipelineMeta(pendingAcquireProjectId, next);
+      }
       return { ...prev, [pendingAcquireProjectId]: next };
     });
     setActiveProjectId(pendingAcquireProjectId);
@@ -6616,6 +7558,18 @@ export default function DashboardPage() {
     if (!trimmed) return null;
     const existing = rentRollProperties.find((p) => p.name.toLowerCase() === trimmed.toLowerCase());
     if (existing) return existing.id;
+    if (!currentUser || currentUser.role !== "admin") {
+      const tempId = `PROP-${Date.now()}`;
+      stageChange({
+        entity: "rent_properties",
+        entityId: tempId,
+        operation: "create",
+        after: { name: trimmed },
+        impact: "Staged rent property create",
+      });
+      setRentRollProperties((prev) => [...prev, { id: tempId, name: trimmed, linkedProjectId: null }]);
+      return tempId;
+    }
     try {
       const res = await fetch("/api/rent/properties", {
         method: "POST",
@@ -6632,15 +7586,83 @@ export default function DashboardPage() {
       console.error("Failed to create property", err);
       return null;
     }
-  }, [rentRollProperties]);
+  }, [rentRollProperties, currentUser, stageChange]);
 
   const handleSaveRentRollUnit = async () => {
     const propertyId = await ensureRentProperty(rentRollForm.propertyName);
     if (!propertyId || !rentRollForm.unit.trim()) return;
-    const rent = parseFloat(rentRollForm.rent) || 0;
-    const bedrooms = parseInt(rentRollForm.bedrooms || "0", 10) || 0;
-    const bathrooms = parseInt(rentRollForm.bathrooms || "0", 10) || 0;
-    const initialDueMonthDay = rentRollForm.initialDueMonthDay || "01-01";
+  const rent = parseFloat(rentRollForm.rent) || 0;
+  const bedrooms = parseInt(rentRollForm.bedrooms || "0", 10) || 0;
+  const bathrooms = parseInt(rentRollForm.bathrooms || "0", 10) || 0;
+  const initialDueMonthDay = rentRollForm.initialDueMonthDay || "01-01";
+  if (!currentUser || currentUser.role !== "admin") {
+    if (editingRentRollId) {
+      const existing = rentRollEntries.find((e) => e.id === editingRentRollId);
+      const updated: RentRollEntry = existing ? {
+        ...existing,
+        propertyId,
+        unit: rentRollForm.unit.trim(),
+        tenant: rentRollForm.tenant.trim() || "Vacant",
+        status: rentRollForm.status,
+        rent,
+        leaseEnd: rentRollForm.leaseEnd || "TBD",
+        initialDueMonthDay,
+        bedrooms,
+        bathrooms,
+      } : {
+        id: editingRentRollId,
+        propertyId,
+        unit: rentRollForm.unit.trim(),
+        tenant: rentRollForm.tenant.trim() || "Vacant",
+        status: rentRollForm.status,
+        rent,
+        balance: 0,
+        leaseEnd: rentRollForm.leaseEnd || "TBD",
+        initialDueMonthDay,
+        bedrooms,
+        bathrooms,
+        createdAt: toDateString(getCentralTodayMs()),
+      };
+      stageChange({
+        entity: "rent_units",
+        entityId: editingRentRollId,
+        operation: "update",
+        before: existing || null,
+        after: updated,
+        impact: "Staged rent unit update",
+      });
+      setRentRollEntries((prev) =>
+        prev.map((entry) => (entry.id === editingRentRollId ? updated : entry))
+      );
+      setRentRollProperty(String(propertyId));
+    } else {
+      const tempId = `UNIT-${Date.now()}`;
+      const newEntry: RentRollEntry = {
+        id: tempId,
+        propertyId,
+        unit: rentRollForm.unit.trim(),
+        tenant: rentRollForm.tenant.trim() || "Vacant",
+        status: rentRollForm.status,
+        rent,
+        balance: 0,
+        leaseEnd: rentRollForm.leaseEnd || "TBD",
+        initialDueMonthDay,
+        bedrooms,
+        bathrooms,
+        createdAt: toDateString(getCentralTodayMs()),
+      };
+      stageChange({
+        entity: "rent_units",
+        entityId: tempId,
+        operation: "create",
+        after: newEntry,
+        impact: "Staged rent unit create",
+      });
+      setRentRollEntries((prev) => [...prev, newEntry]);
+      setRentRollProperty(String(propertyId));
+    }
+    return;
+  }
     if (editingRentRollId) {
       try {
         const res = await fetch("/api/rent/units", {
@@ -6760,6 +7782,19 @@ export default function DashboardPage() {
   };
 
   const handleDeleteRentRoll = (entryId: string) => {
+    if (!currentUser || currentUser.role !== "admin") {
+      const existing = rentRollEntries.find((e) => e.id === entryId);
+      stageChange({
+        entity: "rent_units",
+        entityId: entryId,
+        operation: "delete",
+        before: existing || null,
+        impact: "Staged rent unit delete",
+      });
+      setRentRollEntries((prev) => prev.filter((e) => e.id !== entryId));
+      setRentPayments((prev) => prev.filter((p) => p.rentRollEntryId !== entryId));
+      return;
+    }
     fetch(`/api/rent/units?id=${Number(entryId)}`, { method: "DELETE" })
       .catch((err) => console.error("Failed to delete unit", err))
       .finally(() => {
@@ -6787,6 +7822,33 @@ export default function DashboardPage() {
     const remaining = getRemainingBalance(entry.id);
     const amount = Math.min(remaining, parseFloat(rentPaymentModal.amount) || 0);
     if (amount <= 0) return;
+    if (!currentUser || currentUser.role !== "admin") {
+      const paymentId = `PAY-${Date.now()}`;
+      stageChange({
+        entity: "rent_payments",
+        entityId: paymentId,
+        operation: "create",
+        after: {
+          rentUnitId: entry.id,
+          amount,
+          date: rentPaymentModal.date || toDateString(getCentralTodayMs()),
+          note: rentPaymentModal.note.trim() || undefined,
+        },
+        impact: "Staged rent payment",
+      });
+      setRentPayments((prev) => [
+        ...prev,
+        {
+          id: paymentId,
+          rentRollEntryId: entry.id,
+          amount,
+          date: rentPaymentModal.date || toDateString(getCentralTodayMs()),
+          note: rentPaymentModal.note.trim() || undefined,
+        },
+      ]);
+      setRentPaymentModal({ open: false, entryId: null, amount: "", date: toDateString(getCentralTodayMs()), note: "" });
+      return;
+    }
     try {
       const res = await fetch("/api/rent/payments", {
         method: "POST",
@@ -6921,6 +7983,21 @@ export default function DashboardPage() {
   const laborProjectsDb = useMemo(() => laborProjects.filter(p => p.projectId != null), [laborProjects]);
 
   const addTimeEntry = useCallback((empId: string, date: string, defaultProjectId: number | null) => {
+    if (!currentUser || currentUser.role !== "admin") {
+      const tempId = `TE-${Date.now()}`;
+      stageChange({
+        entity: "time_entries",
+        entityId: tempId,
+        operation: "create",
+        after: { employeeId: Number(empId), projectId: defaultProjectId, date, hours: 0 },
+        impact: "Staged time entry create",
+      });
+      setTimeEntries(prev => [
+        ...prev,
+        { id: tempId, employeeId: empId, projectId: defaultProjectId, date, hours: 0 }
+      ]);
+      return;
+    }
     fetch("/api/time-entries", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -6946,28 +8023,54 @@ export default function DashboardPage() {
         ]);
       })
       .catch(err => console.error("Failed to add time entry", err));
-  }, []);
+  }, [currentUser, stageChange]);
 
 
 
   const updateTimeEntry = useCallback((entryId: string, field: "projectId" | "hours", value: number | null) => {
     const mappedVal = field === "projectId" && value ? (getProjectDbIdFromNode(value) ?? value) : value;
     const patch: Record<string, number | null> = field === "projectId" ? { projectId: mappedVal } : { hours: value };
+    if (!currentUser || currentUser.role !== "admin") {
+      const existing = timeEntries.find(t => t.id === entryId);
+      const updated = existing ? { ...existing, [field]: value } : null;
+      stageChange({
+        entity: "time_entries",
+        entityId: entryId,
+        operation: "update",
+        before: existing || null,
+        after: updated || { id: entryId, [field]: value },
+        impact: "Staged time entry update",
+      });
+      setTimeEntries(prev => prev.map(t => t.id === entryId ? { ...t, [field]: value } : t));
+      return;
+    }
     fetch("/api/time-entries", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id: Number(entryId), ...patch }),
     }).catch(err => console.error("Failed to update time entry", err));
     setTimeEntries(prev => prev.map(t => t.id === entryId ? { ...t, [field]: value } : t));
-  }, [getProjectDbIdFromNode]);
+  }, [getProjectDbIdFromNode, currentUser, stageChange, timeEntries]);
 
   const deleteTimeEntry = useCallback((entryId: string) => {
+    if (!currentUser || currentUser.role !== "admin") {
+      const existing = timeEntries.find(t => t.id === entryId);
+      stageChange({
+        entity: "time_entries",
+        entityId: entryId,
+        operation: "delete",
+        before: existing || null,
+        impact: "Staged time entry delete",
+      });
+      setTimeEntries(prev => prev.filter(t => t.id !== entryId));
+      return;
+    }
     fetch(`/api/time-entries?id=${Number(entryId)}`, { method: "DELETE" })
       .catch(err => console.error("Failed to delete time entry", err))
       .finally(() => {
         setTimeEntries(prev => prev.filter(t => t.id !== entryId));
       });
-  }, []);
+  }, [currentUser, stageChange, timeEntries]);
 
   const weekHoursForEmployee = useCallback((empId: string) => {
     const startMs = toDateMs(laborWeekStart);
@@ -7035,6 +8138,32 @@ export default function DashboardPage() {
     const checkNumber = paycheckNumbers[emp.id] || "";
     if (!checkNumber.trim()) {
       alert("Enter a check number before recording paycheck.");
+      return;
+    }
+
+    if (!currentUser || currentUser.role !== "admin") {
+      const paycheckId = `PC-${Date.now()}`;
+      stageChange({
+        entity: "paychecks",
+        entityId: paycheckId,
+        operation: "create",
+        after: {
+          employeeId: Number(emp.id),
+          weekStart: laborWeekStart,
+          amount,
+          checkNumber: checkNumber.trim(),
+        },
+        impact: "Staged paycheck",
+      });
+      syncPayrollTransactions(emp, laborWeekStart, "replace", amount);
+      setPaychecks(prev => [...prev, {
+        id: paycheckId,
+        employeeId: emp.id,
+        weekStart: laborWeekStart,
+        amount,
+        checkNumber: checkNumber.trim(),
+      }]);
+      setPaycheckNumbers(prev => ({ ...prev, [emp.id]: "" }));
       return;
     }
 
@@ -7474,6 +8603,74 @@ export default function DashboardPage() {
   }, [draggingCompanySpan, epsXToMs, shiftProjectActivities]);
 
   // ---------------------------------------------------------------------------
+  // AUTH GATE
+  // ---------------------------------------------------------------------------
+  if (!authChecked) {
+    return (
+      <div className="h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-900 text-slate-700 dark:text-slate-200">
+        <div className="text-center space-y-2">
+          <div className="text-lg font-semibold">Checking session...</div>
+          <div className="text-sm text-slate-500 dark:text-slate-400">Please wait.</div>
+        </div>
+      </div>
+    );
+  }
+
+  if (authChecked && !currentUser) {
+    return (
+      <div className="h-screen flex items-center justify-center bg-slate-100 dark:bg-slate-900 px-4">
+        <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-6 shadow-lg dark:border-slate-700 dark:bg-slate-800">
+          <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-50 mb-1">Sign In</h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">Use your account to access the dashboard.</p>
+          {authError && (
+            <div className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-700/60 dark:bg-amber-900/30 dark:text-amber-100">
+              {authError}
+            </div>
+          )}
+          <div className="space-y-3">
+            <div>
+              <label className="text-xs text-slate-500 dark:text-slate-400">Email</label>
+              <input
+                type="email"
+                value={loginForm.email}
+                onChange={(e) => setLoginForm((prev) => ({ ...prev, email: e.target.value }))}
+                className="w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-blue-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-50"
+                placeholder="you@example.com"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-slate-500 dark:text-slate-400">Password</label>
+              <div className="relative">
+                <input
+                  type={showPassword ? "text" : "password"}
+                  value={loginForm.password}
+                  onChange={(e) => setLoginForm((prev) => ({ ...prev, password: e.target.value }))}
+                  onKeyDown={(e) => { if (e.key === "Enter") handleLogin(); }}
+                  className="w-full rounded border border-slate-300 bg-white px-3 py-2 pr-16 text-sm text-slate-900 outline-none focus:border-blue-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-50"
+                  placeholder="••••••••"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((prev) => !prev)}
+                  className="absolute inset-y-0 right-1 my-1 px-3 text-xs rounded border border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+                >
+                  {showPassword ? "Hide" : "Show"}
+                </button>
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={handleLogin}
+            className="mt-4 w-full rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+          >
+            Sign In
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ---------------------------------------------------------------------------
   // RENT ROLL VIEW
   // ---------------------------------------------------------------------------
   if (mode === "RentRoll") {
@@ -7496,6 +8693,10 @@ export default function DashboardPage() {
           projectName={selectedRentPropertyName}
           onModeChange={setMode}
           currentMode={mode}
+          currentUser={currentUser}
+          onLogout={handleLogout}
+          onOpenCommit={openCommitModal}
+          commitDraftCount={commitDraftCount}
         />
 
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
@@ -7953,7 +9154,16 @@ export default function DashboardPage() {
   if (mode === "Exports") {
     return (
       <div className="h-screen flex flex-col bg-slate-50 dark:bg-slate-900">
-        <TopBar title="Exports" projectName="Data Exports" onModeChange={setMode} currentMode={mode} />
+        <TopBar
+          title="Exports"
+          projectName="Data Exports"
+          onModeChange={setMode}
+          currentMode={mode}
+          currentUser={currentUser}
+          onLogout={handleLogout}
+          onOpenCommit={openCommitModal}
+          commitDraftCount={commitDraftCount}
+        />
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
           <div className="rounded-lg border border-slate-300 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-800">
             <div className="flex items-center justify-between">
@@ -8188,7 +9398,16 @@ export default function DashboardPage() {
 
     return (
       <div className="h-screen flex flex-col bg-slate-50 dark:bg-slate-900">
-        <TopBar title="Bank Statements" projectName="Uploads" onModeChange={setMode} currentMode={mode} />
+        <TopBar
+          title="Bank Statements"
+          projectName="Uploads"
+          onModeChange={setMode}
+          currentMode={mode}
+          currentUser={currentUser}
+          onLogout={handleLogout}
+          onOpenCommit={openCommitModal}
+          commitDraftCount={commitDraftCount}
+        />
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
           <div className="rounded-lg border border-slate-300 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-800">
             <h2 className="text-xl font-bold text-slate-900 dark:text-slate-50 mb-2">Upload Bank Statements</h2>
@@ -8289,6 +9508,508 @@ export default function DashboardPage() {
   }
 
   // ---------------------------------------------------------------------------
+  // USERS / ADMIN VIEW
+  // ---------------------------------------------------------------------------
+  if (mode === "Users") {
+    const isAdmin = currentUser?.role === "admin";
+    return (
+      <div className="h-screen flex flex-col bg-slate-50 dark:bg-slate-900">
+        <TopBar
+          title="Users"
+          projectName="Admin"
+          onModeChange={setMode}
+          currentMode={mode}
+          currentUser={currentUser}
+          onLogout={handleLogout}
+        />
+        <div className="flex-1 overflow-y-auto p-6 space-y-4">
+          {!isAdmin ? (
+            <div className="max-w-3xl mx-auto rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-amber-800 dark:border-amber-700/70 dark:bg-amber-900/40 dark:text-amber-100">
+              Admin access required to manage users.
+            </div>
+          ) : (
+            <div className="max-w-5xl mx-auto space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-50">User Management</h1>
+                  <p className="text-sm text-slate-600 dark:text-slate-400">
+                    Create, edit, or remove platform users. Password is optional when editing; leave blank to keep existing.
+                  </p>
+                </div>
+                <button
+                  onClick={() => { resetUserForm(); setUserModalOpen(true); setUserError(null); }}
+                  className="px-4 py-2 rounded-md bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700"
+                >
+                  New User
+                </button>
+              </div>
+
+              {userError && (
+                <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-700/60 dark:bg-amber-900/30 dark:text-amber-100">
+                  {userError}
+                </div>
+              )}
+
+              <div className="rounded-lg border border-slate-200 bg-white shadow-sm overflow-hidden dark:border-slate-700 dark:bg-slate-800">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-100 text-slate-600 uppercase text-[11px] tracking-wide dark:bg-slate-900/60 dark:text-slate-300">
+                    <tr>
+                      <th className="px-3 py-2 text-left">Name</th>
+                      <th className="px-3 py-2 text-left">Email</th>
+                      <th className="px-3 py-2 text-left">Role</th>
+                      <th className="px-3 py-2 text-left">Created</th>
+                      <th className="px-3 py-2 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {usersList.length === 0 && (
+                      <tr>
+                        <td colSpan={5} className="px-4 py-6 text-center text-slate-500 dark:text-slate-400">
+                          No users found. Add one to get started.
+                        </td>
+                      </tr>
+                    )}
+                    {usersList.map((u, idx) => (
+                      <tr key={u.id} className={idx % 2 === 0 ? "" : "bg-slate-50 dark:bg-slate-900/40"}>
+                        <td className="px-3 py-2 text-slate-900 dark:text-slate-50">{u.name}</td>
+                        <td className="px-3 py-2 text-slate-700 dark:text-slate-200">{u.email}</td>
+                        <td className="px-3 py-2 text-slate-700 dark:text-slate-200 capitalize">{u.role}</td>
+                        <td className="px-3 py-2 text-slate-600 dark:text-slate-300">
+                          {u.createdAt ? new Date(u.createdAt).toLocaleDateString() : "—"}
+                        </td>
+                        <td className="px-3 py-2 text-right space-x-2">
+                          <button
+                            onClick={() => { setUserForm({ id: u.id, email: u.email, name: u.name, role: u.role, password: "" }); setUserModalOpen(true); setUserError(null); }}
+                            className="px-2 py-1 rounded border border-slate-300 text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => setUserDeleteTarget(u)}
+                            className="px-2 py-1 rounded border border-red-200 text-red-700 hover:bg-red-50 dark:border-red-700 dark:text-red-200 dark:hover:bg-red-900/50"
+                          >
+                            Delete
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {userModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => { setUserModalOpen(false); resetUserForm(); }}>
+            <div
+              className="w-[420px] rounded-lg bg-white p-5 shadow-xl border border-slate-200 dark:bg-slate-900 dark:border-slate-700"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h4 className="text-lg font-semibold text-slate-900 dark:text-slate-50 mb-3">
+                {userForm.id ? "Edit User" : "New User"}
+              </h4>
+              <div className="space-y-3 text-sm">
+                <div>
+                  <label className="text-xs text-slate-500 dark:text-slate-400">Name</label>
+                  <input
+                    value={userForm.name}
+                    onChange={(e) => setUserForm((prev) => ({ ...prev, name: e.target.value }))}
+                    className="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2"
+                    placeholder="Full name"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-slate-500 dark:text-slate-400">Email</label>
+                  <input
+                    value={userForm.email}
+                    onChange={(e) => setUserForm((prev) => ({ ...prev, email: e.target.value }))}
+                    className="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2"
+                    placeholder="user@example.com"
+                    type="email"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-xs text-slate-500 dark:text-slate-400">Role</label>
+                    <select
+                      value={userForm.role}
+                      onChange={(e) => setUserForm((prev) => ({ ...prev, role: e.target.value }))}
+                      className="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2"
+                    >
+                      <option value="admin">Admin</option>
+                      <option value="editor">Editor</option>
+                      <option value="viewer">Viewer</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-500 dark:text-slate-400">{userForm.id ? "New Password (optional)" : "Password"}</label>
+                    <input
+                      value={userForm.password}
+                      onChange={(e) => setUserForm((prev) => ({ ...prev, password: e.target.value }))}
+                      className="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2"
+                      type="password"
+                      placeholder={userForm.id ? "Leave blank to keep" : "Minimum 8 chars"}
+                    />
+                  </div>
+                </div>
+              </div>
+              <div className="flex justify-end gap-2 mt-4">
+                <button
+                  onClick={() => { setUserModalOpen(false); resetUserForm(); }}
+                  className="px-3 py-1.5 text-sm rounded border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSaveUser}
+                  disabled={userSaving}
+                  className="px-3 py-1.5 text-sm rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {userSaving ? "Saving..." : "Save"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {userDeleteTarget && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setUserDeleteTarget(null)}>
+            <div
+              className="w-[360px] rounded-lg bg-white p-5 shadow-xl border border-slate-200 dark:bg-slate-900 dark:border-slate-700"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h4 className="text-lg font-semibold text-slate-900 dark:text-slate-50 mb-2">Delete User</h4>
+              <p className="text-sm text-slate-600 dark:text-slate-300">
+                Remove <span className="font-semibold">{userDeleteTarget.name}</span>? This action cannot be undone.
+              </p>
+              <div className="flex justify-end gap-2 mt-4">
+                <button
+                  onClick={() => setUserDeleteTarget(null)}
+                  className="px-3 py-1.5 text-sm rounded border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleDeleteUser}
+                  className="px-3 py-1.5 text-sm rounded bg-red-600 text-white hover:bg-red-700"
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // COMMITS VIEW
+  // ---------------------------------------------------------------------------
+  if (mode === "Commits") {
+    const selectedCommit = commitList.find((c) => c.id === commitSelectedId) || null;
+    return (
+      <div className="h-screen flex flex-col bg-slate-50 dark:bg-slate-900">
+        <TopBar
+          title="Commits"
+          projectName="Review & Apply"
+          onModeChange={setMode}
+          currentMode={mode}
+          currentUser={currentUser}
+          onLogout={handleLogout}
+        />
+
+        <div className="flex-1 overflow-hidden flex">
+          <div className="w-2/5 min-w-[380px] border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-col">
+            <div className="p-4 flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-50">Commit Queue</h2>
+                <p className="text-sm text-slate-500 dark:text-slate-400">Pending change sets awaiting approval.</p>
+              </div>
+              <button
+                onClick={() => loadCommits(true)}
+                className="text-xs px-3 py-1 rounded bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-200 hover:bg-slate-300 dark:hover:bg-slate-700"
+              >
+                Refresh
+              </button>
+            </div>
+            {commitError && (
+              <div className="mx-4 mb-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-700/60 dark:bg-amber-900/30 dark:text-amber-100">
+                {commitError}
+              </div>
+            )}
+            <div className="flex-1 overflow-y-auto">
+              {commitLoading && (
+                <div className="px-4 py-3 text-sm text-slate-500 dark:text-slate-400">Loading commits…</div>
+              )}
+              {!commitLoading && commitList.length === 0 && (
+                <div className="px-4 py-3 text-sm text-slate-500 dark:text-slate-400">No commits yet.</div>
+              )}
+              {commitList.map((c) => {
+                const isSelected = c.id === commitSelectedId;
+                const statusColor =
+                  c.status === "applied" ? "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300" :
+                  c.status === "approved" ? "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200" :
+                  c.status === "rejected" ? "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-200" :
+                  "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-200";
+                return (
+                  <button
+                    key={c.id}
+                    onClick={() => setCommitSelectedId(c.id)}
+                    className={`w-full text-left px-4 py-3 border-b border-slate-200 dark:border-slate-800 transition-colors ${isSelected ? "bg-slate-100 dark:bg-slate-800/60" : "hover:bg-slate-50 dark:hover:bg-slate-800/40"}`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">{c.serial}</div>
+                      <span className={`text-[11px] px-2 py-0.5 rounded-full font-semibold ${statusColor}`}>
+                        {c.status}
+                      </span>
+                    </div>
+                    <div className="text-xs text-slate-600 dark:text-slate-300 mt-1 line-clamp-2">
+                      {c.description || "No description provided."}
+                    </div>
+                    <div className="flex items-center gap-2 mt-2 text-[11px] text-slate-500 dark:text-slate-400">
+                      <span>{c.authorName || "Unknown"} </span>
+                      <span>•</span>
+                      <span>{c.createdAt ? new Date(c.createdAt).toLocaleString() : "—"}</span>
+                      {c.tags?.length > 0 && (
+                        <>
+                          <span>•</span>
+                          <span className="flex flex-wrap gap-1">{c.tags.map((t) => (
+                            <span key={t} className="px-2 py-0.5 rounded bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-200">{t}</span>
+                          ))}</span>
+                        </>
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="flex-1 overflow-y-auto bg-slate-50 dark:bg-slate-900 p-6">
+            {!selectedCommit && (
+        <div className="text-sm text-slate-500 dark:text-slate-400">Select a commit to review details.</div>
+      )}
+      {selectedCommit && (
+        <div className="max-w-5xl space-y-4">
+          <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-xl font-bold text-slate-900 dark:text-slate-50">{selectedCommit.serial}</div>
+                    <div className="text-sm text-slate-600 dark:text-slate-300">
+                      {selectedCommit.authorName || "Unknown"} • {selectedCommit.createdAt ? new Date(selectedCommit.createdAt).toLocaleString() : "—"}
+                    </div>
+                  </div>
+                  {currentUser?.role === "admin" && (
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => updateCommitStatus(selectedCommit.id, "approved")}
+                        className="px-3 py-1.5 rounded bg-blue-600 text-white text-sm hover:bg-blue-700"
+                      >
+                        Approve
+                      </button>
+                      <button
+                        onClick={() => updateCommitStatus(selectedCommit.id, "rejected")}
+                        className="px-3 py-1.5 rounded border border-slate-300 text-slate-700 dark:border-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+                      >
+                        Reject
+                      </button>
+                      <button
+                        onClick={() => updateCommitStatus(selectedCommit.id, "applied")}
+                        className="px-3 py-1.5 rounded bg-green-600 text-white text-sm hover:bg-green-700"
+                      >
+                        Apply
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+                  <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-50 mb-2">Summary</h3>
+                  <p className="text-sm text-slate-600 dark:text-slate-300 whitespace-pre-wrap">
+                    {selectedCommit.description || "No description provided."}
+                  </p>
+                  {selectedCommit.tags?.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mt-3">
+                      {selectedCommit.tags.map((t) => (
+                        <span key={t} className="px-2 py-1 text-xs rounded bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200">
+                          {t}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-50">Changes</h3>
+                    <button
+                      onClick={() => loadCommits(true)}
+                      className="text-xs px-2 py-1 rounded border border-slate-300 text-slate-600 dark:border-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+                    >
+                      Reload with changes
+                    </button>
+                  </div>
+                  {(!selectedCommit.changes || selectedCommit.changes.length === 0) && (
+                    <div className="text-sm text-slate-500 dark:text-slate-400">No change items recorded.</div>
+                  )}
+                  <div className="space-y-3">
+                    {(selectedCommit.changes || []).map((chg) => (
+                      <div key={chg.id} className="rounded border border-slate-200 bg-slate-50 p-3 text-sm dark:border-slate-700 dark:bg-slate-900/60">
+                        <div className="flex items-center justify-between mb-1">
+                          <div className="font-semibold text-slate-800 dark:text-slate-100">{chg.entity}{chg.entityId ? ` #${chg.entityId}` : ""}</div>
+                          <span className="text-[11px] px-2 py-0.5 rounded bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                            {chg.operation}
+                          </span>
+                        </div>
+                        {chg.impact && (
+                          <div className="text-xs text-slate-600 dark:text-slate-300 mb-2">Impact: {chg.impact}</div>
+                        )}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-[12px]">
+                          <div>
+                            <div className="text-[11px] uppercase text-slate-500 dark:text-slate-400 mb-1">Before</div>
+                            <pre className="whitespace-pre-wrap rounded bg-white border border-slate-200 p-2 dark:bg-slate-900 dark:border-slate-700">
+                              {chg.before ? JSON.stringify(chg.before, null, 2) : "—"}
+                            </pre>
+                          </div>
+                          <div>
+                            <div className="text-[11px] uppercase text-slate-500 dark:text-slate-400 mb-1">After</div>
+                            <pre className="whitespace-pre-wrap rounded bg-white border border-slate-200 p-2 dark:bg-slate-900 dark:border-slate-700">
+                              {chg.after ? JSON.stringify(chg.after, null, 2) : "—"}
+                            </pre>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+        </div>
+      )}
+    </div>
+  </div>
+
+  {commitDraftOpen && (
+    <div
+      className="fixed inset-0 z-50 flex items-start md:items-center justify-center bg-black/50 overflow-y-auto py-8"
+      onClick={() => setCommitDraftOpen(false)}
+    >
+      <div
+        className="w-full max-w-5xl max-h-[90vh] overflow-y-auto rounded-lg bg-white p-6 shadow-xl border border-slate-200 dark:bg-slate-900 dark:border-slate-700"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-50">Stage Commit</h3>
+            <p className="text-sm text-slate-500 dark:text-slate-400">Describe your change set and add change items.</p>
+          </div>
+          <button
+            onClick={() => setCommitDraftOpen(false)}
+            className="px-3 py-1.5 text-sm rounded border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+          >
+            Close
+          </button>
+        </div>
+
+        {commitDraftError && (
+          <div className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-700/60 dark:bg-amber-900/30 dark:text-amber-100">
+            {commitDraftError}
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="text-xs text-slate-500 dark:text-slate-400">Description</label>
+            <textarea
+              value={commitDraft.description}
+              onChange={(e) => setCommitDraft((prev) => ({ ...prev, description: e.target.value }))}
+              className="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm min-h-[80px]"
+              placeholder="What does this commit contain?"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-slate-500 dark:text-slate-400">Tags (auto)</label>
+            <div className="flex flex-wrap gap-2 mt-1">
+              {derivedCommitTags.length === 0 && (
+                <span className="text-xs text-slate-500 dark:text-slate-400">Will auto-fill from staged changes</span>
+              )}
+              {derivedCommitTags.map((t) => (
+                <span key={t} className="px-2 py-1 text-xs rounded bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                  {t}
+                </span>
+              ))}
+            </div>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">Derived automatically from staged change entities.</p>
+          </div>
+        </div>
+
+        <div className="mt-4 rounded border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 p-4">
+          <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-200 mb-2">Staged Changes</h4>
+          <p className="text-xs text-slate-600 dark:text-slate-300 mb-3">
+            Changes are captured automatically from your actions. Review or remove them below.
+          </p>
+          {commitDraft.changes.length === 0 && (
+            <div className="text-sm text-slate-500 dark:text-slate-400">No staged changes yet.</div>
+          )}
+          {commitDraft.changes.length > 0 && (
+            <div className="space-y-3 max-h-64 overflow-y-auto pr-1">
+              {commitDraft.changes.map((chg) => (
+                <div key={chg.id} className="rounded border border-slate-200 bg-slate-50 p-3 text-sm dark:border-slate-700 dark:bg-slate-900/60">
+                  <div className="flex items-center justify-between">
+                    <div className="font-semibold text-slate-800 dark:text-slate-100">{chg.entity}{chg.entityId ? ` #${chg.entityId}` : ""}</div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] px-2 py-0.5 rounded bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-200">{chg.operation}</span>
+                      <button
+                        onClick={() => removeDraftChange(chg.id)}
+                        className="text-[11px] px-2 py-0.5 rounded border border-red-200 text-red-700 hover:bg-red-50 dark:border-red-700 dark:text-red-200 dark:hover:bg-red-900/40"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  </div>
+                  {chg.impact && <div className="text-xs text-slate-600 dark:text-slate-300 mt-1">Impact: {chg.impact}</div>}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-[12px] mt-2">
+                    <div>
+                      <div className="text-[11px] uppercase text-slate-500 dark:text-slate-400 mb-1">Before</div>
+                      <pre className="whitespace-pre-wrap rounded bg-white border border-slate-200 p-2 dark:bg-slate-900 dark:border-slate-700">
+                        {chg.beforeText || "-"}
+                      </pre>
+                    </div>
+                    <div>
+                      <div className="text-[11px] uppercase text-slate-500 dark:text-slate-400 mb-1">After</div>
+                      <pre className="whitespace-pre-wrap rounded bg-white border border-slate-200 p-2 dark:bg-slate-900 dark:border-slate-700">
+                        {chg.afterText || "-"}
+                      </pre>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="mt-4 flex justify-end gap-2">
+          <button
+            onClick={() => setCommitDraftOpen(false)}
+            className="px-3 py-1.5 text-sm rounded border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSaveCommitDraft}
+            disabled={commitDraftSaving}
+            className="px-4 py-1.5 text-sm rounded bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            {commitDraftSaving ? "Saving..." : "Submit Commit"}
+          </button>
+        </div>
+      </div>
+    </div>
+  )}
+      </div>
+    );
+  }
+
+  // ---------------------------------------------------------------------------
   // RESOURCES VIEW
   // ---------------------------------------------------------------------------
   if (mode === "Resources") {
@@ -8299,6 +10020,10 @@ export default function DashboardPage() {
           projectName={activeProject?.name}
           onModeChange={setMode}
           currentMode={mode}
+          currentUser={currentUser}
+          onLogout={handleLogout}
+          onOpenCommit={openCommitModal}
+          commitDraftCount={commitDraftCount}
         />
         <ActionRibbon
           onOpenTaxRates={() => setTaxRateDialogOpen(true)}
@@ -8508,6 +10233,10 @@ export default function DashboardPage() {
           projectName={activeProject?.name}
           onModeChange={setMode}
           currentMode={mode}
+          currentUser={currentUser}
+          onLogout={handleLogout}
+          onOpenCommit={openCommitModal}
+          commitDraftCount={commitDraftCount}
         />
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
           <div className="flex items-center justify-between">
@@ -8860,14 +10589,18 @@ export default function DashboardPage() {
     if (projectMeta.status === "under_contract") {
       return (
         <div className="h-screen flex flex-col bg-slate-50 dark:bg-slate-900">
-          <TopBar
-            title="Activities"
-            projectName={activeProject.name}
-            onModeChange={setMode}
-            currentMode={mode}
-            isDetailsPanelVisible={isDetailsPanelVisible}
-            onToggleDetailsPanel={() => setIsDetailsPanelVisible(prev => !prev)}
-          />
+        <TopBar
+          title="Activities"
+        projectName={activeProject.name}
+        onModeChange={setMode}
+        currentMode={mode}
+        isDetailsPanelVisible={isDetailsPanelVisible}
+        onToggleDetailsPanel={() => setIsDetailsPanelVisible(prev => !prev)}
+        currentUser={currentUser}
+        onLogout={handleLogout}
+        onOpenCommit={openCommitModal}
+        commitDraftCount={commitDraftCount}
+        />
           <ActionRibbon
             onOpenTaxRates={() => setTaxRateDialogOpen(true)}
             onManagePresets={() => setFormulaPresetDialogOpen(true)}
@@ -8958,6 +10691,10 @@ export default function DashboardPage() {
           currentMode={mode}
           isDetailsPanelVisible={isDetailsPanelVisible}
           onToggleDetailsPanel={() => setIsDetailsPanelVisible(prev => !prev)}
+          currentUser={currentUser}
+          onLogout={handleLogout}
+          onOpenCommit={openCommitModal}
+          commitDraftCount={commitDraftCount}
         />
         <ActionRibbon
           onOpenTaxRates={() => setTaxRateDialogOpen(true)}
@@ -9636,7 +11373,7 @@ export default function DashboardPage() {
 
   return (
     <div className="h-screen flex flex-col bg-slate-50 dark:bg-slate-900">
-      <TopBar title="EPS" currentMode={mode} onModeChange={setMode} />
+      <TopBar title="EPS" currentMode={mode} onModeChange={setMode} currentUser={currentUser} onLogout={handleLogout} onOpenCommit={openCommitModal} commitDraftCount={commitDraftCount} />
       <ActionRibbon
         onOpenTaxRates={() => setTaxRateDialogOpen(true)}
         onManagePresets={() => setFormulaPresetDialogOpen(true)}

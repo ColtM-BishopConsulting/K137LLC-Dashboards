@@ -1,4 +1,4 @@
-export default {
+const config = {
   driver: "pg",
   schema: "./src/db/schema.ts",
   out: "./drizzle",
@@ -6,3 +6,5 @@ export default {
     connectionString: process.env.DATABASE_URL!,
   },
 };
+
+export default config;
