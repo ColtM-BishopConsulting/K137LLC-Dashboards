@@ -1,11 +1,15 @@
 import { NextResponse } from "next/server";
 import { db, users } from "@/db";
 import { eq } from "drizzle-orm";
-import { getSessionFromCookieHeader, hashPassword } from "@/lib/auth";
+import { getSessionFromCookieHeader, hashPassword, COOKIE_NAME } from "@/lib/auth";
+import { cookies } from "next/headers";
 
 const requireAdmin = async (req: Request) => {
-  const cookieHeader = req.headers.get("cookie");
-  const session = await getSessionFromCookieHeader(cookieHeader);
+  const token =
+    cookies().get(COOKIE_NAME)?.value ||
+    req.headers.get("cookie") ||
+    req.headers.get(COOKIE_NAME);
+  const session = await getSessionFromCookieHeader(token);
   if (!session || session.role !== "admin") {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

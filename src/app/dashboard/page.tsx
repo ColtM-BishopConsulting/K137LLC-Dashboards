@@ -5242,7 +5242,7 @@ export default function DashboardPage() {
     setCommitError(null);
     setCommitLoading(true);
     try {
-      const res = await fetch(`/api/commits${withChanges ? "?includeChanges=1" : ""}`);
+      const res = await fetch(`/api/commits${withChanges ? "?includeChanges=1" : ""}`, { credentials: "include" });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         throw new Error(data?.error || "Failed to load commits");

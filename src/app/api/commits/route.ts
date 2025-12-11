@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import {
   db,
   commits,
@@ -79,8 +80,11 @@ const mapCommit = (c: any, changes?: any[]) => ({
 });
 
 const requireUser = async (req: Request) => {
-  const cookieHeader = req.headers.get("cookie");
-  const token = cookieHeader || req.headers.get(COOKIE_NAME);
+  const cookieStore = cookies();
+  const token =
+    cookieStore.get(COOKIE_NAME)?.value ||
+    req.headers.get("cookie") ||
+    req.headers.get(COOKIE_NAME);
   const session = await getSessionFromCookieHeader(token);
   if (!session) return null;
   if (session.role) {

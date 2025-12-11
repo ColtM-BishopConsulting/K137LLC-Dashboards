@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { db, users } from "@/db";
 import { eq } from "drizzle-orm";
 import { getSessionFromCookieHeader, COOKIE_NAME } from "@/lib/auth";
@@ -6,7 +7,10 @@ import { getSessionFromCookieHeader, COOKIE_NAME } from "@/lib/auth";
 export async function GET(req: Request) {
   try {
     const cookieHeader = req.headers.get("cookie");
-    const token = cookieHeader || req.headers.get(COOKIE_NAME);
+    const token =
+      cookies().get(COOKIE_NAME)?.value ||
+      cookieHeader ||
+      req.headers.get(COOKIE_NAME);
     const session = await getSessionFromCookieHeader(token);
     if (!session) {
       console.warn("auth/me: no session after parse", {
