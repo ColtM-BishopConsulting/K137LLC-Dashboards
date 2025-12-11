@@ -23,7 +23,7 @@ import {
   taxRates,
 } from "@/db";
 import { getSessionFromCookieHeader, COOKIE_NAME } from "@/lib/auth";
-import { desc, eq, inArray } from "drizzle-orm";
+import { desc, eq, inArray, and } from "drizzle-orm";
 
 const STATUS = ["pending", "approved", "rejected", "applied"] as const;
 type CommitStatus = (typeof STATUS)[number];
@@ -150,8 +150,7 @@ const applyCommitChanges = async (commitId: number) => {
           const [wbsRow] = await db
             .select({ id: wbsNodes.id })
             .from(wbsNodes)
-            .where(eq(wbsNodes.projectId, projectId))
-            .where(eq(wbsNodes.code, String(wbsCode)));
+            .where(and(eq(wbsNodes.projectId, projectId), eq(wbsNodes.code, String(wbsCode))));
           if (wbsRow?.id) {
             wbsId = wbsRow.id;
           } else {
