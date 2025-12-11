@@ -67,10 +67,11 @@ const pbkdf2 = async (password: string, salt: Uint8Array) => {
   ensureCrypto();
   if (subtle) {
     const keyMaterial = await subtle.importKey("raw", enc.encode(password), "PBKDF2", false, ["deriveBits"]);
+    const saltBuf = salt.buffer.slice(salt.byteOffset, salt.byteOffset + salt.byteLength);
     const bits = await subtle.deriveBits(
       {
         name: "PBKDF2",
-        salt,
+        salt: saltBuf,
         iterations: 10000,
         hash: "SHA-512",
       },
