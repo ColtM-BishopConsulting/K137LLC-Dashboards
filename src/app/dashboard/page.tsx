@@ -3635,7 +3635,6 @@ const TopBar: React.FC<{
   currentUser?: { name: string; email: string; role: string } | null;
   onLogout?: () => void;
   onOpenCommit?: () => void;
-  commitDraftCount?: number;
 }> = ({
   title,
   projectName,
@@ -3646,7 +3645,6 @@ const TopBar: React.FC<{
   currentUser,
   onLogout,
   onOpenCommit,
-  commitDraftCount = 0,
 }) => {
   const { theme, setTheme } = useTheme();
 
@@ -3775,7 +3773,7 @@ const TopBar: React.FC<{
             }}
             className="px-3 py-1 text-xs rounded bg-emerald-600 text-white hover:bg-emerald-700"
           >
-            {`Commit${commitDraftCount ? ` - ${commitDraftCount} Change${commitDraftCount === 1 ? "" : "s"}` : ""}`}
+            {`Commit${commitDraft.changes.length ? ` - ${commitDraft.changes.length} Change${commitDraft.changes.length === 1 ? "" : "s"}` : ""}`}
           </button>
         )}
         {onLogout && (
@@ -5287,6 +5285,7 @@ export default function DashboardPage() {
 
   const stageChange = useCallback((change: { entity: string; entityId?: string | number | null; operation: string; impact?: string; before?: any; after?: any }) => {
     setCommitDraftOpen(true);
+    setMode("Commits");
     setCommitDraft((prev) => ({
       ...prev,
       changes: [
@@ -5310,36 +5309,6 @@ export default function DashboardPage() {
       changes: prev.changes.filter((c) => c.id !== id),
     }));
   }, []);
-  const commitDraftCount = commitDraft.changes.length;
-  const openCommitModal = useCallback(() => {
-    setMode("Commits");
-    setCommitDraftOpen(true);
-  }, [setMode]);
-
-  // Persist staged commit draft locally so it survives reloads
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    try {
-      const stored = localStorage.getItem("commitDraft");
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (parsed && typeof parsed === "object" && Array.isArray(parsed.changes)) {
-          setCommitDraft(parsed);
-        }
-      }
-    } catch {
-      // ignore bad stored data
-    }
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    try {
-      localStorage.setItem("commitDraft", JSON.stringify(commitDraft));
-    } catch {
-      // ignore storage issues
-    }
-  }, [commitDraft]);
 
   const handleSaveCommitDraft = useCallback(async () => {
     if (!currentUser) {
@@ -5388,13 +5357,6 @@ export default function DashboardPage() {
         description: "",
         changes: [],
       });
-      if (typeof window !== "undefined") {
-        try {
-          localStorage.removeItem("commitDraft");
-        } catch {
-          // ignore
-        }
-      }
       setMode("Commits");
     } catch (err: any) {
       setCommitDraftError(err?.message || "Failed to create commit");
@@ -8695,8 +8657,7 @@ export default function DashboardPage() {
           currentMode={mode}
           currentUser={currentUser}
           onLogout={handleLogout}
-          onOpenCommit={openCommitModal}
-          commitDraftCount={commitDraftCount}
+          onOpenCommit={() => setCommitDraftOpen(true)}
         />
 
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
@@ -9161,8 +9122,7 @@ export default function DashboardPage() {
           currentMode={mode}
           currentUser={currentUser}
           onLogout={handleLogout}
-          onOpenCommit={openCommitModal}
-          commitDraftCount={commitDraftCount}
+          onOpenCommit={() => setCommitDraftOpen(true)}
         />
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
           <div className="rounded-lg border border-slate-300 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-800">
@@ -9405,8 +9365,7 @@ export default function DashboardPage() {
           currentMode={mode}
           currentUser={currentUser}
           onLogout={handleLogout}
-          onOpenCommit={openCommitModal}
-          commitDraftCount={commitDraftCount}
+          onOpenCommit={() => setCommitDraftOpen(true)}
         />
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
           <div className="rounded-lg border border-slate-300 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-800">
@@ -10022,8 +9981,7 @@ export default function DashboardPage() {
           currentMode={mode}
           currentUser={currentUser}
           onLogout={handleLogout}
-          onOpenCommit={openCommitModal}
-          commitDraftCount={commitDraftCount}
+          onOpenCommit={() => setCommitDraftOpen(true)}
         />
         <ActionRibbon
           onOpenTaxRates={() => setTaxRateDialogOpen(true)}
@@ -10235,8 +10193,7 @@ export default function DashboardPage() {
           currentMode={mode}
           currentUser={currentUser}
           onLogout={handleLogout}
-          onOpenCommit={openCommitModal}
-          commitDraftCount={commitDraftCount}
+          onOpenCommit={() => setCommitDraftOpen(true)}
         />
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
           <div className="flex items-center justify-between">
@@ -10589,17 +10546,16 @@ export default function DashboardPage() {
     if (projectMeta.status === "under_contract") {
       return (
         <div className="h-screen flex flex-col bg-slate-50 dark:bg-slate-900">
-        <TopBar
-          title="Activities"
-        projectName={activeProject.name}
-        onModeChange={setMode}
-        currentMode={mode}
-        isDetailsPanelVisible={isDetailsPanelVisible}
-        onToggleDetailsPanel={() => setIsDetailsPanelVisible(prev => !prev)}
-        currentUser={currentUser}
-        onLogout={handleLogout}
-        onOpenCommit={openCommitModal}
-        commitDraftCount={commitDraftCount}
+          <TopBar
+            title="Activities"
+          projectName={activeProject.name}
+          onModeChange={setMode}
+          currentMode={mode}
+          isDetailsPanelVisible={isDetailsPanelVisible}
+          onToggleDetailsPanel={() => setIsDetailsPanelVisible(prev => !prev)}
+          currentUser={currentUser}
+          onLogout={handleLogout}
+          onOpenCommit={() => setCommitDraftOpen(true)}
         />
           <ActionRibbon
             onOpenTaxRates={() => setTaxRateDialogOpen(true)}
@@ -10693,8 +10649,7 @@ export default function DashboardPage() {
           onToggleDetailsPanel={() => setIsDetailsPanelVisible(prev => !prev)}
           currentUser={currentUser}
           onLogout={handleLogout}
-          onOpenCommit={openCommitModal}
-          commitDraftCount={commitDraftCount}
+          onOpenCommit={() => setCommitDraftOpen(true)}
         />
         <ActionRibbon
           onOpenTaxRates={() => setTaxRateDialogOpen(true)}
@@ -11373,7 +11328,7 @@ export default function DashboardPage() {
 
   return (
     <div className="h-screen flex flex-col bg-slate-50 dark:bg-slate-900">
-      <TopBar title="EPS" currentMode={mode} onModeChange={setMode} currentUser={currentUser} onLogout={handleLogout} onOpenCommit={openCommitModal} commitDraftCount={commitDraftCount} />
+      <TopBar title="EPS" currentMode={mode} onModeChange={setMode} currentUser={currentUser} onLogout={handleLogout} onOpenCommit={() => setCommitDraftOpen(true)} />
       <ActionRibbon
         onOpenTaxRates={() => setTaxRateDialogOpen(true)}
         onManagePresets={() => setFormulaPresetDialogOpen(true)}
@@ -11864,8 +11819,3 @@ export default function DashboardPage() {
     </div>
   );
 }
-
-
-
-
-
