@@ -19,8 +19,12 @@ export async function POST(req: Request) {
       ...body,
       parentId: body?.parentId ? Number(body.parentId) : null,
     };
-    const inserted = await db.insert(ledgerCategories).values(normalized).returning();
-    return NextResponse.json({ category: inserted[0] });
+    const inserted = await db
+      .insert(ledgerCategories)
+      .values(normalized)
+      .returning({ id: ledgerCategories.id, name: ledgerCategories.name, parentId: ledgerCategories.parentId });
+    const [row] = inserted;
+    return NextResponse.json({ category: row });
   } catch (err) {
     console.error("POST /api/ledger/categories error", err);
     return NextResponse.json({ error: "Failed to create ledger category" }, { status: 500 });
@@ -41,8 +45,12 @@ export async function PATCH(req: Request) {
       ...rest,
       parentId: rest?.parentId ? Number(rest.parentId) : null,
     };
-    const updated = await db.update(ledgerCategories).set(normalized).where(eq(ledgerCategories.id, id)).returning();
-    const renamed = updated[0];
+    const updated = await db
+      .update(ledgerCategories)
+      .set(normalized)
+      .where(eq(ledgerCategories.id, id))
+      .returning({ id: ledgerCategories.id, name: ledgerCategories.name, parentId: ledgerCategories.parentId });
+    const [renamed] = updated;
     if (renamed?.name) {
       const isSubcategory = Boolean(renamed.parentId);
       if (isSubcategory) {
@@ -67,7 +75,7 @@ export async function PATCH(req: Request) {
           );
       }
     }
-    return NextResponse.json({ category: updated[0] });
+    return NextResponse.json({ category: renamed });
   } catch (err) {
     console.error("PATCH /api/ledger/categories error", err);
     return NextResponse.json({ error: "Failed to update ledger category" }, { status: 500 });
@@ -98,8 +106,12 @@ export async function DELETE(req: Request) {
       .update(ledgerTransactions)
       .set({ subCategoryId: null })
       .where(eq(ledgerTransactions.subCategoryId, id));
-    const deleted = await db.delete(ledgerCategories).where(eq(ledgerCategories.id, id)).returning();
-    return NextResponse.json({ category: deleted[0] });
+    const deleted = await db
+      .delete(ledgerCategories)
+      .where(eq(ledgerCategories.id, id))
+      .returning({ id: ledgerCategories.id, name: ledgerCategories.name, parentId: ledgerCategories.parentId });
+    const [row] = deleted;
+    return NextResponse.json({ category: row });
   } catch (err) {
     console.error("DELETE /api/ledger/categories error", err);
     return NextResponse.json({ error: "Failed to delete ledger category" }, { status: 500 });
