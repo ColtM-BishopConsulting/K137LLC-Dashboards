@@ -4,6 +4,7 @@ import {
   varchar,
   integer,
   date,
+  boolean,
   timestamp,
   numeric,
   text,
@@ -244,6 +245,10 @@ export const activities = pgTable("activities", {
   percentComplete: integer("percent_complete").default(0).notNull(),
 
   responsible: varchar("responsible", { length: 255 }),      // Colten / Bobby / Finance / PM, etc.
+  projectedLabor: numeric("projected_labor", { precision: 14, scale: 2 }).default("0").notNull(),
+  projectedCost: numeric("projected_cost", { precision: 14, scale: 2 }).default("0").notNull(),
+  budget: numeric("budget", { precision: 14, scale: 2 }).default("0").notNull(),
+  revenue: numeric("revenue", { precision: 14, scale: 2 }).default("0").notNull(),
 
   createdAt: timestamp("created_at", { withTimezone: true })
     .default(sql`now()`)
@@ -315,12 +320,15 @@ export const rentUnits = pgTable("rent_units", {
   tenant: varchar("tenant", { length: 255 }),
   status: varchar("status", { length: 32 }).default("Occupied").notNull(), // Occupied | Vacant | Notice
   rent: numeric("rent", { precision: 12, scale: 2 }).notNull(),
-  leaseEnd: varchar("lease_end", { length: 64 }), // keep as string to match existing UI input
-  initialDueMonthDay: varchar("initial_due_month_day", { length: 8 }).default("01-01").notNull(),
-  bedrooms: integer("bedrooms").default(0),
-  bathrooms: integer("bathrooms").default(0),
-  createdAt: timestamp("created_at", { withTimezone: true }).default(sql`now()`),
-});
+    leaseEnd: varchar("lease_end", { length: 64 }), // keep as string to match existing UI input
+    initialDueMonthDay: varchar("initial_due_month_day", { length: 8 }).default("01-01").notNull(),
+    bedrooms: integer("bedrooms").default(0),
+    bathrooms: integer("bathrooms").default(0),
+    lastPaymentDate: date("last_payment_date"),
+    lastPaymentPaidOnDate: boolean("last_payment_paid_on_date"),
+    lastPaymentPaidDate: date("last_payment_paid_date"),
+    createdAt: timestamp("created_at", { withTimezone: true }).default(sql`now()`),
+  });
 
 export const rentPayments = pgTable("rent_payments", {
   id: serial("id").primaryKey(),
@@ -333,15 +341,58 @@ export const rentPayments = pgTable("rent_payments", {
   createdAt: timestamp("created_at", { withTimezone: true }).default(sql`now()`),
 });
 
+export const rentDocuments = pgTable("rent_documents", {
+  id: serial("id").primaryKey(),
+  rentUnitId: integer("rent_unit_id")
+    .notNull()
+    .references(() => rentUnits.id, { onDelete: "cascade" }),
+  label: varchar("label", { length: 255 }).notNull(),
+  fileName: varchar("file_name", { length: 255 }).notNull(),
+  fileType: varchar("file_type", { length: 128 }).notNull(),
+  size: integer("size").notNull(),
+  dataUrl: text("data_url").notNull(),
+  uploadedAt: timestamp("uploaded_at", { withTimezone: true }).default(sql`now()`),
+});
+
+export const rentExpenseCategories = pgTable("rent_expense_categories", {
+  id: serial("id").primaryKey(),
+  name: varchar("name", { length: 128 }).notNull(),
+  parentId: integer("parent_id").references(() => rentExpenseCategories.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).default(sql`now()`),
+});
+
+export const rentExpenses = pgTable("rent_expenses", {
+  id: serial("id").primaryKey(),
+  rentUnitId: integer("rent_unit_id")
+    .notNull()
+    .references(() => rentUnits.id, { onDelete: "cascade" }),
+  date: date("date").notNull(),
+  category: varchar("category", { length: 128 }),
+  categoryId: integer("category_id").references(() => rentExpenseCategories.id, { onDelete: "set null" }),
+  subCategoryId: integer("sub_category_id").references(() => rentExpenseCategories.id, { onDelete: "set null" }),
+  description: text("description").notNull(),
+  amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).default(sql`now()`),
+});
+
 // ----------------------------
 // TRANSACTIONS / LEDGER
 // ----------------------------
+export const ledgerCategories = pgTable("ledger_categories", {
+  id: serial("id").primaryKey(),
+  name: varchar("name", { length: 128 }).notNull(),
+  parentId: integer("parent_id").references(() => ledgerCategories.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).default(sql`now()`),
+});
+
 export const ledgerTransactions = pgTable("ledger_transactions", {
   id: serial("id").primaryKey(),
   projectId: integer("project_id").references(() => projects.id, { onDelete: "set null" }),
   activityId: integer("activity_id").references(() => activities.id, { onDelete: "set null" }),
   type: varchar("type", { length: 16 }).notNull(), // Income | Outcome
+  categoryId: integer("category_id").references(() => ledgerCategories.id, { onDelete: "set null" }),
   category: varchar("category", { length: 128 }).notNull(),
+  subCategoryId: integer("sub_category_id").references(() => ledgerCategories.id, { onDelete: "set null" }),
   subCategory: varchar("sub_category", { length: 128 }),
   date: date("date").notNull(),
   amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),

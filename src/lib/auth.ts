@@ -185,11 +185,16 @@ const parseCookieHeader = (cookieHeader: string | null | undefined) => {
 };
 
 export const getSessionFromCookieHeader = async (cookieHeader: string | null | undefined) => {
+  const raw = (cookieHeader || "").trim();
   // If a raw token is passed instead of a header, handle it directly
-  if (cookieHeader && !cookieHeader.includes(";") && cookieHeader.includes(".")) {
-    return await verifyToken(cookieHeader);
+  if (raw && !raw.includes("=") && raw.includes(".")) {
+    return await verifyToken(raw);
   }
-  const parsed = parseCookieHeader(cookieHeader);
+  // If the header only contains this cookie, avoid mis-detecting as raw token
+  if (raw.startsWith(`${COOKIE_NAME}=`)) {
+    return await verifyToken(raw.slice(COOKIE_NAME.length + 1));
+  }
+  const parsed = parseCookieHeader(raw);
   const token = parsed[COOKIE_NAME];
   if (!token) return null;
   return await verifyToken(token);

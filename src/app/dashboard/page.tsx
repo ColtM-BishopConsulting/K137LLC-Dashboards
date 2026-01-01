@@ -77,10 +77,18 @@ interface Transaction {
   date: string;
   description: string;
   type: "Income" | "Outcome";
+  categoryId?: string;
   category: string;
+  subCategoryId?: string;
   subCategory?: string;
   amount: number;
   activityId?: string;
+}
+
+interface LedgerCategory {
+  id: string;
+  name: string;
+  parentId?: string | null;
 }
 
 interface ProjectDetail {
@@ -201,6 +209,9 @@ interface RentRollEntry {
   initialDueMonthDay: string; // MM-DD
   bedrooms: number;
   bathrooms: number;
+  lastPaymentDate?: string | null;
+  lastPaymentPaidOnDate?: boolean | null;
+  lastPaymentPaidDate?: string | null;
   createdAt?: string;
 }
 
@@ -212,6 +223,34 @@ interface RentPayment {
   note?: string;
 }
 
+interface RentExpenseCategory {
+  id: string;
+  name: string;
+  parentId?: string | null;
+  createdAt?: string;
+}
+
+interface RentRollDocument {
+  id: string;
+  entryId: string;
+  label: string;
+  fileName: string;
+  fileType: string;
+  size: number;
+  uploadedAt: string;
+  dataUrl: string;
+}
+
+interface RentRollExpense {
+  id: string;
+  entryId: string;
+  date: string;
+  category: string;
+  categoryId?: string | null;
+  subCategoryId?: string | null;
+  description: string;
+  amount: number;
+}
 // ---------------------------------------------------------------------------
 // CUSTOM FORMULA TYPES
 // ---------------------------------------------------------------------------
@@ -254,7 +293,8 @@ interface LedgerFormState {
   date: string;
   description: string;
   type: "Income" | "Outcome";
-  category: string;
+  categoryId: string;
+  subCategoryId: string;
   amount: number;
   activityId: string;
 }
@@ -2280,6 +2320,7 @@ interface ProjectLedgerProps {
   projectId: number;
   activities: Activity[];
   transactions: Transaction[];
+  categories: LedgerCategory[];
   onAddTransaction: (transaction: Omit<Transaction, "id">) => void;
   onUpdateTransaction: (transaction: Transaction) => void;
   onDeleteTransaction: (transactionId: string) => void;
@@ -2288,12 +2329,15 @@ interface ProjectLedgerProps {
   draftActivityId?: string | null;
   setDraftActivityId?: (id: string | null) => void;
   onExpand?: () => void;
+  displayMode?: "dock" | "inline";
+  containerClassName?: string;
 }
 
 const ProjectLedger: React.FC<ProjectLedgerProps> = ({
   projectId,
   activities,
   transactions,
+  categories,
   onAddTransaction,
   onUpdateTransaction,
   onDeleteTransaction,
@@ -2301,29 +2345,92 @@ const ProjectLedger: React.FC<ProjectLedgerProps> = ({
   setIsOpen,
   draftActivityId,
   setDraftActivityId,
+  displayMode = "dock",
+  containerClassName,
 }) => {
+  const categoryOptions = useMemo(() => {
+    const options = new Map<string, { id: string; name: string }>();
+    categories
+      .filter((cat) => !cat.parentId)
+      .forEach((cat) => {
+        options.set(cat.name, { id: String(cat.id), name: cat.name });
+      });
+    transactions.forEach((t) => {
+      if (!t.category) return;
+      if (!options.has(t.category)) {
+        options.set(t.category, { id: `legacy:${t.category}`, name: t.category });
+      }
+    });
+    if (options.size === 0) {
+      ["Labor", "Materials", "Equipment", "Client Payment", "Other"].forEach((name) => {
+        options.set(name, { id: `legacy:${name}`, name });
+      });
+    }
+    return Array.from(options.values());
+  }, [categories, transactions]);
+
   const [form, setForm] = useState<LedgerFormState>({
     date: new Date().toISOString().split("T")[0],
     description: "",
     type: "Outcome",
-    category: "Materials",
+    categoryId: categoryOptions[0]?.id || "",
+    subCategoryId: "",
     amount: 0,
     activityId: "",
   });
+  const getSubCategoryOptionsForCategory = useCallback((categoryId: string) => {
+    if (!categoryId) return [];
+    const selectedCategoryName =
+      categoryOptions.find((opt) => opt.id === categoryId)?.name ||
+      categoryId.replace(/^legacy:/, "");
+    const options = new Map<string, { id: string; name: string }>();
+    categories
+      .filter((cat) => cat.parentId && String(cat.parentId) === categoryId)
+      .forEach((cat) => {
+        options.set(cat.name, { id: String(cat.id), name: cat.name });
+      });
+    transactions.forEach((t) => {
+      if (t.category !== selectedCategoryName || !t.subCategory) return;
+      if (!options.has(t.subCategory)) {
+        options.set(t.subCategory, { id: `legacy-sub:${t.subCategory}`, name: t.subCategory });
+      }
+    });
+    return Array.from(options.values());
+  }, [categories, categoryOptions, transactions]);
+
+  const subCategoryOptions = useMemo(
+    () => getSubCategoryOptionsForCategory(form.categoryId),
+    [form.categoryId, getSubCategoryOptionsForCategory]
+  );
   const [selectedTransactionId, setSelectedTransactionId] = useState<string | null>(null);
   const [isExpanded, setIsExpanded] = useState(false);
+  const isInline = displayMode === "inline";
+  const effectiveOpen = isInline ? true : isOpen;
 
   useEffect(() => {
-    if (!isOpen) {
+    if (!effectiveOpen) {
       setIsExpanded(false);
     }
-  }, [isOpen]);
+  }, [effectiveOpen]);
 
   useEffect(() => {
     if (draftActivityId) {
       setForm(prev => ({ ...prev, activityId: draftActivityId }));
     }
   }, [draftActivityId]);
+
+  useEffect(() => {
+    setForm((prev) => {
+      if (categoryOptions.some((cat) => cat.id === prev.categoryId)) return prev;
+      return { ...prev, categoryId: categoryOptions[0]?.id || "", subCategoryId: "" };
+    });
+  }, [categoryOptions]);
+
+  useEffect(() => {
+    if (!form.subCategoryId) return;
+    if (subCategoryOptions.some((opt) => opt.id === form.subCategoryId)) return;
+    setForm((prev) => ({ ...prev, subCategoryId: "" }));
+  }, [form.subCategoryId, subCategoryOptions]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -2332,25 +2439,49 @@ const ProjectLedger: React.FC<ProjectLedgerProps> = ({
       setForm((prev) => ({ ...prev, amount: Number.isFinite(parsed) ? parsed : 0 }));
       return;
     }
+    if (name === "categoryId") {
+      setForm((prev) => ({ ...prev, categoryId: value, subCategoryId: "" }));
+      return;
+    }
     setForm((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const resolveCategoryPayload = (categoryId: string, subCategoryId: string) => {
+    const selectedCategory = categoryOptions.find((opt) => opt.id === categoryId);
+    const resolvedCategoryName = selectedCategory?.name || categoryId.replace(/^legacy:/, "");
+    const resolvedCategoryId = selectedCategory && !selectedCategory.id.startsWith("legacy:") ? selectedCategory.id : undefined;
+
+    const selectedSubCategory = subCategoryOptions.find((opt) => opt.id === subCategoryId);
+    const resolvedSubCategoryName = selectedSubCategory?.name || subCategoryId.replace(/^legacy-sub:/, "");
+    const resolvedSubCategoryId = selectedSubCategory && !selectedSubCategory.id.startsWith("legacy-sub:") ? selectedSubCategory.id : undefined;
+
+    return {
+      categoryId: resolvedCategoryId,
+      category: resolvedCategoryName,
+      subCategoryId: resolvedSubCategoryId,
+      subCategory: resolvedSubCategoryId ? resolvedSubCategoryName : (subCategoryId ? resolvedSubCategoryName : undefined),
+    };
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const amountValue = toNumber(form.amount);
     if (!form.description || amountValue <= 0 || !form.date) return;
+    const resolvedCategory = resolveCategoryPayload(form.categoryId, form.subCategoryId);
 
     if (selectedTransactionId) {
       onUpdateTransaction({
         id: selectedTransactionId,
         ...form,
         amount: amountValue,
+        ...resolvedCategory,
         activityId: form.activityId === 'project-level' ? undefined : form.activityId,
       });
     } else {
       onAddTransaction({
         ...form,
         amount: amountValue,
+        ...resolvedCategory,
         activityId: form.activityId === 'project-level' ? undefined : form.activityId,
       });
     }
@@ -2360,31 +2491,56 @@ const ProjectLedger: React.FC<ProjectLedgerProps> = ({
       description: "",
       amount: 0,
       activityId: "",
+      subCategoryId: "",
     }));
     setSelectedTransactionId(null);
     if (setDraftActivityId) setDraftActivityId(null);
   };
 
-  const categories = ["Labor", "Materials", "Equipment", "Client Payment", "Other"];
   const activityOptions = activities.map(a => ({ id: a.id, name: `${a.wbs} - ${a.name}` }));
+  const resolveCategoryName = (transaction: Transaction) => {
+    if (transaction.categoryId) {
+      const match = categories.find((cat) => String(cat.id) === transaction.categoryId);
+      if (match) return match.name;
+    }
+    return transaction.category;
+  };
+  const resolveSubCategoryName = (transaction: Transaction) => {
+    if (transaction.subCategoryId) {
+      const match = categories.find((cat) => String(cat.id) === transaction.subCategoryId);
+      if (match) return match.name;
+    }
+    return transaction.subCategory;
+  };
 
   const expandedTop = "top-[120px]";
   const expandedBodyHeight = "calc(100vh - 120px - 44px)"; // ribbon offset minus header height
-  const containerClasses = isExpanded && isOpen
-    ? `fixed inset-x-0 ${expandedTop} bottom-0 z-30`
-    : "relative -mt-px";
+  const containerClasses = isInline
+    ? "rounded-lg border border-slate-300 bg-white shadow-md dark:border-slate-800 dark:bg-slate-900 flex flex-col h-full"
+    : isExpanded && isOpen
+      ? `fixed inset-x-0 ${expandedTop} bottom-0 z-30`
+      : "relative -mt-px";
   const targetMaxHeight = isExpanded ? expandedBodyHeight : "16rem";
   const targetHeight = isExpanded ? expandedBodyHeight : "16rem";
-  const bodyStyle: React.CSSProperties = {
-    maxHeight: isOpen ? targetMaxHeight : "0px",
-    height: isOpen ? targetHeight : "0px",
-    opacity: isOpen ? 1 : 0,
+  const bodyStyle: React.CSSProperties | undefined = isInline ? undefined : {
+    maxHeight: effectiveOpen ? targetMaxHeight : "0px",
+    height: effectiveOpen ? targetHeight : "0px",
+    opacity: effectiveOpen ? 1 : 0,
   };
-  const bodyClasses = `flex overflow-hidden bg-white dark:bg-slate-900 transition-[max-height,height,opacity] duration-400 ease-in-out`;
+  const bodyClasses = isInline
+    ? "flex flex-1 overflow-hidden bg-white dark:bg-slate-900"
+    : "flex overflow-hidden bg-white dark:bg-slate-900 transition-[max-height,height,opacity] duration-400 ease-in-out";
+  const defaultRootClasses = isInline
+    ? containerClasses
+    : `border-t border-slate-300 dark:border-slate-700 ${containerClasses}`;
+  const rootClasses = containerClassName ? containerClassName : defaultRootClasses;
 
   return (
-    <div data-project-id={projectId} className={`border-t border-slate-300 dark:border-slate-700 ${containerClasses}`}>
-      <div className="flex justify-between items-center bg-slate-100 dark:bg-slate-800 p-2 cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-700" onClick={() => setIsOpen(!isOpen)}>
+    <div data-project-id={projectId} className={rootClasses}>
+      <div
+        className={`flex justify-between items-center bg-slate-100 dark:bg-slate-800 p-2 ${isInline ? "" : "cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-700"}`}
+        onClick={isInline ? undefined : () => setIsOpen(!isOpen)}
+      >
         <h4 className="text-sm font-semibold flex items-center gap-2">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <rect x="3" y="6" width="18" height="4" rx="1" />
@@ -2394,7 +2550,7 @@ const ProjectLedger: React.FC<ProjectLedgerProps> = ({
           Project Ledger ({transactions.length} Transactions)
         </h4>
         <div className="flex items-center gap-2">
-          {isOpen && (
+          {!isInline && isOpen && (
             <button
               className="text-xs px-2 py-1 rounded border border-slate-300 bg-white text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 dark:hover:bg-slate-600"
               onClick={(e) => {
@@ -2405,11 +2561,11 @@ const ProjectLedger: React.FC<ProjectLedgerProps> = ({
               {isExpanded ? "Shrink" : "Expand"}
             </button>
           )}
-          {isOpen ? <IconChevronUp /> : <IconChevronDown />}
+          {!isInline && (isOpen ? <IconChevronUp /> : <IconChevronDown />)}
         </div>
       </div>
 
-      <div className={`overflow-hidden ${bodyClasses}`} style={bodyStyle} aria-hidden={!isOpen}>
+      <div className={`overflow-hidden ${bodyClasses}`} style={bodyStyle} aria-hidden={!effectiveOpen}>
         <div className="flex-1 overflow-y-auto border-r border-slate-300 dark:border-slate-700">
           <table className="min-w-full border-collapse table-fixed">
             <thead className="sticky top-0 z-10">
@@ -2429,7 +2585,16 @@ const ProjectLedger: React.FC<ProjectLedgerProps> = ({
                     {new Date(t.date).toLocaleDateString()}
                   </td>
                   <td className="px-3 py-2 text-slate-800 dark:text-slate-200 truncate max-w-xs">{t.description}</td>
-                  <td className="px-3 py-2 text-slate-600 dark:text-slate-400 truncate">{t.category}</td>
+                  <td className="px-3 py-2 text-slate-600 dark:text-slate-400 truncate">
+                    <div className="flex flex-col">
+                      <span>{resolveCategoryName(t)}</span>
+                      {resolveSubCategoryName(t) && (
+                        <span className="text-xs text-slate-400 dark:text-slate-500">
+                          {resolveSubCategoryName(t)}
+                        </span>
+                      )}
+                    </div>
+                  </td>
                   <td className="px-3 py-2 font-mono text-xs text-slate-500 whitespace-nowrap">
                     {t.activityId || "-"}
                   </td>
@@ -2440,11 +2605,21 @@ const ProjectLedger: React.FC<ProjectLedgerProps> = ({
                     <button
                       onClick={() => {
                         setSelectedTransactionId(t.id);
+                        const categoryId =
+                          t.categoryId ||
+                          categoryOptions.find((opt) => opt.name === t.category)?.id ||
+                          "";
+                        const subCategoryOptionsForEdit = getSubCategoryOptionsForCategory(categoryId);
+                        const subCategoryId =
+                          t.subCategoryId ||
+                          subCategoryOptionsForEdit.find((opt) => opt.name === t.subCategory)?.id ||
+                          "";
                         setForm({
                           date: t.date,
                           description: t.description,
                           type: t.type,
-                          category: t.category,
+                          categoryId,
+                          subCategoryId,
                           amount: t.amount,
                           activityId: t.activityId || "",
                         });
@@ -2526,12 +2701,25 @@ const ProjectLedger: React.FC<ProjectLedgerProps> = ({
             <div>
               <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Category</label>
               <select
-                name="category"
-                value={form.category}
+                name="categoryId"
+                value={form.categoryId}
                 onChange={handleChange}
                 className="w-full rounded border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-50"
               >
-                {categories.map(c => <option key={c} value={c}>{c}</option>)}
+                {categoryOptions.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Subcategory</label>
+              <select
+                name="subCategoryId"
+                value={form.subCategoryId}
+                onChange={handleChange}
+                className="w-full rounded border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-50"
+              >
+                <option value="">-- None --</option>
+                {subCategoryOptions.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             </div>
 
@@ -4508,16 +4696,20 @@ const ActionRibbon: React.FC<{
   onManagePresets: () => void;
   onCreateFormula: () => void;
   onAddPresetToProject?: () => void;
+  onManageLedgerCategories?: () => void;
   taxRateCount: number;
   presetCount: number;
+  ledgerCategoryCount?: number;
   hasActiveProject: boolean;
 }> = ({
   onOpenTaxRates,
   onManagePresets,
   onCreateFormula,
   onAddPresetToProject,
+  onManageLedgerCategories,
   taxRateCount,
   presetCount,
+  ledgerCategoryCount,
   hasActiveProject,
 }) => {
   return (
@@ -4572,6 +4764,138 @@ const ActionRibbon: React.FC<{
         >
           Open
         </button>
+      </div>
+
+      {onManageLedgerCategories && (
+        <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm">
+          <IconTool />
+          <div className="flex flex-col leading-tight">
+            <span className="text-xs text-slate-500 dark:text-slate-400">Ledger Categories</span>
+            <span className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+              {ledgerCategoryCount ?? 0} saved
+            </span>
+          </div>
+          <button
+            onClick={onManageLedgerCategories}
+            className="ml-2 px-2 py-1 text-xs rounded-md bg-emerald-600 text-white hover:bg-emerald-700"
+          >
+            Manage
+          </button>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------------------
+// LEDGER CATEGORY MANAGER
+// ---------------------------------------------------------------------------
+const LedgerCategoriesDialog: React.FC<{
+  open: boolean;
+  onClose: () => void;
+  categories: LedgerCategory[];
+  onCreate: (name: string, parentId: string) => void;
+  onUpdate: (id: string, name: string, parentId: string) => void;
+  onDelete: (id: string) => void;
+}> = ({ open, onClose, categories, onCreate, onUpdate, onDelete }) => {
+  const [name, setName] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [parentId, setParentId] = useState<string>("");
+
+  useEffect(() => {
+    if (!open) {
+      setName("");
+      setEditingId(null);
+      setParentId("");
+    }
+  }, [open]);
+
+  if (!open) return null;
+
+  const handleSubmit = () => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    if (editingId) {
+      onUpdate(editingId, trimmed, parentId);
+    } else {
+      onCreate(trimmed, parentId);
+    }
+    setName("");
+    setEditingId(null);
+    setParentId("");
+  };
+
+  const parentOptions = categories.filter((c) => !c.parentId && c.id !== editingId);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+      <div className="w-full max-w-lg rounded-lg border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-900">
+        <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-slate-700">
+          <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100">Ledger Categories</h3>
+          <button onClick={onClose} className="text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200">
+            <IconX />
+          </button>
+        </div>
+        <div className="p-4 space-y-3">
+          <div className="flex items-center gap-2">
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Category name"
+              className="flex-1 rounded border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-50"
+            />
+            <select
+              value={parentId}
+              onChange={(e) => setParentId(e.target.value)}
+              className="rounded border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-50"
+            >
+              <option value="">Top-level</option>
+              {parentOptions.map((cat) => (
+                <option key={cat.id} value={cat.id}>
+                  {cat.name}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={handleSubmit}
+              className="rounded bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
+            >
+              {editingId ? "Update" : "Add"}
+            </button>
+          </div>
+
+          <div className="max-h-72 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded">
+            {categories.length === 0 && (
+              <div className="p-4 text-sm text-slate-500 dark:text-slate-400">No categories yet.</div>
+            )}
+            {categories.map((cat) => (
+              <div key={cat.id} className="flex items-center justify-between px-3 py-2 border-b border-slate-200 dark:border-slate-700 last:border-b-0">
+                <div className="flex flex-col">
+                  <span className="text-sm text-slate-700 dark:text-slate-200">{cat.name}</span>
+                  {cat.parentId && (
+                    <span className="text-xs text-slate-400 dark:text-slate-500">
+                      {categories.find((p) => p.id === cat.parentId)?.name || "Parent"}
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => { setEditingId(cat.id); setName(cat.name); setParentId(cat.parentId || ""); }}
+                    className="rounded px-2 py-1 text-xs bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => onDelete(cat.id)}
+                    className="rounded px-2 py-1 text-xs bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/40 dark:text-red-200 dark:hover:bg-red-900/70"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -4754,6 +5078,9 @@ export default function DashboardPage() {
     initialDueMonthDay: "",
     bedrooms: "",
     bathrooms: "",
+    lastPaymentDate: "",
+    lastPaymentPaidStatus: "on_time" as "on_time" | "late" | "different_day",
+    lastPaymentPaidDate: "",
   });
   const [rentRollModalOpen, setRentRollModalOpen] = useState(false);
   const [editingRentRollId, setEditingRentRollId] = useState<string | null>(null);
@@ -4766,6 +5093,14 @@ export default function DashboardPage() {
     note: "",
   });
   const [rentRollDeleteModal, setRentRollDeleteModal] = useState<{ open: boolean; entry: RentRollEntry | null }>({ open: false, entry: null });
+  const [rentRollDetailView, setRentRollDetailView] = useState<{ type: "unit" | "property"; id: string } | null>(null);
+  const [rentRollDocuments, setRentRollDocuments] = useState<RentRollDocument[]>([]);
+  const [rentRollExpenses, setRentRollExpenses] = useState<RentRollExpense[]>([]);
+  const [rentExpenseCategories, setRentExpenseCategories] = useState<RentExpenseCategory[]>([]);
+  const [rentRollDocLabel, setRentRollDocLabel] = useState("");
+  const [rentRollExpenseForm, setRentRollExpenseForm] = useState({ date: toDateString(getCentralTodayMs()), categoryId: "", subCategoryId: "", description: "", amount: "" });
+  const [expenseCategoryModalOpen, setExpenseCategoryModalOpen] = useState(false);
+  const [expenseCategoryForm, setExpenseCategoryForm] = useState<{ id: string; name: string; parentId: string }>({ id: "", name: "", parentId: "" });
   const [deleteActivityModal, setDeleteActivityModal] = useState<{ open: boolean; activity: Activity | null; targetId: string }>({
     open: false,
     activity: null,
@@ -4779,18 +5114,18 @@ export default function DashboardPage() {
   const [exportHistory, setExportHistory] = useState<{ id: string; type: string; format: string; filename: string; timestamp: string }[]>([]);
   const [statementUploads, setStatementUploads] = useState<{ id: string; name: string; size: number; uploadedAt: string }[]>([]);
   const [parsedStatements, setParsedStatements] = useState<{ uploadId: string; rows: { date: string; description: string; amount: number }[] }[]>([]);
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    try {
-      const raw = window.localStorage.getItem("exportHistory");
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) setExportHistory(parsed);
+    useEffect(() => {
+      if (typeof window === "undefined") return;
+      try {
+        const raw = window.localStorage.getItem("exportHistory");
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) setExportHistory(parsed);
+        }
+      } catch (err) {
+        console.warn("Failed to load export history", err);
       }
-    } catch (err) {
-      console.warn("Failed to load export history", err);
-    }
-  }, []);
+    }, []);
   const loadStatements = useCallback(async () => {
     try {
       const res = await fetch("/api/statements");
@@ -4818,10 +5153,13 @@ export default function DashboardPage() {
 
   const loadRentData = useCallback(async () => {
     try {
-      const [propsRes, unitsRes, payRes] = await Promise.all([
+      const [propsRes, unitsRes, payRes, docRes, expenseRes, expenseCatRes] = await Promise.all([
         fetch("/api/rent/properties"),
         fetch("/api/rent/units"),
         fetch("/api/rent/payments"),
+        fetch("/api/rent/documents"),
+        fetch("/api/rent/expenses"),
+        fetch("/api/rent/expense-categories"),
       ]);
       if (propsRes.ok) {
         const data = await propsRes.json();
@@ -4842,32 +5180,76 @@ export default function DashboardPage() {
             unit: u.unit,
             tenant: u.tenant || "Vacant",
             status: (u.status as RentRollStatus) || "Occupied",
-            rent: Number(u.rent || 0),
-            balance: 0,
-            leaseEnd: u.leaseEnd || "TBD",
-            initialDueMonthDay: u.initialDueMonthDay || "01-01",
-            bedrooms: Number(u.bedrooms || 0),
-            bathrooms: Number(u.bathrooms || 0),
-            createdAt: u.createdAt ? toDateString(toDateMs(u.createdAt)) : toDateString(getCentralTodayMs()),
-          }))
-        );
+              rent: Number(u.rent || 0),
+              balance: 0,
+              leaseEnd: u.leaseEnd || "TBD",
+              initialDueMonthDay: u.initialDueMonthDay || "01-01",
+              bedrooms: Number(u.bedrooms || 0),
+              bathrooms: Number(u.bathrooms || 0),
+              lastPaymentDate: u.lastPaymentDate ? toDateString(toDateMs(u.lastPaymentDate)) : null,
+              lastPaymentPaidOnDate: typeof u.lastPaymentPaidOnDate === "boolean" ? u.lastPaymentPaidOnDate : null,
+              lastPaymentPaidDate: u.lastPaymentPaidDate ? toDateString(toDateMs(u.lastPaymentPaidDate)) : null,
+              createdAt: u.createdAt ? toDateString(toDateMs(u.createdAt)) : toDateString(getCentralTodayMs()),
+            }))
+          );
       }
-      if (payRes.ok) {
-        const data = await payRes.json();
-        setRentPayments(
-          (data.payments || []).map((p: any) => ({
-            id: String(p.id),
-            rentRollEntryId: String(p.rentUnitId),
-            amount: Number(p.amount || 0),
-            date: toDateString(toDateMs(p.date)),
-            note: p.note || undefined,
-          }))
-        );
+        if (payRes.ok) {
+          const data = await payRes.json();
+          setRentPayments(
+            (data.payments || []).map((p: any) => ({
+              id: String(p.id),
+              rentRollEntryId: String(p.rentUnitId),
+              amount: Number(p.amount || 0),
+              date: toDateString(toDateMs(p.date)),
+              note: p.note || undefined,
+            }))
+          );
+        }
+        if (docRes.ok) {
+          const data = await docRes.json();
+          setRentRollDocuments(
+            (data.documents || []).map((d: any) => ({
+              id: String(d.id),
+              entryId: String(d.rentUnitId),
+              label: d.label || "Document",
+              fileName: d.fileName || "file",
+              fileType: d.fileType || "application/octet-stream",
+              size: Number(d.size || 0),
+              uploadedAt: d.uploadedAt ? toDateString(toDateMs(d.uploadedAt)) : toDateString(getCentralTodayMs()),
+              dataUrl: d.dataUrl || "",
+            }))
+          );
+        }
+        if (expenseRes.ok) {
+          const data = await expenseRes.json();
+          setRentRollExpenses(
+            (data.expenses || []).map((e: any) => ({
+              id: String(e.id),
+              entryId: String(e.rentUnitId),
+              date: e.date ? toDateString(toDateMs(e.date)) : toDateString(getCentralTodayMs()),
+              category: e.category || "",
+              categoryId: e.categoryId ? String(e.categoryId) : null,
+              subCategoryId: e.subCategoryId ? String(e.subCategoryId) : null,
+              description: e.description || "",
+              amount: Number(e.amount || 0),
+            }))
+          );
+        }
+        if (expenseCatRes.ok) {
+          const data = await expenseCatRes.json();
+          setRentExpenseCategories(
+            (data.categories || []).map((c: any) => ({
+              id: String(c.id),
+              name: c.name || "Category",
+              parentId: c.parentId ? String(c.parentId) : null,
+              createdAt: c.createdAt ? toDateString(toDateMs(c.createdAt)) : undefined,
+            }))
+          );
+        }
+      } catch (err) {
+        console.error("Failed to load rent data", err);
       }
-    } catch (err) {
-      console.error("Failed to load rent data", err);
-    }
-  }, []);
+    }, []);
 
   const mapActivityStatus = (status?: string): Activity["status"] => {
     const s = (status || "").toLowerCase();
@@ -5006,7 +5388,9 @@ export default function DashboardPage() {
           date: toDateString(toDateMs(t.date)),
           description: t.description || "",
           type: t.type === "Income" ? "Income" : "Outcome",
+          categoryId: t.categoryId ? String(t.categoryId) : (t.category_id ? String(t.category_id) : undefined),
           category: t.category || "",
+          subCategoryId: t.subCategoryId ? String(t.subCategoryId) : (t.sub_category_id ? String(t.sub_category_id) : undefined),
           subCategory: t.subCategory || undefined,
           amount: Number(t.amount || 0),
           activityId: t.activityId ? String(t.activityId) : undefined,
@@ -5018,6 +5402,24 @@ export default function DashboardPage() {
     } catch (err) {
       console.error("Failed to load transactions", err);
       return {};
+    }
+  }, []);
+
+  const loadLedgerCategories = useCallback(async () => {
+    try {
+      const res = await fetch("/api/ledger/categories");
+      if (!res.ok) return [];
+      const data = await res.json();
+      const mapped: LedgerCategory[] = (data.categories || []).map((c: any) => ({
+        id: String(c.id),
+        name: c.name || "Category",
+        parentId: c.parentId ? String(c.parentId) : (c.parent_id ? String(c.parent_id) : null),
+      }));
+      setLedgerCategories(mapped);
+      return mapped;
+    } catch (err) {
+      console.error("Failed to load ledger categories", err);
+      return [];
     }
   }, []);
 
@@ -5160,7 +5562,7 @@ export default function DashboardPage() {
     if (!currentUser || currentUser.role !== "admin") return [];
     setUserError(null);
     try {
-      const res = await fetch("/api/users");
+      const res = await fetch("/api/users", { credentials: "include" });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         setUserError(data?.error || "Failed to load users");
@@ -5203,6 +5605,7 @@ export default function DashboardPage() {
         method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
+        credentials: "include",
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -5224,7 +5627,10 @@ export default function DashboardPage() {
       return;
     }
     try {
-      const res = await fetch(`/api/users?id=${userDeleteTarget.id}`, { method: "DELETE" });
+      const res = await fetch(`/api/users?id=${userDeleteTarget.id}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         throw new Error(data?.error || "Failed to delete user");
@@ -5349,6 +5755,7 @@ export default function DashboardPage() {
 
       const res = await fetch("/api/commits", {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           description: commitDraft.description,
@@ -5537,6 +5944,7 @@ export default function DashboardPage() {
     await Promise.all([
       loadActivities(wbsLoaded),
       loadTransactions(),
+      loadLedgerCategories(),
       loadResourcesFromDb(),
       loadEmployees(),
       loadTimeEntries(),
@@ -5548,11 +5956,12 @@ export default function DashboardPage() {
       loadPipelineMeta(),
     ]);
     return { projectsLoaded, wbsLoaded };
-  }, [checkAuth, loadActivities, loadCustomFormulasDb, loadEpsNodes, loadEmployees, loadFormulaPresetsDb, loadPaychecks, loadPipelineMeta, loadProjectDetailsDb, loadProjects, loadResourcesFromDb, loadTaxRatesDb, loadTimeEntries, loadTransactions, loadWbs]);
+  }, [checkAuth, loadActivities, loadCustomFormulasDb, loadEpsNodes, loadEmployees, loadFormulaPresetsDb, loadLedgerCategories, loadPaychecks, loadPipelineMeta, loadProjectDetailsDb, loadProjects, loadResourcesFromDb, loadTaxRatesDb, loadTimeEntries, loadTransactions, loadWbs]);
   const [isDetailsPanelVisible, setIsDetailsPanelVisible] = useState(true);
   const [epsViewTab, setEpsViewTab] = useState<"overview" | "gantt">("overview");
-  const [activityView, setActivityView] = useState<"details" | "gantt">("details");
+  const [activityView, setActivityView] = useState<"details" | "gantt" | "ledger">("details");
   const [ledgerOpen, setLedgerOpen] = useState(false);
+  const [ledgerCategories, setLedgerCategories] = useState<LedgerCategory[]>([]);
   const [quickLedgerActivityId, setQuickLedgerActivityId] = useState<string | null>(null);
   const [selectedActivityId, setSelectedActivityId] = useState<string | null>(null);
   const [draggingActivity, setDraggingActivity] = useState<{
@@ -5596,6 +6005,7 @@ export default function DashboardPage() {
   const [taxRateDialogOpen, setTaxRateDialogOpen] = useState(false);
   const [formulaPresetDialogOpen, setFormulaPresetDialogOpen] = useState(false);
   const [presetPickerOpen, setPresetPickerOpen] = useState(false);
+  const [ledgerCategoryDialogOpen, setLedgerCategoryDialogOpen] = useState(false);
   const [emailOptionsDialogOpen, setEmailOptionsDialogOpen] = useState(false);
   const [acquireConfirmOpen, setAcquireConfirmOpen] = useState(false);
   const [pendingAcquireProjectId, setPendingAcquireProjectId] = useState<number | null>(null);
@@ -5778,7 +6188,7 @@ export default function DashboardPage() {
   const exportMainLedger = (fmt?: "csv" | "xlsx") => {
     const format = fmt ?? exportFormat;
     const rows: (string | number)[][] = [
-      ["Date", "Type", "Amount", "Description", "Source", "Property/Project", "Category", "Note"],
+      ["Date", "Type", "Amount", "Description", "Source", "Property/Project", "Category", "Subcategory"],
     ];
     // Rent payments
     rentPayments.forEach((p) => {
@@ -5792,7 +6202,7 @@ export default function DashboardPage() {
       const projId = Number(projIdStr);
       const projName = epsProjectNameById(projId) || `Project ${projId}`;
       txns.forEach((t) => {
-        rows.push([t.date, t.type, t.amount, t.description, "Project", projName, t.category, t.subCategory || ""]);
+        rows.push([t.date, t.type, t.amount, t.description, "Project", projName, resolveLedgerCategoryName(t), resolveLedgerSubCategoryName(t)]);
       });
     });
     rows.sort((a, b) => toDateMs(String(b[0])) - toDateMs(String(a[0])));
@@ -5811,10 +6221,10 @@ export default function DashboardPage() {
 
     if (format === "csv") {
       projectIds.forEach((pid) => {
-        const rows: (string | number)[][] = [["Date", "Type", "Amount", "Description", "Source", "Category", "Note"]];
+        const rows: (string | number)[][] = [["Date", "Type", "Amount", "Description", "Source", "Category", "Subcategory"]];
         const projTxns = (transactions[pid] || []).slice().sort((a, b) => toDateMs(b.date) - toDateMs(a.date));
         projTxns.forEach((t) => {
-          rows.push([t.date, t.type, t.amount, t.description, "Project", t.category, t.subCategory || ""]);
+          rows.push([t.date, t.type, t.amount, t.description, "Project", resolveLedgerCategoryName(t), resolveLedgerSubCategoryName(t)]);
         });
         const projName = epsProjectNameById(pid) || `Project-${pid}`;
         const filename = `project-ledger-${slugify(projName)}.csv`;
@@ -5823,9 +6233,9 @@ export default function DashboardPage() {
       });
     } else {
       const sheets = projectIds.map((pid) => {
-        const rows: (string | number)[][] = [["Date", "Type", "Amount", "Description", "Source", "Category", "Note"]];
+        const rows: (string | number)[][] = [["Date", "Type", "Amount", "Description", "Source", "Category", "Subcategory"]];
         const projTxns = (transactions[pid] || []).slice().sort((a, b) => toDateMs(b.date) - toDateMs(a.date));
-        projTxns.forEach((t) => rows.push([t.date, t.type, t.amount, t.description, "Project", t.category, t.subCategory || ""]));
+        projTxns.forEach((t) => rows.push([t.date, t.type, t.amount, t.description, "Project", resolveLedgerCategoryName(t), resolveLedgerSubCategoryName(t)]));
         const projName = epsProjectNameById(pid) || `Project-${pid}`;
         return { name: projName.slice(0, 28) || `Project-${pid}`, rows };
       });
@@ -5908,6 +6318,52 @@ export default function DashboardPage() {
     const occupancyRate = totalUnits ? Math.round((occupiedUnits / totalUnits) * 100) : 0;
     return { totalUnits, occupancyRate, potential, collected, delinquent, occupiedUnits };
   }, [filteredRentRoll, paymentRollup]);
+  const rentRollDetailEntry = useMemo(() => {
+    if (rentRollDetailView?.type !== "unit") return null;
+    return rentRollEntries.find((entry) => entry.id === rentRollDetailView.id) || null;
+  }, [rentRollDetailView, rentRollEntries]);
+  const rentRollDetailProperty = useMemo(() => {
+    if (rentRollDetailView?.type !== "property") return null;
+    return rentRollProperties.find((prop) => prop.id === rentRollDetailView.id) || null;
+  }, [rentRollDetailView, rentRollProperties]);
+  const rentExpenseCategoryMap = useMemo(() => {
+    return rentExpenseCategories.reduce<Record<string, RentExpenseCategory>>((acc, cat) => {
+      acc[cat.id] = cat;
+      return acc;
+    }, {});
+  }, [rentExpenseCategories]);
+  const ledgerCategoryMap = useMemo(() => {
+    return ledgerCategories.reduce<Record<string, LedgerCategory>>((acc, cat) => {
+      acc[cat.id] = cat;
+      return acc;
+    }, {});
+  }, [ledgerCategories]);
+  const resolveLedgerCategoryName = useCallback((t: Transaction) => {
+    if (t.categoryId && ledgerCategoryMap[t.categoryId]) return ledgerCategoryMap[t.categoryId].name;
+    return t.category;
+  }, [ledgerCategoryMap]);
+  const resolveLedgerSubCategoryName = useCallback((t: Transaction) => {
+    if (t.subCategoryId && ledgerCategoryMap[t.subCategoryId]) return ledgerCategoryMap[t.subCategoryId].name;
+    return t.subCategory || "";
+  }, [ledgerCategoryMap]);
+  const rentRollDetailDocs = useMemo(() => {
+    if (!rentRollDetailEntry) return [];
+    return rentRollDocuments.filter((doc) => doc.entryId === rentRollDetailEntry.id);
+  }, [rentRollDocuments, rentRollDetailEntry]);
+  const rentRollDetailExpenses = useMemo(() => {
+    if (!rentRollDetailEntry) return [];
+    return rentRollExpenses.filter((expense) => expense.entryId === rentRollDetailEntry.id);
+  }, [rentRollExpenses, rentRollDetailEntry]);
+  const rentRollDetailPayments = useMemo(() => {
+    if (!rentRollDetailEntry) return [];
+    return rentPayments
+      .filter((payment) => payment.rentRollEntryId === rentRollDetailEntry.id)
+      .slice()
+      .sort((a, b) => a.date.localeCompare(b.date));
+  }, [rentPayments, rentRollDetailEntry]);
+  const rentRollExpenseTotal = useMemo(() => {
+    return rentRollDetailExpenses.reduce((sum, item) => sum + item.amount, 0);
+  }, [rentRollDetailExpenses]);
 
   const getRemainingBalance = useCallback((entryId: string) => {
     const entry = rentRollEntries.find((e) => e.id === entryId);
@@ -6468,7 +6924,8 @@ export default function DashboardPage() {
     field: keyof Activity,
     value: string
   ) => {
-    if (!activeProjectId) return;
+    const projectKey = activeProjectDbId ?? resolveProjectId();
+    if (!projectKey) return;
 
     const newValue = field === 'duration' || field === 'pct' || field === 'projectedLabor' || field === 'projectedCost' || field === 'budget' || field === 'revenue'
       ? parseFloat(value)
@@ -6476,7 +6933,7 @@ export default function DashboardPage() {
 
     // Staging for non-admins
     if (!currentUser || currentUser.role !== "admin") {
-      const existing = activities[activeProjectId]?.find(a => a.id === activityId);
+      const existing = activities[projectKey]?.find(a => a.id === activityId);
       if (!existing) return;
       const next = { ...existing, [field]: newValue };
       stageChange({
@@ -6489,7 +6946,7 @@ export default function DashboardPage() {
       });
       setActivities(prev => ({
         ...prev,
-        [activeProjectId]: (prev[activeProjectId] || []).map(a =>
+        [projectKey]: (prev[projectKey] || []).map(a =>
           a.id === activityId ? next : a
         )
       }));
@@ -6500,8 +6957,12 @@ export default function DashboardPage() {
     if (field === "name") payload.name = value;
     if (field === "status") payload.status = value;
     if (field === "responsible") payload.responsible = value;
-    if (field === "duration") payload.durationDays = newValue;
-    if (field === "pct") payload.percentComplete = newValue;
+      if (field === "duration") payload.durationDays = newValue;
+      if (field === "pct") payload.percentComplete = newValue;
+      if (field === "budget") payload.budget = newValue;
+      if (field === "revenue") payload.revenue = newValue;
+      if (field === "projectedLabor") payload.projectedLabor = newValue;
+      if (field === "projectedCost") payload.projectedCost = newValue;
     if (field === "wbs") {
       const target = wbsNodesDb.find(n => n.code === value);
       if (!target) {
@@ -6512,7 +6973,7 @@ export default function DashboardPage() {
       payload.code = value;
     }
     if (field === "start" || field === "finish") {
-      const act = activities[activeProjectId]?.find(a => a.id === activityId);
+      const act = activities[projectKey]?.find(a => a.id === activityId);
       payload.startDate = field === "start" ? value : act?.start;
       payload.finishDate = field === "finish" ? value : act?.finish;
     }
@@ -6524,7 +6985,7 @@ export default function DashboardPage() {
 
     setActivities(prev => ({
       ...prev,
-      [activeProjectId]: (prev[activeProjectId] || []).map(a =>
+      [projectKey]: (prev[projectKey] || []).map(a =>
         a.id === activityId ? { ...a, [field]: newValue } : a
       )
     }));
@@ -6648,12 +7109,18 @@ export default function DashboardPage() {
     const mappedOverride = projectIdOverride ? (getProjectDbIdFromNode(projectIdOverride) ?? projectIdOverride) : null;
     const projectKey = mappedOverride || activeProjectDbId || resolveProjectId();
     if (!projectKey) return;
+    const normalizedCategoryId = transaction.categoryId && !Number.isNaN(Number(transaction.categoryId))
+      ? Number(transaction.categoryId)
+      : null;
+    const normalizedSubCategoryId = transaction.subCategoryId && !Number.isNaN(Number(transaction.subCategoryId))
+      ? Number(transaction.subCategoryId)
+      : null;
     if (!currentUser || currentUser.role !== "admin") {
       stageChange({
         entity: "ledger_transactions",
         entityId: null,
         operation: "create",
-        after: { ...transaction, projectId: projectKey },
+        after: { ...transaction, categoryId: normalizedCategoryId, subCategoryId: normalizedSubCategoryId, projectId: projectKey },
         impact: "Staged ledger transaction",
       });
       setTransactions(prev => ({
@@ -6670,6 +7137,8 @@ export default function DashboardPage() {
           ...transaction,
           projectId: projectKey,
           activityId: transaction.activityId ? Number(transaction.activityId) : null,
+          categoryId: normalizedCategoryId,
+          subCategoryId: normalizedSubCategoryId,
         }),
       });
       if (!res.ok) throw new Error("Failed to create transaction");
@@ -6692,6 +7161,12 @@ export default function DashboardPage() {
     const mappedOverride = projectIdOverride ? (getProjectDbIdFromNode(projectIdOverride) ?? projectIdOverride) : null;
     const projectKey = mappedOverride || activeProjectDbId || resolveProjectId();
     if (!projectKey) return;
+    const normalizedCategoryId = transaction.categoryId && !Number.isNaN(Number(transaction.categoryId))
+      ? Number(transaction.categoryId)
+      : null;
+    const normalizedSubCategoryId = transaction.subCategoryId && !Number.isNaN(Number(transaction.subCategoryId))
+      ? Number(transaction.subCategoryId)
+      : null;
     if (!currentUser || currentUser.role !== "admin") {
       const existing = (transactions[projectKey] || []).find(t => t.id === transaction.id);
       stageChange({
@@ -6699,7 +7174,7 @@ export default function DashboardPage() {
         entityId: transaction.id,
         operation: "update",
         before: existing || null,
-        after: transaction,
+        after: { ...transaction, categoryId: normalizedCategoryId, subCategoryId: normalizedSubCategoryId },
         impact: "Staged ledger transaction update",
       });
       setTransactions(prev => ({
@@ -6716,6 +7191,8 @@ export default function DashboardPage() {
         projectId: projectKey,
         activityId: transaction.activityId ? Number(transaction.activityId) : null,
         type: transaction.type,
+        categoryId: normalizedCategoryId,
+        subCategoryId: normalizedSubCategoryId,
         category: transaction.category,
         subCategory: transaction.subCategory,
         date: transaction.date,
@@ -6753,6 +7230,167 @@ export default function DashboardPage() {
       ...prev,
       [projectKey]: (prev[projectKey] || []).filter(t => t.id !== transactionId),
     }));
+  };
+
+  const handleCreateLedgerCategory = async (name: string, parentId: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    if (ledgerCategories.some((cat) => cat.name.toLowerCase() === trimmed.toLowerCase() && (cat.parentId || "") === (parentId || ""))) return;
+    const normalizedParentId = parentId && !Number.isNaN(Number(parentId)) ? Number(parentId) : null;
+    if (!currentUser || currentUser.role !== "admin") {
+      const tempId = `LED-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+      stageChange({
+        entity: "ledger_categories",
+        entityId: tempId,
+        operation: "create",
+        after: { id: tempId, name: trimmed, parentId: normalizedParentId },
+        impact: "Staged ledger category create",
+      });
+      setLedgerCategories((prev) => [...prev, { id: tempId, name: trimmed, parentId: normalizedParentId ? String(normalizedParentId) : null }]);
+      return;
+    }
+    try {
+      const res = await fetch("/api/ledger/categories", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: trimmed, parentId: normalizedParentId }),
+      });
+      if (!res.ok) throw new Error("Failed to create ledger category");
+      const data = await res.json();
+      const saved = data.category || {};
+      setLedgerCategories((prev) => [
+        ...prev,
+        { id: String(saved.id || `LED-${Date.now().toString(36)}`), name: saved.name || trimmed, parentId: saved.parentId ? String(saved.parentId) : (normalizedParentId ? String(normalizedParentId) : null) },
+      ]);
+    } catch (err) {
+      console.error("Failed to create ledger category", err);
+    }
+  };
+
+  const handleUpdateLedgerCategory = async (id: string, name: string, parentId: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    const existing = ledgerCategories.find((cat) => cat.id === id);
+    if (!existing || (existing.name === trimmed && (existing.parentId || "") === (parentId || ""))) return;
+    const normalizedParentId = parentId && !Number.isNaN(Number(parentId)) ? Number(parentId) : null;
+    if (!currentUser || currentUser.role !== "admin") {
+      stageChange({
+        entity: "ledger_categories",
+        entityId: id,
+        operation: "update",
+        before: existing,
+        after: { id, name: trimmed, parentId: normalizedParentId },
+        impact: "Staged ledger category update",
+      });
+      setLedgerCategories((prev) => prev.map((cat) => cat.id === id ? { ...cat, name: trimmed, parentId: normalizedParentId ? String(normalizedParentId) : null } : cat));
+      setTransactions((prev) => {
+        const next: Record<number, Transaction[]> = {};
+        Object.entries(prev).forEach(([projectId, list]) => {
+          next[Number(projectId)] = list.map((t) => {
+            const isSubcategory = Boolean(existing.parentId || parentId);
+            if (isSubcategory) {
+              if (t.subCategoryId === id || (!t.subCategoryId && t.subCategory === existing.name)) {
+                return { ...t, subCategory: trimmed, subCategoryId: t.subCategoryId || id };
+              }
+              return t;
+            }
+            if (t.categoryId === id || (!t.categoryId && t.category === existing.name)) {
+              return { ...t, category: trimmed, categoryId: t.categoryId || id };
+            }
+            return t;
+          });
+        });
+        return next;
+      });
+      return;
+    }
+    try {
+      const res = await fetch("/api/ledger/categories", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: Number(id), name: trimmed, parentId: normalizedParentId }),
+      });
+      if (!res.ok) throw new Error("Failed to update ledger category");
+      const data = await res.json();
+      const saved = data.category || {};
+      const updatedName = saved.name || trimmed;
+      const updatedParentId = saved.parentId ? String(saved.parentId) : (normalizedParentId ? String(normalizedParentId) : null);
+      setLedgerCategories((prev) => prev.map((cat) => cat.id === id ? { ...cat, name: updatedName, parentId: updatedParentId } : cat));
+      setTransactions((prev) => {
+        const next: Record<number, Transaction[]> = {};
+        Object.entries(prev).forEach(([projectId, list]) => {
+          next[Number(projectId)] = list.map((t) => {
+            const isSubcategory = Boolean(existing.parentId || updatedParentId);
+            if (isSubcategory) {
+              if (t.subCategoryId === id || (!t.subCategoryId && t.subCategory === existing.name)) {
+                return { ...t, subCategory: updatedName, subCategoryId: t.subCategoryId || id };
+              }
+              return t;
+            }
+            if (t.categoryId === id || (!t.categoryId && t.category === existing.name)) {
+              return { ...t, category: updatedName, categoryId: t.categoryId || id };
+            }
+            return t;
+          });
+        });
+        return next;
+      });
+    } catch (err) {
+      console.error("Failed to update ledger category", err);
+    }
+  };
+
+  const handleDeleteLedgerCategory = async (id: string) => {
+    const existing = ledgerCategories.find((cat) => cat.id === id);
+    if (!existing) return;
+    if (!currentUser || currentUser.role !== "admin") {
+      stageChange({
+        entity: "ledger_categories",
+        entityId: id,
+        operation: "delete",
+        before: existing,
+        impact: "Staged ledger category delete",
+      });
+      setLedgerCategories((prev) => prev.filter((cat) => cat.id !== id && cat.parentId !== id));
+      setTransactions((prev) => {
+        const next: Record<number, Transaction[]> = {};
+        Object.entries(prev).forEach(([projectId, list]) => {
+          next[Number(projectId)] = list.map((t) => {
+            if (t.categoryId === id) {
+              return { ...t, categoryId: undefined, subCategoryId: undefined };
+            }
+            if (t.subCategoryId === id) {
+              return { ...t, subCategoryId: undefined };
+            }
+            return t;
+          });
+        });
+        return next;
+      });
+      return;
+    }
+    try {
+      const res = await fetch(`/api/ledger/categories?id=${Number(id)}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to delete ledger category");
+      setLedgerCategories((prev) => prev.filter((cat) => cat.id !== id && cat.parentId !== id));
+      setTransactions((prev) => {
+        const next: Record<number, Transaction[]> = {};
+        Object.entries(prev).forEach(([projectId, list]) => {
+          next[Number(projectId)] = list.map((t) => {
+            if (t.categoryId === id) {
+              return { ...t, categoryId: undefined, subCategoryId: undefined };
+            }
+            if (t.subCategoryId === id) {
+              return { ...t, subCategoryId: undefined };
+            }
+            return t;
+          });
+        });
+        return next;
+      });
+    } catch (err) {
+      console.error("Failed to delete ledger category", err);
+    }
   };
 
   // --- Resource Operations ---
@@ -7564,34 +8202,49 @@ export default function DashboardPage() {
   const bedrooms = parseInt(rentRollForm.bedrooms || "0", 10) || 0;
   const bathrooms = parseInt(rentRollForm.bathrooms || "0", 10) || 0;
   const initialDueMonthDay = rentRollForm.initialDueMonthDay || "01-01";
+  const lastPaymentDate = rentRollForm.lastPaymentDate || null;
+  const lastPaymentPaidOnDate = lastPaymentDate ? rentRollForm.lastPaymentPaidStatus === "on_time" : null;
+  const lastPaymentPaidDate = lastPaymentDate
+    ? rentRollForm.lastPaymentPaidStatus === "on_time"
+      ? lastPaymentDate
+      : rentRollForm.lastPaymentPaidStatus === "different_day"
+        ? (rentRollForm.lastPaymentPaidDate || null)
+        : null
+    : null;
   if (!currentUser || currentUser.role !== "admin") {
     if (editingRentRollId) {
       const existing = rentRollEntries.find((e) => e.id === editingRentRollId);
-      const updated: RentRollEntry = existing ? {
-        ...existing,
-        propertyId,
-        unit: rentRollForm.unit.trim(),
-        tenant: rentRollForm.tenant.trim() || "Vacant",
-        status: rentRollForm.status,
-        rent,
-        leaseEnd: rentRollForm.leaseEnd || "TBD",
-        initialDueMonthDay,
-        bedrooms,
-        bathrooms,
-      } : {
-        id: editingRentRollId,
-        propertyId,
-        unit: rentRollForm.unit.trim(),
-        tenant: rentRollForm.tenant.trim() || "Vacant",
-        status: rentRollForm.status,
-        rent,
-        balance: 0,
-        leaseEnd: rentRollForm.leaseEnd || "TBD",
-        initialDueMonthDay,
-        bedrooms,
-        bathrooms,
-        createdAt: toDateString(getCentralTodayMs()),
-      };
+        const updated: RentRollEntry = existing ? {
+          ...existing,
+          propertyId,
+          unit: rentRollForm.unit.trim(),
+          tenant: rentRollForm.tenant.trim() || "Vacant",
+          status: rentRollForm.status,
+          rent,
+          leaseEnd: rentRollForm.leaseEnd || "TBD",
+          initialDueMonthDay,
+          bedrooms,
+          bathrooms,
+          lastPaymentDate,
+          lastPaymentPaidOnDate,
+          lastPaymentPaidDate,
+        } : {
+          id: editingRentRollId,
+          propertyId,
+          unit: rentRollForm.unit.trim(),
+          tenant: rentRollForm.tenant.trim() || "Vacant",
+          status: rentRollForm.status,
+          rent,
+          balance: 0,
+          leaseEnd: rentRollForm.leaseEnd || "TBD",
+          initialDueMonthDay,
+          bedrooms,
+          bathrooms,
+          lastPaymentDate,
+          lastPaymentPaidOnDate,
+          lastPaymentPaidDate,
+          createdAt: toDateString(getCentralTodayMs()),
+        };
       stageChange({
         entity: "rent_units",
         entityId: editingRentRollId,
@@ -7618,6 +8271,9 @@ export default function DashboardPage() {
         initialDueMonthDay,
         bedrooms,
         bathrooms,
+        lastPaymentDate,
+        lastPaymentPaidOnDate,
+        lastPaymentPaidDate,
         createdAt: toDateString(getCentralTodayMs()),
       };
       stageChange({
@@ -7637,19 +8293,22 @@ export default function DashboardPage() {
         const res = await fetch("/api/rent/units", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            id: Number(editingRentRollId),
-            propertyId: Number(propertyId),
-            unit: rentRollForm.unit.trim(),
-            tenant: rentRollForm.tenant.trim() || "Vacant",
-            status: rentRollForm.status,
-            rent,
-            leaseEnd: rentRollForm.leaseEnd || "TBD",
-            initialDueMonthDay,
-            bedrooms,
-            bathrooms,
-          }),
-        });
+            body: JSON.stringify({
+              id: Number(editingRentRollId),
+              propertyId: Number(propertyId),
+              unit: rentRollForm.unit.trim(),
+              tenant: rentRollForm.tenant.trim() || "Vacant",
+              status: rentRollForm.status,
+              rent,
+              leaseEnd: rentRollForm.leaseEnd || "TBD",
+              initialDueMonthDay,
+              bedrooms,
+              bathrooms,
+              lastPaymentDate,
+              lastPaymentPaidOnDate,
+              lastPaymentPaidDate,
+            }),
+          });
         if (!res.ok) throw new Error("Failed to update unit");
         const data = await res.json();
         const unit = data.unit || {};
@@ -7661,16 +8320,19 @@ export default function DashboardPage() {
                   propertyId,
                   unit: unit.unit || rentRollForm.unit.trim(),
                   tenant: unit.tenant || rentRollForm.tenant.trim() || "Vacant",
-                  status: (unit.status as RentRollStatus) || rentRollForm.status,
-                  rent: Number(unit.rent ?? rent),
-                  leaseEnd: unit.leaseEnd || rentRollForm.leaseEnd || "TBD",
-                  initialDueMonthDay: unit.initialDueMonthDay || initialDueMonthDay,
-                  bedrooms: Number(unit.bedrooms ?? bedrooms),
-                  bathrooms: Number(unit.bathrooms ?? bathrooms),
-                }
-              : entry
-          )
-        );
+                    status: (unit.status as RentRollStatus) || rentRollForm.status,
+                    rent: Number(unit.rent ?? rent),
+                    leaseEnd: unit.leaseEnd || rentRollForm.leaseEnd || "TBD",
+                    initialDueMonthDay: unit.initialDueMonthDay || initialDueMonthDay,
+                    bedrooms: Number(unit.bedrooms ?? bedrooms),
+                    bathrooms: Number(unit.bathrooms ?? bathrooms),
+                    lastPaymentDate: unit.lastPaymentDate ? toDateString(toDateMs(unit.lastPaymentDate)) : lastPaymentDate,
+                    lastPaymentPaidOnDate: typeof unit.lastPaymentPaidOnDate === "boolean" ? unit.lastPaymentPaidOnDate : lastPaymentPaidOnDate,
+                    lastPaymentPaidDate: unit.lastPaymentPaidDate ? toDateString(toDateMs(unit.lastPaymentPaidDate)) : lastPaymentPaidDate,
+                  }
+                : entry
+            )
+          );
         await loadRentData();
         setRentRollProperty(String(propertyId));
       } catch (err) {
@@ -7681,18 +8343,21 @@ export default function DashboardPage() {
         const res = await fetch("/api/rent/units", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            propertyId: Number(propertyId),
-            unit: rentRollForm.unit.trim(),
-            tenant: rentRollForm.tenant.trim() || "Vacant",
-            status: rentRollForm.status,
-            rent,
-            leaseEnd: rentRollForm.leaseEnd || "TBD",
-            initialDueMonthDay,
-            bedrooms,
-            bathrooms,
-          }),
-        });
+            body: JSON.stringify({
+              propertyId: Number(propertyId),
+              unit: rentRollForm.unit.trim(),
+              tenant: rentRollForm.tenant.trim() || "Vacant",
+              status: rentRollForm.status,
+              rent,
+              leaseEnd: rentRollForm.leaseEnd || "TBD",
+              initialDueMonthDay,
+              bedrooms,
+              bathrooms,
+              lastPaymentDate,
+              lastPaymentPaidOnDate,
+              lastPaymentPaidDate,
+            }),
+          });
         if (!res.ok) throw new Error("Failed to create unit");
         const data = await res.json();
         const unit = data.unit || {};
@@ -7702,15 +8367,18 @@ export default function DashboardPage() {
           propertyId,
           unit: unit.unit || rentRollForm.unit.trim(),
           tenant: unit.tenant || rentRollForm.tenant.trim() || "Vacant",
-          status: (unit.status as RentRollStatus) || rentRollForm.status,
-          rent: Number(unit.rent ?? rent),
-          balance: 0,
-          leaseEnd: unit.leaseEnd || rentRollForm.leaseEnd || "TBD",
-          initialDueMonthDay: unit.initialDueMonthDay || initialDueMonthDay,
-          bedrooms: Number(unit.bedrooms ?? bedrooms),
-          bathrooms: Number(unit.bathrooms ?? bathrooms),
-          createdAt: unit.createdAt ? toDateString(toDateMs(unit.createdAt)) : now,
-        };
+            status: (unit.status as RentRollStatus) || rentRollForm.status,
+            rent: Number(unit.rent ?? rent),
+            balance: 0,
+            leaseEnd: unit.leaseEnd || rentRollForm.leaseEnd || "TBD",
+            initialDueMonthDay: unit.initialDueMonthDay || initialDueMonthDay,
+            bedrooms: Number(unit.bedrooms ?? bedrooms),
+            bathrooms: Number(unit.bathrooms ?? bathrooms),
+            lastPaymentDate: unit.lastPaymentDate ? toDateString(toDateMs(unit.lastPaymentDate)) : lastPaymentDate,
+            lastPaymentPaidOnDate: typeof unit.lastPaymentPaidOnDate === "boolean" ? unit.lastPaymentPaidOnDate : lastPaymentPaidOnDate,
+            lastPaymentPaidDate: unit.lastPaymentPaidDate ? toDateString(toDateMs(unit.lastPaymentPaidDate)) : lastPaymentPaidDate,
+            createdAt: unit.createdAt ? toDateString(toDateMs(unit.createdAt)) : now,
+          };
         setRentRollEntries((prev) => [...prev, newEntry]);
         await loadRentData();
         setRentRollProperty(String(propertyId));
@@ -7730,11 +8398,19 @@ export default function DashboardPage() {
       initialDueMonthDay: "",
       bedrooms: "",
       bathrooms: "",
+      lastPaymentDate: "",
+      lastPaymentPaidStatus: "on_time",
+      lastPaymentPaidDate: "",
     });
   };
 
   const handleEditRentRoll = (entry: RentRollEntry) => {
     const propertyName = rentRollPropertyMap[entry.propertyId]?.name || "";
+    const lastPaymentPaidStatus = entry.lastPaymentPaidOnDate
+      ? "on_time"
+      : entry.lastPaymentPaidDate
+        ? "different_day"
+        : "late";
     setRentRollForm({
       propertyName,
       unit: entry.unit,
@@ -7745,6 +8421,9 @@ export default function DashboardPage() {
       initialDueMonthDay: entry.initialDueMonthDay || "",
       bedrooms: entry.bedrooms.toString(),
       bathrooms: entry.bathrooms.toString(),
+      lastPaymentDate: entry.lastPaymentDate || "",
+      lastPaymentPaidStatus,
+      lastPaymentPaidDate: entry.lastPaymentPaidDate || "",
     });
     setEditingRentRollId(entry.id);
     setRentRollModalOpen(true);
@@ -7762,6 +8441,8 @@ export default function DashboardPage() {
       });
       setRentRollEntries((prev) => prev.filter((e) => e.id !== entryId));
       setRentPayments((prev) => prev.filter((p) => p.rentRollEntryId !== entryId));
+      setRentRollDocuments((prev) => prev.filter((d) => d.entryId !== entryId));
+      setRentRollExpenses((prev) => prev.filter((e) => e.entryId !== entryId));
       return;
     }
     fetch(`/api/rent/units?id=${Number(entryId)}`, { method: "DELETE" })
@@ -7769,6 +8450,268 @@ export default function DashboardPage() {
       .finally(() => {
         setRentRollEntries((prev) => prev.filter((e) => e.id !== entryId));
         setRentPayments((prev) => prev.filter((p) => p.rentRollEntryId !== entryId));
+        setRentRollDocuments((prev) => prev.filter((d) => d.entryId !== entryId));
+        setRentRollExpenses((prev) => prev.filter((e) => e.entryId !== entryId));
+      });
+  };
+
+  const handleRentRollDocUpload = (entryId: string, file: File, label: string) => {
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const dataUrl = typeof reader.result === "string" ? reader.result : "";
+      const payload = {
+        rentUnitId: Number(entryId),
+        label: label.trim() || "Document",
+        fileName: file.name,
+        fileType: file.type || "application/octet-stream",
+        size: file.size,
+        dataUrl,
+      };
+      if (!currentUser || currentUser.role !== "admin") {
+        const tempId = `RRDOC-${Date.now().toString(36)}`;
+        stageChange({
+          entity: "rent_documents",
+          entityId: tempId,
+          operation: "create",
+          after: { id: tempId, ...payload },
+          impact: "Staged rent document upload",
+        });
+        setRentRollDocuments((prev) => [
+          ...prev,
+          {
+            id: tempId,
+            entryId,
+            label: payload.label,
+            fileName: payload.fileName,
+            fileType: payload.fileType,
+            size: payload.size,
+            uploadedAt: toDateString(getCentralTodayMs()),
+            dataUrl: payload.dataUrl,
+          },
+        ]);
+        setRentRollDocLabel("");
+        return;
+      }
+      try {
+        const res = await fetch("/api/rent/documents", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) throw new Error("Failed to upload document");
+        const data = await res.json();
+        const doc = data.document || {};
+        setRentRollDocuments((prev) => [
+          ...prev,
+          {
+            id: String(doc.id || `RRDOC-${Date.now().toString(36)}`),
+            entryId: String(doc.rentUnitId || entryId),
+            label: doc.label || payload.label,
+            fileName: doc.fileName || payload.fileName,
+            fileType: doc.fileType || payload.fileType,
+            size: Number(doc.size ?? payload.size),
+            uploadedAt: doc.uploadedAt ? toDateString(toDateMs(doc.uploadedAt)) : toDateString(getCentralTodayMs()),
+            dataUrl: doc.dataUrl || payload.dataUrl,
+          },
+        ]);
+        setRentRollDocLabel("");
+      } catch (err) {
+        console.error("Failed to upload document", err);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleRemoveRentRollDoc = (docId: string) => {
+    const existing = rentRollDocuments.find((doc) => doc.id === docId);
+    if (!currentUser || currentUser.role !== "admin") {
+      stageChange({
+        entity: "rent_documents",
+        entityId: docId,
+        operation: "delete",
+        before: existing || null,
+        impact: "Staged rent document delete",
+      });
+      setRentRollDocuments((prev) => prev.filter((doc) => doc.id !== docId));
+      return;
+    }
+    fetch(`/api/rent/documents?id=${Number(docId)}`, { method: "DELETE" })
+      .catch((err) => console.error("Failed to delete document", err))
+      .finally(() => {
+        setRentRollDocuments((prev) => prev.filter((doc) => doc.id !== docId));
+      });
+  };
+
+  const handleAddRentRollExpense = async (entryId: string) => {
+    const amount = parseFloat(rentRollExpenseForm.amount);
+    if (!rentRollExpenseForm.date || !rentRollExpenseForm.description.trim() || !Number.isFinite(amount)) return;
+    const selectedCategory = rentExpenseCategories.find((c) => c.id === rentRollExpenseForm.categoryId);
+    const selectedSubCategory = rentExpenseCategories.find((c) => c.id === rentRollExpenseForm.subCategoryId);
+    const payload = {
+      rentUnitId: Number(entryId),
+      date: rentRollExpenseForm.date,
+      category: selectedCategory?.name || "General",
+      categoryId: rentRollExpenseForm.categoryId ? Number(rentRollExpenseForm.categoryId) : null,
+      subCategoryId: rentRollExpenseForm.subCategoryId ? Number(rentRollExpenseForm.subCategoryId) : null,
+      description: rentRollExpenseForm.description.trim(),
+      amount,
+    };
+    if (!currentUser || currentUser.role !== "admin") {
+      const tempId = `RREXP-${Date.now().toString(36)}`;
+      stageChange({
+        entity: "rent_expenses",
+        entityId: tempId,
+        operation: "create",
+        after: { id: tempId, ...payload },
+        impact: "Staged rent expense create",
+      });
+      setRentRollExpenses((prev) => [
+        ...prev,
+        {
+          id: tempId,
+          entryId,
+          date: payload.date,
+          category: payload.category,
+          categoryId: payload.categoryId ? String(payload.categoryId) : null,
+          subCategoryId: payload.subCategoryId ? String(payload.subCategoryId) : null,
+          description: payload.description,
+          amount: payload.amount,
+        },
+      ]);
+      setRentRollExpenseForm({ date: toDateString(getCentralTodayMs()), categoryId: "", subCategoryId: "", description: "", amount: "" });
+      return;
+    }
+    try {
+      const res = await fetch("/api/rent/expenses", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error("Failed to create expense");
+      const data = await res.json();
+      const expense = data.expense || {};
+      setRentRollExpenses((prev) => [
+        ...prev,
+        {
+          id: String(expense.id || `RREXP-${Date.now().toString(36)}`),
+          entryId: String(expense.rentUnitId || entryId),
+          date: expense.date ? toDateString(toDateMs(expense.date)) : payload.date,
+          category: expense.category || payload.category,
+          categoryId: expense.categoryId ? String(expense.categoryId) : (payload.categoryId ? String(payload.categoryId) : null),
+          subCategoryId: expense.subCategoryId ? String(expense.subCategoryId) : (payload.subCategoryId ? String(payload.subCategoryId) : null),
+          description: expense.description || payload.description,
+          amount: Number(expense.amount ?? payload.amount),
+        },
+      ]);
+      setRentRollExpenseForm({ date: toDateString(getCentralTodayMs()), categoryId: "", subCategoryId: "", description: "", amount: "" });
+    } catch (err) {
+      console.error("Failed to create expense", err);
+    }
+  };
+
+  const handleRemoveRentRollExpense = (expenseId: string) => {
+    const existing = rentRollExpenses.find((item) => item.id === expenseId);
+    if (!currentUser || currentUser.role !== "admin") {
+      stageChange({
+        entity: "rent_expenses",
+        entityId: expenseId,
+        operation: "delete",
+        before: existing || null,
+        impact: "Staged rent expense delete",
+      });
+      setRentRollExpenses((prev) => prev.filter((item) => item.id !== expenseId));
+      return;
+    }
+    fetch(`/api/rent/expenses?id=${Number(expenseId)}`, { method: "DELETE" })
+      .catch((err) => console.error("Failed to delete expense", err))
+      .finally(() => {
+        setRentRollExpenses((prev) => prev.filter((item) => item.id !== expenseId));
+      });
+  };
+
+  const handleSaveExpenseCategory = async () => {
+    const name = expenseCategoryForm.name.trim();
+    if (!name) return;
+    const payload = {
+      name,
+      parentId: expenseCategoryForm.parentId ? Number(expenseCategoryForm.parentId) : null,
+    };
+    if (!currentUser || currentUser.role !== "admin") {
+      const tempId = expenseCategoryForm.id || `RREXC-${Date.now().toString(36)}`;
+      stageChange({
+        entity: "rent_expense_categories",
+        entityId: tempId,
+        operation: expenseCategoryForm.id ? "update" : "create",
+        before: expenseCategoryForm.id ? rentExpenseCategories.find((c) => c.id === expenseCategoryForm.id) || null : null,
+        after: { id: tempId, ...payload },
+        impact: "Staged expense category change",
+      });
+      setRentExpenseCategories((prev) => {
+        if (expenseCategoryForm.id) {
+          return prev.map((c) => (c.id === expenseCategoryForm.id ? { ...c, ...payload, parentId: payload.parentId ? String(payload.parentId) : null } : c));
+        }
+        return [...prev, { id: tempId, name: payload.name, parentId: payload.parentId ? String(payload.parentId) : null }];
+      });
+      setExpenseCategoryForm({ id: "", name: "", parentId: "" });
+      return;
+    }
+    try {
+      const method = expenseCategoryForm.id ? "PATCH" : "POST";
+      const res = await fetch("/api/rent/expense-categories", {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(expenseCategoryForm.id ? { id: Number(expenseCategoryForm.id), ...payload } : payload),
+      });
+      if (!res.ok) throw new Error("Failed to save category");
+      const data = await res.json();
+      const saved = data.category || {};
+      setRentExpenseCategories((prev) => {
+        if (expenseCategoryForm.id) {
+          return prev.map((c) => (c.id === expenseCategoryForm.id ? { id: String(saved.id || c.id), name: saved.name || payload.name, parentId: saved.parentId ? String(saved.parentId) : null } : c));
+        }
+        return [...prev, { id: String(saved.id || `RREXC-${Date.now().toString(36)}`), name: saved.name || payload.name, parentId: saved.parentId ? String(saved.parentId) : null }];
+      });
+      setExpenseCategoryForm({ id: "", name: "", parentId: "" });
+    } catch (err) {
+      console.error("Failed to save expense category", err);
+    }
+  };
+
+  const handleEditExpenseCategory = (cat: RentExpenseCategory) => {
+    setExpenseCategoryForm({ id: cat.id, name: cat.name, parentId: cat.parentId || "" });
+  };
+
+  const handleDeleteExpenseCategory = (catId: string) => {
+    const existing = rentExpenseCategories.find((c) => c.id === catId);
+    if (!currentUser || currentUser.role !== "admin") {
+      stageChange({
+        entity: "rent_expense_categories",
+        entityId: catId,
+        operation: "delete",
+        before: existing || null,
+        impact: "Staged expense category delete",
+      });
+      setRentExpenseCategories((prev) => prev.filter((c) => c.id !== catId));
+      setRentRollExpenses((prev) =>
+        prev.map((e) =>
+          e.categoryId === catId || e.subCategoryId === catId
+            ? { ...e, categoryId: null, subCategoryId: null }
+            : e
+        )
+      );
+      return;
+    }
+    fetch(`/api/rent/expense-categories?id=${Number(catId)}`, { method: "DELETE" })
+      .catch((err) => console.error("Failed to delete expense category", err))
+      .finally(() => {
+        setRentExpenseCategories((prev) => prev.filter((c) => c.id !== catId));
+        setRentRollExpenses((prev) =>
+          prev.map((e) =>
+            e.categoryId === catId || e.subCategoryId === catId
+              ? { ...e, categoryId: null, subCategoryId: null }
+              : e
+          )
+        );
       });
   };
 
@@ -8688,7 +9631,7 @@ export default function DashboardPage() {
                   ))}
                 </select>
                 <button
-                  onClick={() => { setRentRollModalOpen(true); setEditingRentRollId(null); setRentRollForm({ propertyName: "", unit: "", tenant: "", status: "Occupied", rent: "", leaseEnd: "", initialDueMonthDay: "", bedrooms: "", bathrooms: "" }); }}
+                  onClick={() => { setRentRollModalOpen(true); setEditingRentRollId(null); setRentRollForm({ propertyName: "", unit: "", tenant: "", status: "Occupied", rent: "", leaseEnd: "", initialDueMonthDay: "", bedrooms: "", bathrooms: "", lastPaymentDate: "", lastPaymentPaidStatus: "on_time", lastPaymentPaidDate: "" }); }}
                   className="px-4 py-2 rounded-md bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700"
                 >
                   + New Rental
@@ -8696,12 +9639,369 @@ export default function DashboardPage() {
               </div>
             </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
-              <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">Occupancy</div>
-              <div className="text-2xl font-bold text-slate-900 dark:text-slate-50">{rentRollSummary.occupancyRate}%</div>
-              <div className="text-xs text-slate-500 dark:text-slate-400">Occupied {rentRollSummary.occupiedUnits} / {rentRollSummary.totalUnits}</div>
+            {rentRollDetailView ? (
+            <div className="space-y-4">
+              <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <div className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Rent Roll Detail</div>
+                    <h3 className="text-xl font-semibold text-slate-900 dark:text-slate-50">
+                      {rentRollDetailView.type === "unit"
+                        ? `${rentRollDetailEntry?.unit || "Unit"} - ${rentRollPropertyMap[rentRollDetailEntry?.propertyId || ""]?.name || "Unlinked Property"}`
+                        : rentRollDetailProperty?.name || "Property"}
+                    </h3>
+                  </div>
+                  <button
+                    onClick={() => setRentRollDetailView(null)}
+                    className="px-3 py-2 text-sm rounded-md border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+                  >
+                    Back to Rent Roll
+                  </button>
+                </div>
+              </div>
+
+              {rentRollDetailView.type === "property" && rentRollDetailProperty && (
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                  <div className="lg:col-span-1 space-y-4">
+                    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+                      <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">Linked Project</div>
+                      <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+                        {rentRollDetailProperty.linkedProjectId ? `Project #${rentRollDetailProperty.linkedProjectId}` : "Not linked"}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+                      <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">Units</div>
+                      <div className="text-2xl font-bold text-slate-900 dark:text-slate-50">
+                        {rentRollEntries.filter((e) => e.propertyId === rentRollDetailProperty.id).length}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="lg:col-span-2">
+                    <div className="rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900 overflow-hidden">
+                      <div className="p-4 border-b border-slate-200 dark:border-slate-700">
+                        <h4 className="text-lg font-semibold text-slate-900 dark:text-slate-50">Units</h4>
+                      </div>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead className="bg-slate-50 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 uppercase text-[11px]">
+                            <tr>
+                              <th className="px-4 py-2 text-left">Unit</th>
+                              <th className="px-4 py-2 text-left">Tenant</th>
+                              <th className="px-4 py-2 text-left">Status</th>
+                              <th className="px-4 py-2 text-left">Rent</th>
+                              <th className="px-4 py-2 text-left">Balance</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {rentRollEntries
+                              .filter((entry) => entry.propertyId === rentRollDetailProperty.id)
+                              .map((entry) => {
+                                const paymentInfo = paymentRollup[entry.id];
+                                const balanceVal = paymentInfo?.balance ?? entry.balance;
+                                return (
+                                  <tr
+                                    key={entry.id}
+                                    className="border-t border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/60 cursor-pointer"
+                                    onClick={() => setRentRollDetailView({ type: "unit", id: entry.id })}
+                                  >
+                                    <td className="px-4 py-2">{entry.unit}</td>
+                                    <td className="px-4 py-2">{entry.tenant}</td>
+                                    <td className="px-4 py-2">{entry.status}</td>
+                                    <td className="px-4 py-2">{formatCurrency(entry.rent)}</td>
+                                    <td className="px-4 py-2">{formatCurrency(balanceVal)}</td>
+                                  </tr>
+                                );
+                              })}
+                            {rentRollEntries.filter((entry) => entry.propertyId === rentRollDetailProperty.id).length === 0 && (
+                              <tr>
+                                <td colSpan={5} className="px-4 py-6 text-center text-slate-500 dark:text-slate-400">
+                                  No units found for this property.
+                                </td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {rentRollDetailView.type === "unit" && rentRollDetailEntry && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+                      <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">Tenant</div>
+                      <div className="text-lg font-semibold text-slate-900 dark:text-slate-50">{rentRollDetailEntry.tenant}</div>
+                    </div>
+                    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+                      <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">Status</div>
+                      <div className="text-lg font-semibold text-slate-900 dark:text-slate-50">{rentRollDetailEntry.status}</div>
+                    </div>
+                    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+                      <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">Rent</div>
+                      <div className="text-lg font-semibold text-slate-900 dark:text-slate-50">{formatCurrency(rentRollDetailEntry.rent)}</div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+                      <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-200 mb-3">Payment Snapshot</h4>
+                      <div className="space-y-2 text-sm text-slate-700 dark:text-slate-200">
+                        <div className="flex items-center justify-between">
+                          <span>Most Recent Payment Date</span>
+                          <span className="font-semibold">{rentRollDetailEntry.lastPaymentDate || "N/A"}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span>Paid Status</span>
+                          <span className="font-semibold">
+                            {rentRollDetailEntry.lastPaymentPaidOnDate == null
+                              ? "N/A"
+                              : rentRollDetailEntry.lastPaymentPaidOnDate
+                                ? "On Time"
+                                : rentRollDetailEntry.lastPaymentPaidDate
+                                  ? "Different Day"
+                                  : "Late"}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span>Actual Paid Date</span>
+                          <span className="font-semibold">{rentRollDetailEntry.lastPaymentPaidDate || "N/A"}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span>Lease End</span>
+                          <span className="font-semibold">{rentRollDetailEntry.leaseEnd}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+                      <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-200 mb-3">Documents</h4>
+                      <div className="space-y-3">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                          <input
+                            value={rentRollDocLabel}
+                            onChange={(e) => setRentRollDocLabel(e.target.value)}
+                            className="md:col-span-2 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm"
+                            placeholder="Label (lease, invoice, inspection)"
+                          />
+                          <label className="flex items-center justify-center rounded border border-dashed border-slate-300 dark:border-slate-700 px-3 py-2 text-sm text-slate-600 dark:text-slate-300 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800">
+                            Upload
+                            <input
+                              type="file"
+                              className="hidden"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) handleRentRollDocUpload(rentRollDetailEntry.id, file, rentRollDocLabel);
+                                if (e.target) e.target.value = "";
+                              }}
+                            />
+                          </label>
+                        </div>
+                        <div className="space-y-2">
+                          {rentRollDetailDocs.map((doc) => (
+                            <div key={doc.id} className="flex items-center justify-between rounded border border-slate-200 dark:border-slate-700 px-3 py-2 text-xs">
+                              <div>
+                                <div className="font-semibold text-slate-800 dark:text-slate-100">{doc.label}</div>
+                                <div className="text-[11px] text-slate-500 dark:text-slate-400">{doc.fileName} • {(doc.size / 1024).toFixed(1)} KB</div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <a
+                                  href={doc.dataUrl}
+                                  download={doc.fileName}
+                                  className="px-2 py-1 rounded bg-blue-600 text-white text-[11px] hover:bg-blue-700"
+                                >
+                                  Download
+                                </a>
+                                <button
+                                  onClick={() => handleRemoveRentRollDoc(doc.id)}
+                                  className="px-2 py-1 rounded bg-red-100 text-red-700 text-[11px] hover:bg-red-200"
+                                >
+                                  Delete
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                          {rentRollDetailDocs.length === 0 && (
+                            <div className="text-xs text-slate-500 dark:text-slate-400">No documents uploaded yet.</div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900 overflow-hidden">
+                    <div className="p-4 border-b border-slate-200 dark:border-slate-700">
+                      <h4 className="text-lg font-semibold text-slate-900 dark:text-slate-50">Payment History</h4>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead className="bg-slate-50 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 uppercase text-[11px]">
+                          <tr>
+                            <th className="px-4 py-2 text-left">Date</th>
+                            <th className="px-4 py-2 text-left">Amount</th>
+                            <th className="px-4 py-2 text-left">Note</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {rentRollDetailPayments.map((payment) => (
+                            <tr key={payment.id} className="border-t border-slate-200 dark:border-slate-800">
+                              <td className="px-4 py-2">{payment.date}</td>
+                              <td className="px-4 py-2">{formatCurrency(payment.amount)}</td>
+                              <td className="px-4 py-2">{payment.note || "-"}</td>
+                            </tr>
+                          ))}
+                          {rentRollDetailPayments.length === 0 && (
+                            <tr>
+                              <td colSpan={3} className="px-4 py-6 text-center text-slate-500 dark:text-slate-400">
+                                No payments recorded yet.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900 overflow-hidden">
+                    <div className="p-4 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
+                      <div>
+                        <h4 className="text-lg font-semibold text-slate-900 dark:text-slate-50">Rental Ledger</h4>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">Track property expenses for this unit.</p>
+                      </div>
+                      <div className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+                        Total: {formatCurrency(rentRollExpenseTotal)}
+                      </div>
+                    </div>
+                    <div className="p-4 grid grid-cols-1 md:grid-cols-4 gap-3">
+                      <input
+                        type="date"
+                        value={rentRollExpenseForm.date}
+                        onChange={(e) => setRentRollExpenseForm((prev) => ({ ...prev, date: e.target.value }))}
+                        className="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm"
+                      />
+                      <div className="space-y-2">
+                        <select
+                          value={rentRollExpenseForm.categoryId}
+                          onChange={(e) =>
+                            setRentRollExpenseForm((prev) => ({
+                              ...prev,
+                              categoryId: e.target.value,
+                              subCategoryId: "",
+                            }))
+                          }
+                          className="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm"
+                        >
+                          <option value="">Category</option>
+                          {rentExpenseCategories.filter((c) => !c.parentId).map((cat) => (
+                            <option key={cat.id} value={cat.id}>
+                              {cat.name}
+                            </option>
+                          ))}
+                        </select>
+                        <select
+                          value={rentRollExpenseForm.subCategoryId}
+                          onChange={(e) => setRentRollExpenseForm((prev) => ({ ...prev, subCategoryId: e.target.value }))}
+                          disabled={!rentRollExpenseForm.categoryId}
+                          className="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm disabled:opacity-60"
+                        >
+                          <option value="">Subcategory</option>
+                          {rentExpenseCategories
+                            .filter((c) => c.parentId === rentRollExpenseForm.categoryId)
+                            .map((sub) => (
+                              <option key={sub.id} value={sub.id}>
+                                {sub.name}
+                              </option>
+                            ))}
+                        </select>
+                      </div>
+                      <input
+                        value={rentRollExpenseForm.description}
+                        onChange={(e) => setRentRollExpenseForm((prev) => ({ ...prev, description: e.target.value }))}
+                        className="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm"
+                        placeholder="Description"
+                      />
+                      <div className="flex gap-2">
+                        <input
+                          type="number"
+                          value={rentRollExpenseForm.amount}
+                          onChange={(e) => setRentRollExpenseForm((prev) => ({ ...prev, amount: e.target.value }))}
+                          className="flex-1 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm"
+                          placeholder="Amount"
+                        />
+                        <div className="flex flex-col gap-2">
+                          <button
+                            onClick={() => handleAddRentRollExpense(rentRollDetailEntry.id)}
+                            className="px-3 py-2 rounded bg-emerald-600 text-white text-sm hover:bg-emerald-700"
+                          >
+                            Add
+                          </button>
+                          <button
+                            onClick={() => setExpenseCategoryModalOpen(true)}
+                            className="px-3 py-2 rounded border border-slate-300 text-slate-700 text-xs hover:bg-slate-100 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+                          >
+                            Manage Categories
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead className="bg-slate-50 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 uppercase text-[11px]">
+                          <tr>
+                            <th className="px-4 py-2 text-left">Date</th>
+                            <th className="px-4 py-2 text-left">Category</th>
+                            <th className="px-4 py-2 text-left">Description</th>
+                            <th className="px-4 py-2 text-right">Amount</th>
+                            <th className="px-4 py-2 text-left">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {rentRollDetailExpenses.map((expense) => (
+                            <tr key={expense.id} className="border-t border-slate-200 dark:border-slate-800">
+                              <td className="px-4 py-2">{expense.date}</td>
+                              <td className="px-4 py-2">
+                                {expense.categoryId && rentExpenseCategoryMap[expense.categoryId]
+                                  ? rentExpenseCategoryMap[expense.categoryId].name
+                                  : (expense.category || "General")}
+                                {expense.subCategoryId && rentExpenseCategoryMap[expense.subCategoryId]
+                                  ? ` / ${rentExpenseCategoryMap[expense.subCategoryId].name}`
+                                  : ""}
+                              </td>
+                              <td className="px-4 py-2">{expense.description}</td>
+                              <td className="px-4 py-2 text-right">{formatCurrency(expense.amount)}</td>
+                              <td className="px-4 py-2">
+                                <button
+                                  onClick={() => handleRemoveRentRollExpense(expense.id)}
+                                  className="px-2 py-1 text-xs rounded bg-red-100 text-red-700 hover:bg-red-200"
+                                >
+                                  Delete
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                          {rentRollDetailExpenses.length === 0 && (
+                            <tr>
+                              <td colSpan={5} className="px-4 py-6 text-center text-slate-500 dark:text-slate-400">
+                                No expenses recorded yet.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
+            ) : (
+              <>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+                <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">Occupancy</div>
+                <div className="text-2xl font-bold text-slate-900 dark:text-slate-50">{rentRollSummary.occupancyRate}%</div>
+                <div className="text-xs text-slate-500 dark:text-slate-400">Occupied {rentRollSummary.occupiedUnits} / {rentRollSummary.totalUnits}</div>
+              </div>
             <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
               <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">Potential Monthly Rent</div>
               <div className="text-xl font-bold text-green-700 dark:text-green-300">{formatCurrency(rentRollSummary.potential)}</div>
@@ -8712,24 +10012,24 @@ export default function DashboardPage() {
               <div className="text-xl font-bold text-blue-700 dark:text-blue-300">{formatCurrency(rentRollSummary.collected)}</div>
               <div className="text-xs text-slate-500 dark:text-slate-400">Based on payments recorded this month</div>
             </div>
-            <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
-              <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">Delinquent Balance</div>
-              <div className="text-xl font-bold text-red-600 dark:text-red-400">{formatCurrency(rentRollSummary.delinquent)}</div>
-              <div className="text-xs text-slate-500 dark:text-slate-400">Outstanding against current period</div>
-            </div>
-          </div>
-
-          <div className="rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900 overflow-hidden">
-            <div className="p-4 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
-              <div>
-                <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-50">Unit Ledger</h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400">Lease exposure, balances, and expirations.</p>
+              <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+                <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">Delinquent Balance</div>
+                <div className="text-xl font-bold text-red-600 dark:text-red-400">{formatCurrency(rentRollSummary.delinquent)}</div>
+                <div className="text-xs text-slate-500 dark:text-slate-400">Outstanding against current period</div>
               </div>
-              <span className="text-xs text-slate-500 dark:text-slate-400">
-                Showing {rentRollProperty === "all" ? "all properties" : selectedRentPropertyName}
-              </span>
             </div>
-            <div className="overflow-x-auto">
+
+              <div className="rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900 overflow-hidden">
+                <div className="p-4 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
+                  <div>
+                    <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-50">Unit Ledger</h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">Lease exposure, balances, and expirations.</p>
+                  </div>
+                  <span className="text-xs text-slate-500 dark:text-slate-400">
+                    Showing {rentRollProperty === "all" ? "all properties" : selectedRentPropertyName}
+                  </span>
+                </div>
+                <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="bg-slate-50 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 uppercase text-[11px]">
                   <tr>
@@ -8749,7 +10049,8 @@ export default function DashboardPage() {
                 <tbody>
                   {filteredRentRoll.map((entry, idx) => {
                     const propertyName = rentRollPropertyMap[entry.propertyId]?.name || "Unlinked Property";
-                    const rowBg = idx % 2 === 0 ? "" : "bg-slate-50 dark:bg-slate-800/60";
+                      const rowBg = idx % 2 === 0 ? "" : "bg-slate-50 dark:bg-slate-800/60";
+                      const rowClass = `${rowBg} cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800/70`;
                     const statusClass = entry.status === "Occupied"
                       ? "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-200"
                       : entry.status === "Vacant"
@@ -8780,8 +10081,23 @@ export default function DashboardPage() {
                           ? "text-amber-600 dark:text-amber-300"
                           : "text-green-700 dark:text-green-300";
                     return (
-                      <tr key={entry.id} className={rowBg}>
-                        <td className="px-4 py-2 font-medium text-slate-800 dark:text-slate-100">{propertyName}</td>
+                        <tr
+                          key={entry.id}
+                          className={rowClass}
+                          onClick={() => setRentRollDetailView({ type: "unit", id: entry.id })}
+                        >
+                          <td className="px-4 py-2 font-medium text-slate-800 dark:text-slate-100">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setRentRollDetailView({ type: "property", id: entry.propertyId });
+                              }}
+                              className="text-left text-blue-700 hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-200"
+                            >
+                              {propertyName}
+                            </button>
+                          </td>
                         <td className="px-4 py-2 text-slate-700 dark:text-slate-200">{entry.unit}</td>
                         <td className="px-4 py-2 text-slate-700 dark:text-slate-200">{entry.tenant}</td>
                         <td className="px-4 py-2">
@@ -8805,31 +10121,44 @@ export default function DashboardPage() {
                         <td className="px-4 py-2 text-slate-700 dark:text-slate-200">{entry.leaseEnd}</td>
                         <td className="px-4 py-2 text-slate-700 dark:text-slate-200">
                           <div className="flex flex-wrap gap-2">
-                            <button
-                              onClick={() => handleEditRentRoll(entry)}
-                              className="px-2 py-1 text-xs rounded-md bg-slate-200 text-slate-800 dark:bg-slate-800 dark:text-slate-100 hover:bg-slate-300 dark:hover:bg-slate-700"
-                            >
-                              Edit
-                            </button>
-                            <button
-                              onClick={() => handleOpenPaymentModal(entry)}
-                              disabled={(paymentRollup[entry.id]?.balance ?? entry.rent) <= 0}
-                              className={`px-2 py-1 text-xs rounded-md ${((paymentRollup[entry.id]?.balance ?? entry.rent) <= 0) ? "bg-emerald-900/40 text-emerald-200 cursor-not-allowed" : "bg-emerald-600 text-white hover:bg-emerald-700"}`}
-                            >
-                              {((paymentRollup[entry.id]?.balance ?? entry.rent) <= 0) ? "Paid" : "Payment"}
-                            </button>
-                            <button
-                              onClick={() => { setLinkingPropertyId(entry.propertyId); setLinkTargetProjectId(rentRollPropertyMap[entry.propertyId]?.linkedProjectId != null ? String(rentRollPropertyMap[entry.propertyId]?.linkedProjectId) : ""); }}
-                              className="px-2 py-1 text-xs rounded-md bg-blue-600 text-white hover:bg-blue-700"
-                            >
-                              Link
-                            </button>
-                            <button
-                              onClick={() => setRentRollDeleteModal({ open: true, entry })}
-                              className="px-2 py-1 text-xs rounded-md bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300 hover:bg-red-200"
-                            >
-                              Delete
-                            </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleEditRentRoll(entry);
+                                }}
+                                className="px-2 py-1 text-xs rounded-md bg-slate-200 text-slate-800 dark:bg-slate-800 dark:text-slate-100 hover:bg-slate-300 dark:hover:bg-slate-700"
+                              >
+                                Edit
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleOpenPaymentModal(entry);
+                                }}
+                                disabled={(paymentRollup[entry.id]?.balance ?? entry.rent) <= 0}
+                                className={`px-2 py-1 text-xs rounded-md ${((paymentRollup[entry.id]?.balance ?? entry.rent) <= 0) ? "bg-emerald-900/40 text-emerald-200 cursor-not-allowed" : "bg-emerald-600 text-white hover:bg-emerald-700"}`}
+                              >
+                                {((paymentRollup[entry.id]?.balance ?? entry.rent) <= 0) ? "Paid" : "Payment"}
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setLinkingPropertyId(entry.propertyId);
+                                  setLinkTargetProjectId(rentRollPropertyMap[entry.propertyId]?.linkedProjectId != null ? String(rentRollPropertyMap[entry.propertyId]?.linkedProjectId) : "");
+                                }}
+                                className="px-2 py-1 text-xs rounded-md bg-blue-600 text-white hover:bg-blue-700"
+                              >
+                                Link
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setRentRollDeleteModal({ open: true, entry });
+                                }}
+                                className="px-2 py-1 text-xs rounded-md bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300 hover:bg-red-200"
+                              >
+                                Delete
+                              </button>
                           </div>
                         </td>
                       </tr>
@@ -8846,9 +10175,10 @@ export default function DashboardPage() {
               </table>
             </div>
           </div>
-        </div>
+              </>
+            )}
 
-        {rentRollModalOpen && (
+          {rentRollModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => { setRentRollModalOpen(false); setEditingRentRollId(null); }}>
             <div className="w-full max-w-3xl mx-4 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-2xl p-6" onClick={(e) => e.stopPropagation()}>
               <div className="flex items-center justify-between mb-4">
@@ -8910,19 +10240,58 @@ export default function DashboardPage() {
                     placeholder="1500"
                   />
                 </div>
-                <div>
-                  <label className="text-xs text-slate-500 dark:text-slate-400">Initial Due (MM-DD)</label>
-                  <input
-                    type="text"
-                    value={rentRollForm.initialDueMonthDay}
-                    onChange={(e) => setRentRollForm((prev) => ({ ...prev, initialDueMonthDay: e.target.value }))}
-                    className="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm"
-                    placeholder="03-01"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs text-slate-500 dark:text-slate-400">Lease End</label>
-                  <input
+                  <div>
+                    <label className="text-xs text-slate-500 dark:text-slate-400">Initial Due (MM-DD)</label>
+                    <input
+                      type="text"
+                      value={rentRollForm.initialDueMonthDay}
+                      onChange={(e) => setRentRollForm((prev) => ({ ...prev, initialDueMonthDay: e.target.value }))}
+                      className="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm"
+                      placeholder="03-01"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-500 dark:text-slate-400">Most Recent Payment Date</label>
+                    <input
+                      type="date"
+                      value={rentRollForm.lastPaymentDate}
+                      onChange={(e) => setRentRollForm((prev) => ({ ...prev, lastPaymentDate: e.target.value }))}
+                      className="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-500 dark:text-slate-400">Paid Status</label>
+                    <select
+                      value={rentRollForm.lastPaymentPaidStatus}
+                      onChange={(e) =>
+                        setRentRollForm((prev) => ({
+                          ...prev,
+                          lastPaymentPaidStatus: e.target.value as "on_time" | "late" | "different_day",
+                          lastPaymentPaidDate: e.target.value === "different_day" ? prev.lastPaymentPaidDate : "",
+                        }))
+                      }
+                      disabled={!rentRollForm.lastPaymentDate}
+                      className="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm disabled:opacity-60"
+                    >
+                      <option value="on_time">On Time</option>
+                      <option value="late">Late</option>
+                      <option value="different_day">Different Day</option>
+                    </select>
+                  </div>
+                  {rentRollForm.lastPaymentPaidStatus === "different_day" && rentRollForm.lastPaymentDate && (
+                    <div>
+                      <label className="text-xs text-slate-500 dark:text-slate-400">Actual Paid Date</label>
+                      <input
+                        type="date"
+                        value={rentRollForm.lastPaymentPaidDate}
+                        onChange={(e) => setRentRollForm((prev) => ({ ...prev, lastPaymentPaidDate: e.target.value }))}
+                        className="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm"
+                      />
+                    </div>
+                  )}
+                  <div>
+                    <label className="text-xs text-slate-500 dark:text-slate-400">Lease End</label>
+                    <input
                     type="date"
                     value={rentRollForm.leaseEnd}
                     onChange={(e) => setRentRollForm((prev) => ({ ...prev, leaseEnd: e.target.value }))}
@@ -9073,6 +10442,7 @@ export default function DashboardPage() {
           </div>
         )}
 
+
         {linkingProperty && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => { setLinkingPropertyId(null); setLinkTargetProjectId(""); }}>
             <div className="w-full max-w-lg mx-4 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-2xl p-6" onClick={(e) => e.stopPropagation()}>
@@ -9113,6 +10483,104 @@ export default function DashboardPage() {
             </div>
           </div>
         )}
+        {expenseCategoryModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setExpenseCategoryModalOpen(false)}>
+            <div className="w-full max-w-2xl mx-4 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-2xl p-6" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-50">Expense Categories</h3>
+                <button
+                  onClick={() => setExpenseCategoryModalOpen(false)}
+                  className="text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+                >
+                  <IconX />
+                </button>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+                <input
+                  value={expenseCategoryForm.name}
+                  onChange={(e) => setExpenseCategoryForm((prev) => ({ ...prev, name: e.target.value }))}
+                  className="md:col-span-2 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm"
+                  placeholder="Category name"
+                />
+                <select
+                  value={expenseCategoryForm.parentId}
+                  onChange={(e) => setExpenseCategoryForm((prev) => ({ ...prev, parentId: e.target.value }))}
+                  className="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm"
+                >
+                  <option value="">Top-level</option>
+                  {rentExpenseCategories.filter((c) => !c.parentId).map((cat) => (
+                    <option key={cat.id} value={cat.id}>
+                      {cat.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex items-center gap-2 mb-4">
+                <button
+                  onClick={handleSaveExpenseCategory}
+                  className="px-3 py-2 rounded bg-emerald-600 text-white text-sm hover:bg-emerald-700"
+                >
+                  {expenseCategoryForm.id ? "Update Category" : "Add Category"}
+                </button>
+                {expenseCategoryForm.id && (
+                  <button
+                    onClick={() => setExpenseCategoryForm({ id: "", name: "", parentId: "" })}
+                    className="px-3 py-2 rounded border border-slate-300 text-slate-700 text-sm hover:bg-slate-100 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+                  >
+                    Cancel
+                  </button>
+                )}
+              </div>
+              <div className="rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 uppercase text-[11px]">
+                    <tr>
+                      <th className="px-4 py-2 text-left">Category</th>
+                      <th className="px-4 py-2 text-left">Parent</th>
+                      <th className="px-4 py-2 text-left">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rentExpenseCategories.map((cat) => (
+                      <tr key={cat.id} className="border-t border-slate-200 dark:border-slate-800">
+                        <td className="px-4 py-2">{cat.name}</td>
+                        <td className="px-4 py-2 text-slate-500 dark:text-slate-400">
+                          {cat.parentId && rentExpenseCategoryMap[cat.parentId]
+                            ? rentExpenseCategoryMap[cat.parentId].name
+                            : "-"}
+                        </td>
+                        <td className="px-4 py-2">
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => handleEditExpenseCategory(cat)}
+                              className="px-2 py-1 text-xs rounded bg-slate-200 text-slate-800 dark:bg-slate-800 dark:text-slate-100 hover:bg-slate-300 dark:hover:bg-slate-700"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => handleDeleteExpenseCategory(cat.id)}
+                              className="px-2 py-1 text-xs rounded bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/40 dark:text-red-300"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                    {rentExpenseCategories.length === 0 && (
+                      <tr>
+                        <td colSpan={3} className="px-4 py-6 text-center text-slate-500 dark:text-slate-400">
+                          No categories yet. Add one above.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
       </div>
     );
   }
@@ -9999,8 +11467,10 @@ export default function DashboardPage() {
           onManagePresets={() => setFormulaPresetDialogOpen(true)}
           onCreateFormula={handleCreateFormula}
           onAddPresetToProject={openPresetPicker}
+          onManageLedgerCategories={() => setLedgerCategoryDialogOpen(true)}
           taxRateCount={taxRates.length}
           presetCount={formulaPresets.length}
+          ledgerCategoryCount={ledgerCategories.length}
           hasActiveProject={!!resolveActiveProjectId()}
         />
 
@@ -10642,6 +12112,15 @@ export default function DashboardPage() {
           onApply={handleApplyPresetToProject}
         />
 
+        <LedgerCategoriesDialog
+          open={ledgerCategoryDialogOpen}
+          onClose={() => setLedgerCategoryDialogOpen(false)}
+          categories={ledgerCategories}
+          onCreate={handleCreateLedgerCategory}
+          onUpdate={handleUpdateLedgerCategory}
+          onDelete={handleDeleteLedgerCategory}
+        />
+
         <AcquisitionConfirmModal
           open={acquireConfirmOpen}
           onConfirm={confirmAcquire}
@@ -10670,8 +12149,10 @@ export default function DashboardPage() {
           onManagePresets={() => setFormulaPresetDialogOpen(true)}
           onCreateFormula={handleCreateFormula}
           onAddPresetToProject={openPresetPicker}
+          onManageLedgerCategories={() => setLedgerCategoryDialogOpen(true)}
           taxRateCount={taxRates.length}
           presetCount={formulaPresets.length}
+          ledgerCategoryCount={ledgerCategories.length}
           hasActiveProject={!!resolveActiveProjectId()}
         />
         {activityView !== "gantt" && (
@@ -10831,14 +12312,40 @@ export default function DashboardPage() {
                 >
                   Gantt Chart
                 </button>
+                <button
+                  onClick={() => setActivityView("ledger")}
+                  className={`px-3 py-1.5 rounded-full transition-colors ${activityView === "ledger" ? "bg-blue-600 text-white shadow" : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"}`}
+                >
+                  Project Ledger
+                </button>
               </div>
               <div className="flex items-center gap-3 text-xs text-slate-600 dark:text-slate-300">
-                <span className="px-2 py-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">Week: {todayWeekStart} â€“ {todayWeekEnd}</span>
+                <span className="px-2 py-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">Week: {todayWeekStart} to {todayWeekEnd}</span>
                 <span className="px-2 py-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">Month: {todayMonthLabel}</span>
               </div>
             </div>
 
             <div className="flex flex-col gap-4 h-full">
+              {activityView === "ledger" && (
+                <div className="rounded-lg border border-slate-300 bg-white dark:border-slate-800 dark:bg-slate-900 shadow-md flex flex-col h-full overflow-hidden">
+                  <ProjectLedger
+                    projectId={activeProjectDbId ?? activeProject.id}
+                    activities={projectActivities}
+                    transactions={projectTransactions}
+                    categories={ledgerCategories}
+                    onAddTransaction={(t) => handleAddTransaction(t, activeProjectDbId ?? undefined)}
+                    onUpdateTransaction={(t) => handleUpdateTransaction(t, activeProjectDbId ?? undefined)}
+                    onDeleteTransaction={(id) => handleDeleteTransaction(id, activeProjectDbId ?? undefined)}
+                    isOpen
+                    setIsOpen={() => {}}
+                    draftActivityId={quickLedgerActivityId}
+                    setDraftActivityId={setQuickLedgerActivityId}
+                    displayMode="inline"
+                    containerClassName="flex flex-col h-full"
+                  />
+                </div>
+              )}
+
               {activityView === "details" && (
               <div className="overflow-y-auto rounded-lg border border-slate-300 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-md">
                   <div className="flex justify-between items-center p-3 border-b border-slate-200 dark:border-slate-700 flex-shrink-0">
@@ -11091,18 +12598,21 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            <ProjectLedger
-              projectId={activeProjectDbId ?? activeProject.id}
-              activities={projectActivities}
-              transactions={projectTransactions}
-              onAddTransaction={(t) => handleAddTransaction(t, activeProjectDbId ?? undefined)}
-              onUpdateTransaction={(t) => handleUpdateTransaction(t, activeProjectDbId ?? undefined)}
-              onDeleteTransaction={(id) => handleDeleteTransaction(id, activeProjectDbId ?? undefined)}
-              isOpen={ledgerOpen}
-              setIsOpen={setLedgerOpen}
-              draftActivityId={quickLedgerActivityId}
-              setDraftActivityId={setQuickLedgerActivityId}
-            />
+            {activityView !== "ledger" && (
+              <ProjectLedger
+                projectId={activeProjectDbId ?? activeProject.id}
+                activities={projectActivities}
+                transactions={projectTransactions}
+                categories={ledgerCategories}
+                onAddTransaction={(t) => handleAddTransaction(t, activeProjectDbId ?? undefined)}
+                onUpdateTransaction={(t) => handleUpdateTransaction(t, activeProjectDbId ?? undefined)}
+                onDeleteTransaction={(id) => handleDeleteTransaction(id, activeProjectDbId ?? undefined)}
+                isOpen={ledgerOpen}
+                setIsOpen={setLedgerOpen}
+                draftActivityId={quickLedgerActivityId}
+                setDraftActivityId={setQuickLedgerActivityId}
+              />
+            )}
           </main>
 
           <ProjectDetailsPanel
@@ -11306,6 +12816,15 @@ export default function DashboardPage() {
             </div>
           </div>
         )}
+
+        <LedgerCategoriesDialog
+          open={ledgerCategoryDialogOpen}
+          onClose={() => setLedgerCategoryDialogOpen(false)}
+          categories={ledgerCategories}
+          onCreate={handleCreateLedgerCategory}
+          onUpdate={handleUpdateLedgerCategory}
+          onDelete={handleDeleteLedgerCategory}
+        />
       </div>
     );
   }
