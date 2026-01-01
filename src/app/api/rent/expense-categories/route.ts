@@ -15,8 +15,12 @@ export async function GET() {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const inserted = await db.insert(rentExpenseCategories).values(body).returning();
-    return NextResponse.json({ category: inserted[0] });
+    const inserted = await db
+      .insert(rentExpenseCategories)
+      .values(body)
+      .returning({ id: rentExpenseCategories.id, name: rentExpenseCategories.name, parentId: rentExpenseCategories.parentId });
+    const [row] = inserted;
+    return NextResponse.json({ category: row });
   } catch (err) {
     console.error("POST /api/rent/expense-categories error", err);
     return NextResponse.json({ error: "Failed to create expense category" }, { status: 500 });
@@ -28,8 +32,13 @@ export async function PATCH(req: Request) {
     const body = await req.json();
     const { id, ...rest } = body || {};
     if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
-    const updated = await db.update(rentExpenseCategories).set(rest).where(eq(rentExpenseCategories.id, id)).returning();
-    return NextResponse.json({ category: updated[0] });
+    const updated = await db
+      .update(rentExpenseCategories)
+      .set(rest)
+      .where(eq(rentExpenseCategories.id, id))
+      .returning({ id: rentExpenseCategories.id, name: rentExpenseCategories.name, parentId: rentExpenseCategories.parentId });
+    const [row] = updated;
+    return NextResponse.json({ category: row });
   } catch (err) {
     console.error("PATCH /api/rent/expense-categories error", err);
     return NextResponse.json({ error: "Failed to update expense category" }, { status: 500 });
@@ -41,8 +50,12 @@ export async function DELETE(req: Request) {
     const { searchParams } = new URL(req.url);
     const id = Number(searchParams.get("id"));
     if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
-    const deleted = await db.delete(rentExpenseCategories).where(eq(rentExpenseCategories.id, id)).returning();
-    return NextResponse.json({ category: deleted[0] });
+    const deleted = await db
+      .delete(rentExpenseCategories)
+      .where(eq(rentExpenseCategories.id, id))
+      .returning({ id: rentExpenseCategories.id, name: rentExpenseCategories.name, parentId: rentExpenseCategories.parentId });
+    const [row] = deleted;
+    return NextResponse.json({ category: row });
   } catch (err) {
     console.error("DELETE /api/rent/expense-categories error", err);
     return NextResponse.json({ error: "Failed to delete expense category" }, { status: 500 });
