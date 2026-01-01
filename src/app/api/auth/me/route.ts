@@ -21,7 +21,7 @@ export async function GET(req: Request) {
     if (!user) return NextResponse.json({ user: null }, { status: 401 });
     const role = String(user.role || "").trim().toLowerCase();
     return NextResponse.json({
-      user: { id: user.id, name: user.name, email: user.email, role },
+      user: { id: user.id, name: user.name, email: user.email, role, avatarUrl: user.avatarUrl || "" },
     });
   } catch (err) {
     console.error("GET /api/auth/me error", err);

@@ -155,6 +155,15 @@ interface UserSummary {
   createdAt?: string;
 }
 
+interface ActiveUser {
+  id: number;
+  name: string;
+  email: string;
+  role: string;
+  avatarUrl?: string;
+  lastSeen: string;
+}
+
 interface CommitChange {
   id: number;
   entity: string;
@@ -501,6 +510,7 @@ type DashboardMode =
   | "RentRoll"
   | "Exports"
   | "Statements"
+  | "Account"
   | "Users"
   | "Commits";
 
@@ -3820,7 +3830,8 @@ const TopBar: React.FC<{
   currentMode: DashboardMode;
   isDetailsPanelVisible?: boolean;
   onToggleDetailsPanel?: () => void;
-  currentUser?: { name: string; email: string; role: string } | null;
+  currentUser?: { name: string; email: string; role: string; avatarUrl?: string } | null;
+  activeUsers?: ActiveUser[];
   onLogout?: () => void;
   onOpenCommit?: () => void;
   commitDraftCount?: number;
@@ -3832,11 +3843,22 @@ const TopBar: React.FC<{
   isDetailsPanelVisible,
   onToggleDetailsPanel,
   currentUser,
+  activeUsers = [],
   onLogout,
   onOpenCommit,
   commitDraftCount = 0,
 }) => {
   const { theme, setTheme } = useTheme();
+  const userInitials = (name?: string) =>
+    (name || "User")
+      .trim()
+      .split(/\s+/)
+      .map((part) => part[0] || "")
+      .join("")
+      .slice(0, 2)
+      .toUpperCase();
+  const presenceStack = activeUsers.slice(0, 6);
+  const extraCount = activeUsers.length - presenceStack.length;
 
   return (
     <header className="flex w-full items-center justify-between gap-4 border-b border-slate-300 bg-white px-4 py-2 dark:border-slate-800 dark:bg-slate-950 flex-shrink-0">
@@ -3914,6 +3936,16 @@ const TopBar: React.FC<{
             Bank Statements
           </button>
           <button
+            onClick={() => onModeChange && onModeChange("Account")}
+            className={`rounded px-3 py-1 transition-colors ${
+              currentMode === "Account"
+                ? "bg-blue-600 text-white"
+                : "text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
+            }`}
+          >
+            Account
+          </button>
+          <button
             onClick={() => onModeChange && onModeChange("Commits")}
             className={`rounded px-3 py-1 transition-colors ${
               currentMode === "Commits"
@@ -3950,6 +3982,28 @@ const TopBar: React.FC<{
       </div>
 
       <div className="flex items-center gap-3">
+        {presenceStack.length > 0 && (
+          <div className="flex items-center">
+            {presenceStack.map((user, idx) => (
+              <div
+                key={`${user.id}-${user.lastSeen}-${idx}`}
+                className={`h-7 w-7 rounded-full border border-white dark:border-slate-900 shadow-sm bg-slate-100 dark:bg-slate-800 overflow-hidden flex items-center justify-center text-[11px] font-semibold text-slate-600 dark:text-slate-200 ${idx === 0 ? "" : "-ml-1"}`}
+                title={`${user.name} • ${user.email}`}
+              >
+                {user.avatarUrl ? (
+                  <img src={user.avatarUrl} alt={user.name} className="h-full w-full object-cover" />
+                ) : (
+                  <span>{userInitials(user.name)}</span>
+                )}
+              </div>
+            ))}
+            {extraCount > 0 && (
+              <div className="-ml-1 h-7 w-7 rounded-full border border-white dark:border-slate-900 bg-slate-200 dark:bg-slate-700 text-[11px] font-semibold text-slate-600 dark:text-slate-200 flex items-center justify-center shadow-sm">
+                +{extraCount}
+              </div>
+            )}
+          </div>
+        )}
         {currentUser && (
           <div className="text-right leading-tight">
             <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">{currentUser.name}</div>
@@ -5016,9 +5070,13 @@ export default function DashboardPage() {
   const [customFormulas, setCustomFormulas] = useState<Record<number, CustomFormula[]>>({});
   const [formulaPresets, setFormulaPresets] = useState<CustomFormula[]>([]);
   const [taxRates, setTaxRates] = useState<TaxRate[]>([]);
-  const [currentUser, setCurrentUser] = useState<{ id: number; name: string; email: string; role: string } | null>(null);
+  const [currentUser, setCurrentUser] = useState<{ id: number; name: string; email: string; role: string; avatarUrl?: string } | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [activeUsers, setActiveUsers] = useState<ActiveUser[]>([]);
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const [avatarError, setAvatarError] = useState<string | null>(null);
+  const avatarInputRef = useRef<HTMLInputElement | null>(null);
   const [loginForm, setLoginForm] = useState({ email: "", password: "" });
   const [showPassword, setShowPassword] = useState(false);
   const [usersList, setUsersList] = useState<UserSummary[]>([]);
@@ -5502,6 +5560,54 @@ export default function DashboardPage() {
     }
   }, []);
 
+  const getPresenceSessionId = useCallback(() => {
+    if (typeof window === "undefined") return "";
+    const key = "dashboard_presence_session_id";
+    let existing = window.sessionStorage.getItem(key);
+    if (!existing) {
+      const fallback = `sess-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      existing = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : fallback;
+      window.sessionStorage.setItem(key, existing);
+    }
+    return existing;
+  }, []);
+
+  const loadPresence = useCallback(async () => {
+    if (!currentUser) return [];
+    try {
+      const res = await fetch("/api/presence", { credentials: "include" });
+      if (!res.ok) return [];
+      const data = await res.json();
+      const mapped: ActiveUser[] = (data.users || []).map((u: any) => ({
+        id: Number(u.id),
+        name: u.name || "User",
+        email: u.email || "",
+        role: String(u.role || "").trim().toLowerCase(),
+        avatarUrl: u.avatarUrl || "",
+        lastSeen: u.lastSeen ? String(u.lastSeen) : new Date().toISOString(),
+      }));
+      setActiveUsers(mapped);
+      return mapped;
+    } catch (err) {
+      console.error("Failed to load presence", err);
+      return [];
+    }
+  }, [currentUser]);
+
+  const heartbeatPresence = useCallback(async (sessionId: string) => {
+    if (!currentUser || !sessionId) return;
+    try {
+      await fetch("/api/presence", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ sessionId }),
+      });
+    } catch (err) {
+      console.error("Failed to update presence", err);
+    }
+  }, [currentUser]);
+
   const checkAuth = useCallback(async () => {
     try {
       const res = await fetch("/api/auth/me", { credentials: "include" });
@@ -5531,6 +5637,47 @@ export default function DashboardPage() {
     setAuthChecked(true);
     setMode("EPS");
   }, [setMode]);
+
+  const handleAvatarUpload = useCallback(async (file: File) => {
+    if (!file) return;
+    setAvatarError(null);
+    if (!file.type.startsWith("image/")) {
+      setAvatarError("Please select an image file.");
+      return;
+    }
+    if (file.size > 1_500_000) {
+      setAvatarError("Image is too large. Use a file under 1.5MB.");
+      return;
+    }
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
+      reader.onerror = () => reject(new Error("Failed to read file."));
+      reader.readAsDataURL(file);
+    }).catch(() => "");
+    if (!dataUrl) {
+      setAvatarError("Unable to read image.");
+      return;
+    }
+    setAvatarUploading(true);
+    try {
+      const res = await fetch("/api/account/avatar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ avatarUrl: dataUrl }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || "Failed to upload avatar");
+      if (data?.user?.avatarUrl) {
+        setCurrentUser((prev) => (prev ? { ...prev, avatarUrl: data.user.avatarUrl } : prev));
+      }
+    } catch (err: any) {
+      setAvatarError(err?.message || "Failed to upload avatar.");
+    } finally {
+      setAvatarUploading(false);
+    }
+  }, []);
 
   const handleLogin = useCallback(async () => {
     setAuthError(null);
@@ -6413,6 +6560,19 @@ export default function DashboardPage() {
     loadDbData();
     loadRentData();
   }, [loadDbData, loadRentData]);
+
+  useEffect(() => {
+    if (!currentUser) return;
+    const sessionId = getPresenceSessionId();
+    if (!sessionId) return;
+    heartbeatPresence(sessionId);
+    loadPresence();
+    const interval = setInterval(() => {
+      heartbeatPresence(sessionId);
+      loadPresence();
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [currentUser, getPresenceSessionId, heartbeatPresence, loadPresence]);
 
   // --- EPS Node Operations ---
   const handleNodeClick = useCallback((node: EpsNode) => {
@@ -9606,6 +9766,7 @@ export default function DashboardPage() {
           onModeChange={setMode}
           currentMode={mode}
           currentUser={currentUser}
+          activeUsers={activeUsers}
           onLogout={handleLogout}
           onOpenCommit={openCommitModal}
           commitDraftCount={commitDraftCount}
@@ -10586,6 +10747,120 @@ export default function DashboardPage() {
   }
 
   // ---------------------------------------------------------------------------
+  // ACCOUNT VIEW
+  // ---------------------------------------------------------------------------
+  if (mode === "Account") {
+    const initials = (name?: string) =>
+      (name || "User")
+        .trim()
+        .split(/\s+/)
+        .map((part) => part[0] || "")
+        .join("")
+        .slice(0, 2)
+        .toUpperCase();
+
+    return (
+      <div className="h-screen flex flex-col bg-slate-50 dark:bg-slate-900">
+        <TopBar
+          title="Account"
+          projectName={currentUser?.name || "Profile"}
+          onModeChange={setMode}
+          currentMode={mode}
+          currentUser={currentUser}
+          activeUsers={activeUsers}
+          onLogout={handleLogout}
+          onOpenCommit={openCommitModal}
+          commitDraftCount={commitDraftCount}
+        />
+        <div className="flex-1 overflow-y-auto p-6">
+          <div className="max-w-4xl mx-auto grid gap-6">
+            <div className="rounded-lg border border-slate-300 bg-white p-6 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+              <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-50">Profile</h2>
+              <div className="mt-4 flex items-center gap-4">
+                <div className="h-20 w-20 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center overflow-hidden border border-slate-200 dark:border-slate-700">
+                  {currentUser?.avatarUrl ? (
+                    <img src={currentUser.avatarUrl} alt={currentUser.name} className="h-full w-full object-cover" />
+                  ) : (
+                    <span className="text-xl font-semibold text-slate-600 dark:text-slate-200">
+                      {initials(currentUser?.name)}
+                    </span>
+                  )}
+                </div>
+                <div>
+                  <div className="text-lg font-semibold text-slate-900 dark:text-slate-50">
+                    {currentUser?.name || "Unknown User"}
+                  </div>
+                  <div className="text-sm text-slate-500 dark:text-slate-400">{currentUser?.email || ""}</div>
+                  <div className="mt-1 text-xs uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                    {currentUser?.role || "viewer"}
+                  </div>
+                </div>
+              </div>
+              <div className="mt-4 flex items-center gap-3">
+                <input
+                  ref={avatarInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) handleAvatarUpload(file);
+                    e.currentTarget.value = "";
+                  }}
+                />
+                <button
+                  onClick={() => avatarInputRef.current?.click()}
+                  className="px-3 py-2 text-sm rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+                  disabled={avatarUploading}
+                >
+                  {avatarUploading ? "Uploading..." : "Upload Photo"}
+                </button>
+                {avatarError && <span className="text-sm text-red-600">{avatarError}</span>}
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-slate-300 bg-white p-6 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-50">Active on Dashboard</h2>
+                <span className="text-xs text-slate-500 dark:text-slate-400">
+                  {activeUsers.length} online
+                </span>
+              </div>
+              <div className="mt-4 space-y-3">
+                {activeUsers.length === 0 && (
+                  <div className="text-sm text-slate-500 dark:text-slate-400">No active users yet.</div>
+                )}
+                {activeUsers.map((user) => (
+                  <div key={`${user.id}-${user.lastSeen}`} className="flex items-center justify-between rounded border border-slate-200 dark:border-slate-800 px-3 py-2">
+                    <div className="flex items-center gap-3">
+                      <div className="h-10 w-10 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center overflow-hidden border border-slate-200 dark:border-slate-700">
+                        {user.avatarUrl ? (
+                          <img src={user.avatarUrl} alt={user.name} className="h-full w-full object-cover" />
+                        ) : (
+                          <span className="text-sm font-semibold text-slate-600 dark:text-slate-200">
+                            {initials(user.name)}
+                          </span>
+                        )}
+                      </div>
+                      <div>
+                        <div className="text-sm font-medium text-slate-800 dark:text-slate-100">{user.name}</div>
+                        <div className="text-xs text-slate-500 dark:text-slate-400">{user.email}</div>
+                      </div>
+                    </div>
+                    <div className="text-xs text-slate-500 dark:text-slate-400">
+                      {new Date(user.lastSeen).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ---------------------------------------------------------------------------
   // EXPORTS VIEW
   // ---------------------------------------------------------------------------
   if (mode === "Exports") {
@@ -10597,6 +10872,7 @@ export default function DashboardPage() {
           onModeChange={setMode}
           currentMode={mode}
           currentUser={currentUser}
+          activeUsers={activeUsers}
           onLogout={handleLogout}
           onOpenCommit={openCommitModal}
           commitDraftCount={commitDraftCount}
@@ -10841,6 +11117,7 @@ export default function DashboardPage() {
           onModeChange={setMode}
           currentMode={mode}
           currentUser={currentUser}
+          activeUsers={activeUsers}
           onLogout={handleLogout}
           onOpenCommit={openCommitModal}
           commitDraftCount={commitDraftCount}
@@ -10957,6 +11234,7 @@ export default function DashboardPage() {
           onModeChange={setMode}
           currentMode={mode}
           currentUser={currentUser}
+          activeUsers={activeUsers}
           onLogout={handleLogout}
         />
         <div className="flex-1 overflow-y-auto p-6 space-y-4">
@@ -11154,6 +11432,7 @@ export default function DashboardPage() {
           onModeChange={setMode}
           currentMode={mode}
           currentUser={currentUser}
+          activeUsers={activeUsers}
           onLogout={handleLogout}
         />
 
@@ -11458,6 +11737,7 @@ export default function DashboardPage() {
           onModeChange={setMode}
           currentMode={mode}
           currentUser={currentUser}
+          activeUsers={activeUsers}
           onLogout={handleLogout}
           onOpenCommit={openCommitModal}
           commitDraftCount={commitDraftCount}
@@ -11673,6 +11953,7 @@ export default function DashboardPage() {
           onModeChange={setMode}
           currentMode={mode}
           currentUser={currentUser}
+          activeUsers={activeUsers}
           onLogout={handleLogout}
           onOpenCommit={openCommitModal}
           commitDraftCount={commitDraftCount}
@@ -12030,15 +12311,16 @@ export default function DashboardPage() {
         <div className="h-screen flex flex-col bg-slate-50 dark:bg-slate-900">
         <TopBar
           title="Activities"
-        projectName={activeProject.name}
-        onModeChange={setMode}
-        currentMode={mode}
-        isDetailsPanelVisible={isDetailsPanelVisible}
-        onToggleDetailsPanel={() => setIsDetailsPanelVisible(prev => !prev)}
-        currentUser={currentUser}
-        onLogout={handleLogout}
-        onOpenCommit={openCommitModal}
-        commitDraftCount={commitDraftCount}
+          projectName={activeProject.name}
+          onModeChange={setMode}
+          currentMode={mode}
+          isDetailsPanelVisible={isDetailsPanelVisible}
+          onToggleDetailsPanel={() => setIsDetailsPanelVisible(prev => !prev)}
+          currentUser={currentUser}
+          activeUsers={activeUsers}
+          onLogout={handleLogout}
+          onOpenCommit={openCommitModal}
+          commitDraftCount={commitDraftCount}
         />
           <ActionRibbon
             onOpenTaxRates={() => setTaxRateDialogOpen(true)}
@@ -12140,6 +12422,7 @@ export default function DashboardPage() {
           isDetailsPanelVisible={isDetailsPanelVisible}
           onToggleDetailsPanel={() => setIsDetailsPanelVisible(prev => !prev)}
           currentUser={currentUser}
+          activeUsers={activeUsers}
           onLogout={handleLogout}
           onOpenCommit={openCommitModal}
           commitDraftCount={commitDraftCount}
@@ -12861,7 +13144,7 @@ export default function DashboardPage() {
 
   return (
     <div className="h-screen flex flex-col bg-slate-50 dark:bg-slate-900">
-      <TopBar title="EPS" currentMode={mode} onModeChange={setMode} currentUser={currentUser} onLogout={handleLogout} onOpenCommit={openCommitModal} commitDraftCount={commitDraftCount} />
+      <TopBar title="EPS" currentMode={mode} onModeChange={setMode} currentUser={currentUser} activeUsers={activeUsers} onLogout={handleLogout} onOpenCommit={openCommitModal} commitDraftCount={commitDraftCount} />
       <ActionRibbon
         onOpenTaxRates={() => setTaxRateDialogOpen(true)}
         onManagePresets={() => setFormulaPresetDialogOpen(true)}

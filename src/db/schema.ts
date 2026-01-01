@@ -10,6 +10,7 @@ import {
   text,
   foreignKey,
   jsonb,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { sql, relations } from "drizzle-orm";
 
@@ -117,8 +118,30 @@ export const users = pgTable("users", {
   name: varchar("name", { length: 255 }).notNull(),
   role: varchar("role", { length: 32 }).notNull().default("viewer"),
   passwordHash: text("password_hash").notNull(),
+  avatarUrl: text("avatar_url"),
   createdAt: timestamp("created_at", { withTimezone: true }).default(sql`now()`),
 });
+
+// ----------------------------
+// DASHBOARD PRESENCE
+// ----------------------------
+export const dashboardPresence = pgTable(
+  "dashboard_presence",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    sessionId: varchar("session_id", { length: 64 }).notNull(),
+    lastSeen: timestamp("last_seen", { withTimezone: true }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    userSessionUnique: uniqueIndex("dashboard_presence_user_session_idx").on(
+      table.userId,
+      table.sessionId
+    ),
+  })
+);
 
 // ----------------------------
 // COMMITS (STAGING) + CHANGES
