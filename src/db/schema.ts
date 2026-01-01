@@ -357,9 +357,17 @@ export const rentDocuments = pgTable("rent_documents", {
 export const rentExpenseCategories = pgTable("rent_expense_categories", {
   id: serial("id").primaryKey(),
   name: varchar("name", { length: 128 }).notNull(),
-  parentId: integer("parent_id").references(() => rentExpenseCategories.id, { onDelete: "cascade" }),
+  parentId: integer("parent_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).default(sql`now()`),
-});
+}, (table) => ({
+  parentFk:
+    // Drizzle's `foreignKey` typing doesn't expose onDelete, but we want cascade in DB
+    foreignKey({
+      columns: [table.parentId],
+      foreignColumns: [table.id],
+      name: "rent_expense_categories_parent_fk",
+    }),
+}));
 
 export const rentExpenses = pgTable("rent_expenses", {
   id: serial("id").primaryKey(),
@@ -381,9 +389,17 @@ export const rentExpenses = pgTable("rent_expenses", {
 export const ledgerCategories = pgTable("ledger_categories", {
   id: serial("id").primaryKey(),
   name: varchar("name", { length: 128 }).notNull(),
-  parentId: integer("parent_id").references(() => ledgerCategories.id, { onDelete: "cascade" }),
+  parentId: integer("parent_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).default(sql`now()`),
-});
+}, (table) => ({
+  parentFk:
+    // Drizzle's `foreignKey` typing doesn't expose onDelete, but we want cascade in DB
+    foreignKey({
+      columns: [table.parentId],
+      foreignColumns: [table.id],
+      name: "ledger_categories_parent_fk",
+    }),
+}));
 
 export const ledgerTransactions = pgTable("ledger_transactions", {
   id: serial("id").primaryKey(),
