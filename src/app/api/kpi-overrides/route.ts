@@ -27,7 +27,7 @@ export async function POST(req: Request) {
     const payload = {
       projectId: Number(body?.projectId),
       itemId: Number(body?.itemId),
-      overrideValue: body?.overrideValue !== undefined ? Number(body.overrideValue) : 0,
+      overrideValue: body?.overrideValue !== undefined ? String(body.overrideValue) : "0",
       note: body?.note ? String(body.note) : null,
     };
     if (!payload.projectId || !payload.itemId) {
@@ -46,7 +46,7 @@ export async function PATCH(req: Request) {
     const body = await req.json();
     const { id, projectId, itemId, ...rest } = body || {};
     const payload = {
-      overrideValue: rest?.overrideValue !== undefined ? Number(rest.overrideValue) : undefined,
+      overrideValue: rest?.overrideValue !== undefined ? String(rest.overrideValue) : undefined,
       note: rest?.note !== undefined ? String(rest.note) : undefined,
     };
     if (id) {
