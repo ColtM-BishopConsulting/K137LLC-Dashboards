@@ -81,6 +81,8 @@ interface Transaction {
   category: string;
   subCategoryId?: string;
   subCategory?: string;
+  accountId?: string;
+  accountName?: string;
   amount: number;
   activityId?: string;
 }
@@ -89,6 +91,14 @@ interface LedgerCategory {
   id: string;
   name: string;
   parentId?: string | null;
+}
+
+interface LedgerAccount {
+  id: string;
+  name: string;
+  type: "bank" | "credit" | "loc" | "other";
+  institution?: string | null;
+  last4?: string | null;
 }
 
 interface ProjectDetail {
@@ -260,6 +270,167 @@ interface RentRollExpense {
   description: string;
   amount: number;
 }
+
+interface ProjectUtility {
+  id: string;
+  projectId: number;
+  date: string;
+  service: string;
+  provider: string;
+  amount: number;
+  note?: string | null;
+}
+
+interface ProjectDraw {
+  id: string;
+  projectId: number;
+  date: string;
+  description: string;
+  amount: number;
+  note?: string | null;
+}
+
+interface ProjectLoanEntry {
+  id: string;
+  projectId: number;
+  date: string;
+  payment: number;
+  interest: number;
+  principal: number;
+  balance?: number | null;
+  note?: string | null;
+}
+
+interface ProjectPropertyTax {
+  id: string;
+  projectId: number;
+  taxYear: number;
+  dueDate: string;
+  amount: number;
+  status: "due" | "paid" | "overdue";
+  paidDate?: string | null;
+  note?: string | null;
+}
+
+interface ProjectAcquisition {
+  id: string;
+  projectId: number;
+  purchasePrice: number;
+  acquisitionDraw: number;
+  earnestMoney: number;
+  closeDate?: string | null;
+  note?: string | null;
+}
+
+interface ProjectClosingCost {
+  id: string;
+  projectId: number;
+  side: "purchase" | "sale";
+  code?: string | null;
+  label: string;
+  amount: number;
+  paid: boolean;
+  paidDate?: string | null;
+  note?: string | null;
+}
+
+interface ProjectDebtService {
+  id: string;
+  projectId: number;
+  bank: string;
+  balance: number;
+  payment: number;
+  interestRate: number;
+  rateType: "fixed" | "variable";
+  rateAdjustDate?: string | null;
+  maturityDate?: string | null;
+  note?: string | null;
+}
+
+interface CostCategory {
+  id: string;
+  name: string;
+  code?: string | null;
+}
+
+interface ProjectCostOverride {
+  id: string;
+  projectId: number;
+  categoryId: string;
+  amount: number;
+  note?: string | null;
+}
+
+interface BreakdownPreset {
+  id: string;
+  name: string;
+  description?: string | null;
+  isDefault: boolean;
+}
+
+interface BreakdownPresetItem {
+  id: string;
+  presetId: string;
+  categoryId: string;
+  sortOrder: number;
+  include: boolean;
+}
+
+interface ProjectBreakdownPref {
+  id: string;
+  projectId: number;
+  presetId: string;
+}
+
+interface KpiPreset {
+  id: string;
+  name: string;
+  description?: string | null;
+  isDefault: boolean;
+}
+
+interface KpiPresetItem {
+  id: string;
+  presetId: string;
+  name: string;
+  formula: string;
+  resultType: "currency" | "percentage" | "number";
+  sortOrder: number;
+  enabled: boolean;
+  scaleMin?: number | null;
+  scaleMax?: number | null;
+  scaleInvert?: boolean;
+}
+
+interface ProjectKpiPref {
+  id: string;
+  projectId: number;
+  presetId: string;
+}
+
+interface ProjectKpiOverride {
+  id: string;
+  projectId: number;
+  itemId: string;
+  overrideValue: number;
+  note?: string | null;
+}
+
+interface NotificationItem {
+  id: string;
+  title: string;
+  detail: string;
+  dueDate: string;
+  daysUntil: number;
+  level: "info" | "warning" | "urgent";
+  target: {
+    mode: DashboardMode;
+    projectId?: number;
+    activityView?: "utilities" | "draws" | "loans" | "taxes";
+    rentPropertyId?: string;
+    rentUnitId?: string;
+  };
+}
 // ---------------------------------------------------------------------------
 // CUSTOM FORMULA TYPES
 // ---------------------------------------------------------------------------
@@ -304,6 +475,7 @@ interface LedgerFormState {
   type: "Income" | "Outcome";
   categoryId: string;
   subCategoryId: string;
+  accountId: string;
   amount: number;
   activityId: string;
 }
@@ -381,6 +553,14 @@ const IconCopy = () => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
     <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
     <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+  </svg>
+);
+
+const IconCreditCard = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <rect x="2" y="5" width="20" height="14" rx="2" ry="2" />
+    <path d="M2 10h20" />
+    <path d="M6 15h4" />
   </svg>
 );
 
@@ -502,9 +682,34 @@ const DEFAULT_BRRRR_FIELDS: Omit<ProjectDetail, 'id'>[] = [
   { variable: "Insurance Cost", value: "0" },
 ];
 
+const DEFAULT_CLOSING_COSTS = {
+  purchase: [
+    { code: "earnest_money", label: "Earnest Money Deposit" },
+    { code: "escrow_fee", label: "Escrow Fee" },
+    { code: "attorney_fee", label: "Attorney Fee" },
+    { code: "prorated_taxes", label: "Prorated Taxes (Purchase)" },
+    { code: "recording_fees", label: "Recording Fees" },
+    { code: "survey", label: "Survey" },
+    { code: "title_insurance", label: "Title Insurance" },
+    { code: "appraisal", label: "Appraisal" },
+    { code: "inspection", label: "Inspection" },
+  ],
+  sale: [
+    { code: "real_estate_commission", label: "Real Estate Commission" },
+    { code: "survey", label: "Survey" },
+    { code: "concessions", label: "Concessions" },
+    { code: "escrow_fee", label: "Escrow Fee" },
+    { code: "attorney_fee", label: "Attorney Fee" },
+    { code: "prorated_taxes", label: "Prorated Taxes (Sale)" },
+    { code: "seller_repairs", label: "Seller Repairs" },
+    { code: "staging", label: "Staging" },
+  ],
+} as const;
+
 type DashboardMode =
   | "EPS"
   | "Activities"
+  | "DebtService"
   | "Resources"
   | "Labor"
   | "RentRoll"
@@ -690,7 +895,8 @@ const formatCurrency = (value: number) => {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
-    maximumFractionDigits: 0,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   }).format(value);
 };
 
@@ -2331,6 +2537,7 @@ interface ProjectLedgerProps {
   activities: Activity[];
   transactions: Transaction[];
   categories: LedgerCategory[];
+  accounts: LedgerAccount[];
   onAddTransaction: (transaction: Omit<Transaction, "id">) => void;
   onUpdateTransaction: (transaction: Transaction) => void;
   onDeleteTransaction: (transactionId: string) => void;
@@ -2348,6 +2555,7 @@ const ProjectLedger: React.FC<ProjectLedgerProps> = ({
   activities,
   transactions,
   categories,
+  accounts,
   onAddTransaction,
   onUpdateTransaction,
   onDeleteTransaction,
@@ -2379,12 +2587,27 @@ const ProjectLedger: React.FC<ProjectLedgerProps> = ({
     return Array.from(options.values());
   }, [categories, transactions]);
 
+  const accountOptions = useMemo(() => {
+    const options = new Map<string, { id: string; name: string }>();
+    accounts.forEach((acct) => {
+      options.set(acct.name, { id: String(acct.id), name: acct.name });
+    });
+    transactions.forEach((t) => {
+      if (!t.accountName) return;
+      if (!options.has(t.accountName)) {
+        options.set(t.accountName, { id: `legacy-acct:${t.accountName}`, name: t.accountName });
+      }
+    });
+    return Array.from(options.values());
+  }, [accounts, transactions]);
+
   const [form, setForm] = useState<LedgerFormState>({
     date: new Date().toISOString().split("T")[0],
     description: "",
     type: "Outcome",
     categoryId: categoryOptions[0]?.id || "",
     subCategoryId: "",
+    accountId: accountOptions[0]?.id || "",
     amount: 0,
     activityId: "",
   });
@@ -2413,9 +2636,18 @@ const ProjectLedger: React.FC<ProjectLedgerProps> = ({
     [form.categoryId, getSubCategoryOptionsForCategory]
   );
   const [selectedTransactionId, setSelectedTransactionId] = useState<string | null>(null);
+  const [selectedTransactionIds, setSelectedTransactionIds] = useState<Set<string>>(new Set());
+  const [bulkCategoryId, setBulkCategoryId] = useState<string>("");
+  const [bulkSubCategoryId, setBulkSubCategoryId] = useState<string>("");
+  const [bulkAccountId, setBulkAccountId] = useState<string>("");
   const [isExpanded, setIsExpanded] = useState(false);
   const isInline = displayMode === "inline";
   const effectiveOpen = isInline ? true : isOpen;
+
+  const bulkSubCategoryOptions = useMemo(
+    () => getSubCategoryOptionsForCategory(bulkCategoryId),
+    [bulkCategoryId, getSubCategoryOptionsForCategory]
+  );
 
   useEffect(() => {
     if (!effectiveOpen) {
@@ -2442,6 +2674,27 @@ const ProjectLedger: React.FC<ProjectLedgerProps> = ({
     setForm((prev) => ({ ...prev, subCategoryId: "" }));
   }, [form.subCategoryId, subCategoryOptions]);
 
+  useEffect(() => {
+    if (!bulkSubCategoryId) return;
+    if (bulkSubCategoryOptions.some((opt) => opt.id === bulkSubCategoryId)) return;
+    setBulkSubCategoryId("");
+  }, [bulkSubCategoryId, bulkSubCategoryOptions]);
+
+  useEffect(() => {
+    if (selectedTransactionIds.size === 0) return;
+    const validIds = new Set(transactions.map((t) => t.id));
+    let changed = false;
+    const next = new Set<string>();
+    selectedTransactionIds.forEach((id) => {
+      if (validIds.has(id)) {
+        next.add(id);
+      } else {
+        changed = true;
+      }
+    });
+    if (changed) setSelectedTransactionIds(next);
+  }, [transactions, selectedTransactionIds]);
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     if (name === "amount") {
@@ -2454,6 +2707,24 @@ const ProjectLedger: React.FC<ProjectLedgerProps> = ({
       return;
     }
     setForm((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const resolveCategoryPayloadForIds = (categoryId: string, subCategoryId: string) => {
+    const selectedCategory = categoryOptions.find((opt) => opt.id === categoryId);
+    const resolvedCategoryName = selectedCategory?.name || categoryId.replace(/^legacy:/, "");
+    const resolvedCategoryId = selectedCategory && !selectedCategory.id.startsWith("legacy:") ? selectedCategory.id : undefined;
+
+    const bulkOptions = getSubCategoryOptionsForCategory(categoryId);
+    const selectedSubCategory = bulkOptions.find((opt) => opt.id === subCategoryId);
+    const resolvedSubCategoryName = selectedSubCategory?.name || subCategoryId.replace(/^legacy-sub:/, "");
+    const resolvedSubCategoryId = selectedSubCategory && !selectedSubCategory.id.startsWith("legacy-sub:") ? selectedSubCategory.id : undefined;
+
+    return {
+      categoryId: resolvedCategoryId,
+      category: resolvedCategoryName,
+      subCategoryId: resolvedSubCategoryId,
+      subCategory: resolvedSubCategoryId ? resolvedSubCategoryName : (subCategoryId ? resolvedSubCategoryName : undefined),
+    };
   };
 
   const resolveCategoryPayload = (categoryId: string, subCategoryId: string) => {
@@ -2473,11 +2744,23 @@ const ProjectLedger: React.FC<ProjectLedgerProps> = ({
     };
   };
 
+  const resolveAccountPayload = (accountId: string) => {
+    if (!accountId) return { accountId: undefined, accountName: undefined };
+    const selectedAccount = accountOptions.find((opt) => opt.id === accountId);
+    const resolvedName = selectedAccount?.name || accountId.replace(/^legacy-acct:/, "");
+    const resolvedId = selectedAccount && !selectedAccount.id.startsWith("legacy-acct:") ? selectedAccount.id : undefined;
+    return {
+      accountId: resolvedId,
+      accountName: resolvedName,
+    };
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const amountValue = toNumber(form.amount);
     if (!form.description || amountValue <= 0 || !form.date) return;
     const resolvedCategory = resolveCategoryPayload(form.categoryId, form.subCategoryId);
+    const resolvedAccount = resolveAccountPayload(form.accountId);
 
     if (selectedTransactionId) {
       onUpdateTransaction({
@@ -2485,6 +2768,7 @@ const ProjectLedger: React.FC<ProjectLedgerProps> = ({
         ...form,
         amount: amountValue,
         ...resolvedCategory,
+        ...resolvedAccount,
         activityId: form.activityId === 'project-level' ? undefined : form.activityId,
       });
     } else {
@@ -2492,6 +2776,7 @@ const ProjectLedger: React.FC<ProjectLedgerProps> = ({
         ...form,
         amount: amountValue,
         ...resolvedCategory,
+        ...resolvedAccount,
         activityId: form.activityId === 'project-level' ? undefined : form.activityId,
       });
     }
@@ -2522,6 +2807,52 @@ const ProjectLedger: React.FC<ProjectLedgerProps> = ({
     }
     return transaction.subCategory;
   };
+  const resolveAccountName = (transaction: Transaction) => {
+    if (transaction.accountId) {
+      const match = accounts.find((acct) => String(acct.id) === transaction.accountId);
+      if (match) return match.name;
+    }
+    return transaction.accountName || "";
+  };
+
+  const allTransactionsSelected = transactions.length > 0 && selectedTransactionIds.size === transactions.length;
+  const someTransactionsSelected = selectedTransactionIds.size > 0 && !allTransactionsSelected;
+  const toggleSelectAllTransactions = () => {
+    if (allTransactionsSelected) {
+      setSelectedTransactionIds(new Set());
+      return;
+    }
+    setSelectedTransactionIds(new Set(transactions.map((t) => t.id)));
+  };
+  const toggleTransactionSelection = (id: string) => {
+    setSelectedTransactionIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const handleBulkUpdate = () => {
+    if (selectedTransactionIds.size === 0) return;
+    if (!bulkCategoryId && !bulkAccountId) return;
+    const resolvedCategory = bulkCategoryId ? resolveCategoryPayloadForIds(bulkCategoryId, bulkSubCategoryId) : null;
+    const resolvedAccount = bulkAccountId ? resolveAccountPayload(bulkAccountId) : null;
+    selectedTransactionIds.forEach((id) => {
+      const transaction = transactions.find((t) => t.id === id);
+      if (!transaction) return;
+      onUpdateTransaction({
+        ...transaction,
+        amount: toNumber(transaction.amount),
+        ...(resolvedCategory || {}),
+        ...(resolvedAccount || {}),
+      });
+    });
+    setSelectedTransactionIds(new Set());
+  };
 
   const expandedTop = "top-[120px]";
   const expandedBodyHeight = "calc(100vh - 120px - 44px)"; // ribbon offset minus header height
@@ -2538,7 +2869,7 @@ const ProjectLedger: React.FC<ProjectLedgerProps> = ({
     opacity: effectiveOpen ? 1 : 0,
   };
   const bodyClasses = isInline
-    ? "flex flex-1 overflow-hidden bg-white dark:bg-slate-900"
+    ? "flex flex-1 min-h-0 overflow-hidden bg-white dark:bg-slate-900"
     : "flex overflow-hidden bg-white dark:bg-slate-900 transition-[max-height,height,opacity] duration-400 ease-in-out";
   const defaultRootClasses = isInline
     ? containerClasses
@@ -2580,9 +2911,24 @@ const ProjectLedger: React.FC<ProjectLedgerProps> = ({
           <table className="min-w-full border-collapse table-fixed">
             <thead className="sticky top-0 z-10">
               <tr className="bg-slate-100 text-xs font-medium uppercase tracking-wider text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                <th className="px-3 py-2 text-left w-10">
+                  <input
+                    type="checkbox"
+                    checked={allTransactionsSelected}
+                    ref={(el) => {
+                      if (el) {
+                        el.indeterminate = someTransactionsSelected;
+                      }
+                    }}
+                    onChange={toggleSelectAllTransactions}
+                    className="h-4 w-4 rounded border-slate-300 text-blue-600"
+                    aria-label="Select all transactions"
+                  />
+                </th>
                 <th className="px-3 py-2 text-left">Date</th>
                 <th className="px-3 py-2 text-left">Description</th>
                 <th className="px-3 py-2 text-left">Category</th>
+                <th className="px-3 py-2 text-left">Account</th>
                 <th className="px-3 py-2 text-left w-24">Activity</th>
                 <th className="px-3 py-2 text-right w-24">Amount</th>
                 <th className="px-3 py-2 text-right">Actions</th>
@@ -2591,8 +2937,17 @@ const ProjectLedger: React.FC<ProjectLedgerProps> = ({
             <tbody className="text-sm">
               {transactions.map((t) => (
                 <tr key={t.id} className="border-b border-slate-200 dark:border-slate-700">
+                  <td className="px-3 py-2">
+                    <input
+                      type="checkbox"
+                      checked={selectedTransactionIds.has(t.id)}
+                      onChange={() => toggleTransactionSelection(t.id)}
+                      className="h-4 w-4 rounded border-slate-300 text-blue-600"
+                      aria-label={`Select transaction ${t.id}`}
+                    />
+                  </td>
                   <td className="px-3 py-2 text-slate-600 dark:text-slate-400 whitespace-nowrap">
-                    {new Date(t.date).toLocaleDateString()}
+                    {toDateString(toDateMs(t.date))}
                   </td>
                   <td className="px-3 py-2 text-slate-800 dark:text-slate-200 truncate max-w-xs">{t.description}</td>
                   <td className="px-3 py-2 text-slate-600 dark:text-slate-400 truncate">
@@ -2604,6 +2959,9 @@ const ProjectLedger: React.FC<ProjectLedgerProps> = ({
                         </span>
                       )}
                     </div>
+                  </td>
+                  <td className="px-3 py-2 text-slate-600 dark:text-slate-400 truncate">
+                    {resolveAccountName(t) || "-"}
                   </td>
                   <td className="px-3 py-2 font-mono text-xs text-slate-500 whitespace-nowrap">
                     {t.activityId || "-"}
@@ -2624,12 +2982,17 @@ const ProjectLedger: React.FC<ProjectLedgerProps> = ({
                           t.subCategoryId ||
                           subCategoryOptionsForEdit.find((opt) => opt.name === t.subCategory)?.id ||
                           "";
+                        const accountId =
+                          t.accountId ||
+                          accountOptions.find((opt) => opt.name === t.accountName)?.id ||
+                          "";
                         setForm({
                           date: t.date,
                           description: t.description,
                           type: t.type,
                           categoryId,
                           subCategoryId,
+                          accountId,
                           amount: t.amount,
                           activityId: t.activityId || "",
                         });
@@ -2655,6 +3018,77 @@ const ProjectLedger: React.FC<ProjectLedgerProps> = ({
         </div>
 
         <div className="w-80 p-4 overflow-y-auto">
+          <div className="mb-4 rounded-md border border-slate-200 bg-slate-50/70 p-3 dark:border-slate-700 dark:bg-slate-800/40">
+            <div className="flex items-center justify-between">
+              <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-200">Bulk Update</h4>
+              <span className="text-xs text-slate-500 dark:text-slate-400">
+                {selectedTransactionIds.size} selected
+              </span>
+            </div>
+            {selectedTransactionIds.size === 0 ? (
+              <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">Select transactions to recategorize.</p>
+            ) : (
+              <div className="mt-3 space-y-2">
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Category</label>
+                  <select
+                    value={bulkCategoryId}
+                    onChange={(e) => {
+                      setBulkCategoryId(e.target.value);
+                      setBulkSubCategoryId("");
+                    }}
+                    className="w-full rounded border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-slate-50"
+                  >
+                    <option value="">Select category</option>
+                    {categoryOptions.map((opt) => (
+                      <option key={opt.id} value={opt.id}>{opt.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Subcategory</label>
+                  <select
+                    value={bulkSubCategoryId}
+                    onChange={(e) => setBulkSubCategoryId(e.target.value)}
+                    disabled={!bulkCategoryId}
+                    className="w-full rounded border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-slate-50 disabled:opacity-60"
+                  >
+                    <option value="">No subcategory</option>
+                    {bulkSubCategoryOptions.map((opt) => (
+                      <option key={opt.id} value={opt.id}>{opt.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Account</label>
+                  <select
+                    value={bulkAccountId}
+                    onChange={(e) => setBulkAccountId(e.target.value)}
+                    className="w-full rounded border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-slate-50"
+                  >
+                    <option value="">Select account</option>
+                    {accountOptions.map((opt) => (
+                      <option key={opt.id} value={opt.id}>{opt.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleBulkUpdate}
+                    className="px-3 py-1.5 text-xs rounded-md bg-blue-600 text-white hover:bg-blue-700"
+                  >
+                    Apply to Selected
+                  </button>
+                  <button
+                    onClick={() => setSelectedTransactionIds(new Set())}
+                    className="px-3 py-1.5 text-xs rounded-md border border-slate-300 text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                  >
+                    Clear Selection
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
           <h4 className="text-sm font-semibold mb-3 text-slate-800 dark:text-slate-200">
             Add Transaction
           </h4>
@@ -2730,6 +3164,19 @@ const ProjectLedger: React.FC<ProjectLedgerProps> = ({
               >
                 <option value="">-- None --</option>
                 {subCategoryOptions.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Account</label>
+              <select
+                name="accountId"
+                value={form.accountId}
+                onChange={handleChange}
+                className="w-full rounded border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-50"
+              >
+                <option value="">-- None --</option>
+                {accountOptions.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             </div>
 
@@ -3832,6 +4279,17 @@ const TopBar: React.FC<{
   onToggleDetailsPanel?: () => void;
   currentUser?: { name: string; email: string; role: string; avatarUrl?: string } | null;
   activeUsers?: ActiveUser[];
+  notifications?: NotificationItem[];
+  onNotificationClick?: (note: NotificationItem) => void;
+  onNotificationDismiss?: (id: string) => void;
+  onNotificationRead?: (id: string) => void;
+  onNotificationUnread?: (id: string) => void;
+  onNotificationReadAll?: () => void;
+  readNotificationIds?: Set<string>;
+  toastItems?: NotificationItem[];
+  closingToastIds?: Set<string>;
+  onToastClick?: (note: NotificationItem) => void;
+  onToastDismiss?: (id: string) => void;
   onLogout?: () => void;
   onOpenCommit?: () => void;
   commitDraftCount?: number;
@@ -3844,11 +4302,24 @@ const TopBar: React.FC<{
   onToggleDetailsPanel,
   currentUser,
   activeUsers = [],
+  notifications = [],
+  onNotificationClick,
+  onNotificationDismiss,
+  onNotificationRead,
+  onNotificationUnread,
+  onNotificationReadAll,
+  readNotificationIds = new Set(),
+  toastItems = [],
+  closingToastIds = new Set(),
+  onToastClick,
+  onToastDismiss,
   onLogout,
   onOpenCommit,
   commitDraftCount = 0,
 }) => {
   const { theme, setTheme } = useTheme();
+  const [notifOpen, setNotifOpen] = useState(false);
+  const notifRef = useRef<HTMLDivElement | null>(null);
   const userInitials = (name?: string) =>
     (name || "User")
       .trim()
@@ -3859,8 +4330,21 @@ const TopBar: React.FC<{
       .toUpperCase();
   const presenceStack = activeUsers.slice(0, 6);
   const extraCount = activeUsers.length - presenceStack.length;
+  const notifCount = notifications.filter((note) => !readNotificationIds.has(note.id)).length;
+
+  useEffect(() => {
+    if (!notifOpen) return;
+    const handleClickOutside = (event: MouseEvent) => {
+      if (notifRef.current && !notifRef.current.contains(event.target as Node)) {
+        setNotifOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [notifOpen]);
 
   return (
+    <>
     <header className="flex w-full items-center justify-between gap-4 border-b border-slate-300 bg-white px-4 py-2 dark:border-slate-800 dark:bg-slate-950 flex-shrink-0">
       <div className="flex items-center gap-4">
         <nav className="flex items-center gap-1 text-sm font-medium">
@@ -3936,6 +4420,16 @@ const TopBar: React.FC<{
             Bank Statements
           </button>
           <button
+            onClick={() => onModeChange && onModeChange("DebtService")}
+            className={`rounded px-3 py-1 transition-colors ${
+              currentMode === "DebtService"
+                ? "bg-blue-600 text-white"
+                : "text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
+            }`}
+          >
+            Debt Service
+          </button>
+          <button
             onClick={() => onModeChange && onModeChange("Account")}
             className={`rounded px-3 py-1 transition-colors ${
               currentMode === "Account"
@@ -3982,6 +4476,101 @@ const TopBar: React.FC<{
       </div>
 
       <div className="flex items-center gap-3">
+        <div ref={notifRef} className="relative">
+          <button
+            onClick={() => setNotifOpen((prev) => !prev)}
+            className="relative p-2 rounded-full text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+            title="Notifications"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 7h18s-3 0-3-7" />
+              <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+            </svg>
+            {notifCount > 0 && (
+              <span className="absolute -top-1 -right-1 min-w-[18px] h-4 px-1 rounded-full bg-red-600 text-white text-[10px] flex items-center justify-center">
+                {notifCount > 9 ? "9+" : notifCount}
+              </span>
+            )}
+          </button>
+          {notifOpen && (
+            <div className="absolute right-0 mt-2 w-80 rounded-lg border border-slate-200 bg-white shadow-lg dark:border-slate-800 dark:bg-slate-900 z-30">
+              <div className="px-3 py-2 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                  Notifications
+                </div>
+                {onNotificationReadAll && (
+                  <button
+                    onClick={() => onNotificationReadAll()}
+                    className="text-[11px] px-2 py-1 rounded border border-slate-200 text-slate-500 hover:text-slate-700 dark:border-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+                  >
+                    Mark All Read
+                  </button>
+                )}
+              </div>
+              <div className="max-h-80 overflow-y-auto">
+                {notifications.length === 0 ? (
+                  <div className="px-4 py-6 text-sm text-slate-500 dark:text-slate-400 text-center">No upcoming reminders.</div>
+                ) : (
+                  notifications.map((note) => {
+                    const isRead = readNotificationIds.has(note.id);
+                    return (
+                    <div
+                      key={note.id}
+                      className="px-3 py-2 border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/60"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <button
+                          onClick={() => {
+                            onNotificationClick && onNotificationClick(note);
+                            setNotifOpen(false);
+                          }}
+                          className="text-left flex-1"
+                        >
+                          <div className={`text-sm font-semibold ${isRead ? "text-slate-400 dark:text-slate-500" : "text-slate-800 dark:text-slate-100"}`}>{note.title}</div>
+                          <div className={`text-xs ${isRead ? "text-slate-400 dark:text-slate-500" : "text-slate-500 dark:text-slate-400"}`}>{note.detail}</div>
+                          <div className={`mt-1 text-[11px] ${isRead ? "text-slate-400 dark:text-slate-500" : note.level === "urgent" ? "text-red-600 dark:text-red-400" : note.level === "warning" ? "text-amber-600 dark:text-amber-400" : "text-slate-500 dark:text-slate-400"}`}>
+                            {note.daysUntil === 0 ? "Due today" : `Due in ${note.daysUntil} days`} ? {note.dueDate}
+                          </div>
+                        </button>
+                        <div className="flex items-center gap-2">
+                          {(onNotificationRead || onNotificationUnread) && (
+                            <button
+                              onClick={() => {
+                                if (isRead) {
+                                  onNotificationUnread && onNotificationUnread(note.id);
+                                } else {
+                                  onNotificationRead && onNotificationRead(note.id);
+                                }
+                              }}
+                              className={`text-[11px] px-2 py-1 rounded border ${
+                                isRead
+                                  ? "border-blue-200 text-blue-600 hover:text-blue-700 dark:border-blue-900/60 dark:text-blue-300"
+                                  : "border-slate-200 text-slate-500 hover:text-slate-700 dark:border-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+                              }`}
+                              title={isRead ? "Mark as unread" : "Mark as read"}
+                            >
+                              {isRead ? "Unread" : "Read"}
+                            </button>
+                          )}
+                          <button
+                            onClick={() => onNotificationDismiss && onNotificationDismiss(note.id)}
+                            className="text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300"
+                            title="Dismiss"
+                          >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M18 6 6 18M6 6l12 12" />
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                  })
+                )}
+              </div>
+            </div>
+          )}
+        </div>
         {presenceStack.length > 0 && (
           <div className="flex items-center">
             {presenceStack.map((user, idx) => (
@@ -4063,6 +4652,46 @@ const TopBar: React.FC<{
         </button>
       </div>
     </header>
+    {toastItems.length > 0 && (
+      <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 w-80">
+        {toastItems.map((note) => (
+          <div
+            key={note.id}
+            className={`relative overflow-hidden rounded-lg border shadow-lg backdrop-blur-sm transition-all duration-200 ${closingToastIds.has(note.id) ? "toast-exit" : "toast-enter"} ${
+              note.level === "urgent"
+                ? "border-red-200 bg-red-50/80 dark:border-red-800/60 dark:bg-red-950/50"
+                : note.level === "warning"
+                  ? "border-amber-200 bg-amber-50/80 dark:border-amber-800/60 dark:bg-amber-950/50"
+                  : "border-blue-200 bg-blue-50/80 dark:border-blue-900/60 dark:bg-blue-950/50"
+            }`}
+          >
+            <div className="flex items-start gap-2 p-3">
+              <button
+                onClick={() => onToastClick && onToastClick(note)}
+                className="text-left flex-1"
+              >
+                <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">{note.title}</div>
+                <div className="text-xs text-slate-500 dark:text-slate-400">{note.detail}</div>
+                <div className={`mt-1 text-[11px] ${note.level === "urgent" ? "text-red-600 dark:text-red-400" : note.level === "warning" ? "text-amber-600 dark:text-amber-400" : "text-slate-500 dark:text-slate-400"}`}>
+                  {note.daysUntil === 0 ? "Due today" : `Due in ${note.daysUntil} days`} ? {note.dueDate}
+                </div>
+              </button>
+              <button
+                onClick={() => onToastDismiss && onToastDismiss(note.id)}
+                className="text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300"
+                title="Dismiss"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M18 6 6 18M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="toast-progress h-0.5 bg-white/80" />
+          </div>
+        ))}
+      </div>
+    )}
+    </>
   );
 };
 
@@ -4751,9 +5380,11 @@ const ActionRibbon: React.FC<{
   onCreateFormula: () => void;
   onAddPresetToProject?: () => void;
   onManageLedgerCategories?: () => void;
+  onManageAccounts?: () => void;
   taxRateCount: number;
   presetCount: number;
   ledgerCategoryCount?: number;
+  accountCount?: number;
   hasActiveProject: boolean;
 }> = ({
   onOpenTaxRates,
@@ -4761,9 +5392,11 @@ const ActionRibbon: React.FC<{
   onCreateFormula,
   onAddPresetToProject,
   onManageLedgerCategories,
+  onManageAccounts,
   taxRateCount,
   presetCount,
   ledgerCategoryCount,
+  accountCount,
   hasActiveProject,
 }) => {
   return (
@@ -4832,6 +5465,24 @@ const ActionRibbon: React.FC<{
           <button
             onClick={onManageLedgerCategories}
             className="ml-2 px-2 py-1 text-xs rounded-md bg-emerald-600 text-white hover:bg-emerald-700"
+          >
+            Manage
+          </button>
+        </div>
+      )}
+
+      {onManageAccounts && (
+        <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm">
+          <IconCreditCard />
+          <div className="flex flex-col leading-tight">
+            <span className="text-xs text-slate-500 dark:text-slate-400">Accounts</span>
+            <span className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+              {accountCount ?? 0} saved
+            </span>
+          </div>
+          <button
+            onClick={onManageAccounts}
+            className="ml-2 px-2 py-1 text-xs rounded-md bg-indigo-600 text-white hover:bg-indigo-700"
           >
             Manage
           </button>
@@ -4956,6 +5607,170 @@ const LedgerCategoriesDialog: React.FC<{
 };
 
 // ---------------------------------------------------------------------------
+// LEDGER ACCOUNTS MANAGER
+// ---------------------------------------------------------------------------
+const LedgerAccountsDialog: React.FC<{
+  open: boolean;
+  onClose: () => void;
+  accounts: LedgerAccount[];
+  onSave: (payload: { id?: string | null; name: string; type: LedgerAccount["type"]; institution?: string; last4?: string }) => void;
+  onDelete: (id: string) => void;
+}> = ({ open, onClose, accounts, onSave, onDelete }) => {
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [name, setName] = useState("");
+  const [type, setType] = useState<LedgerAccount["type"]>("bank");
+  const [institution, setInstitution] = useState("");
+  const [last4, setLast4] = useState("");
+
+  useEffect(() => {
+    if (!open) {
+      setEditingId(null);
+      setName("");
+      setType("bank");
+      setInstitution("");
+      setLast4("");
+    }
+  }, [open]);
+
+  if (!open) return null;
+
+  const handleSubmit = () => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    onSave({
+      id: editingId,
+      name: trimmed,
+      type,
+      institution: institution.trim(),
+      last4: last4.trim(),
+    });
+    setEditingId(null);
+    setName("");
+    setType("bank");
+    setInstitution("");
+    setLast4("");
+  };
+
+  const handleEdit = (acct: LedgerAccount) => {
+    setEditingId(acct.id);
+    setName(acct.name);
+    setType(acct.type || "bank");
+    setInstitution(acct.institution || "");
+    setLast4(acct.last4 || "");
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+      <div className="w-full max-w-3xl rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-xl">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-700">
+          <div>
+            <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100">Accounts (Global)</h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400">Manage bank accounts, cards, and lines of credit.</p>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+          >
+            <IconX />
+          </button>
+        </div>
+
+        <div className="px-6 py-4 space-y-3">
+          <div className="grid grid-cols-1 md:grid-cols-6 gap-2">
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Account name"
+              className="rounded-md border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-900 md:col-span-2"
+            />
+            <select
+              value={type}
+              onChange={(e) => setType(e.target.value as LedgerAccount["type"])}
+              className="rounded-md border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-900"
+            >
+              <option value="bank">Bank</option>
+              <option value="credit">Credit Card</option>
+              <option value="loc">Line of Credit</option>
+              <option value="other">Other</option>
+            </select>
+            <input
+              type="text"
+              value={institution}
+              onChange={(e) => setInstitution(e.target.value)}
+              placeholder="Institution"
+              className="rounded-md border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-900 md:col-span-2"
+            />
+            <input
+              type="text"
+              value={last4}
+              onChange={(e) => setLast4(e.target.value)}
+              placeholder="Last 4"
+              className="rounded-md border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-900"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleSubmit}
+              className="px-3 py-1.5 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700"
+            >
+              {editingId ? "Update Account" : "Add Account"}
+            </button>
+            {editingId && (
+              <button
+                onClick={() => {
+                  setEditingId(null);
+                  setName("");
+                  setType("bank");
+                  setInstitution("");
+                  setLast4("");
+                }}
+                className="px-3 py-1.5 text-sm rounded-md border border-slate-300 text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+              >
+                Cancel
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="px-6 pb-6 max-h-[50vh] overflow-y-auto">
+          {accounts.length === 0 ? (
+            <div className="text-sm text-slate-500 dark:text-slate-400">No accounts yet.</div>
+          ) : (
+            <div className="space-y-2">
+              {accounts.map((acct) => (
+                <div key={acct.id} className="flex items-center justify-between rounded border border-slate-200 dark:border-slate-700 px-3 py-2 text-sm">
+                  <div>
+                    <div className="font-medium text-slate-700 dark:text-slate-200">{acct.name}</div>
+                    <div className="text-xs text-slate-500 dark:text-slate-400">
+                      {acct.type}{acct.institution ? ` · ${acct.institution}` : ""}{acct.last4 ? ` · ${acct.last4}` : ""}
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleEdit(acct)}
+                      className="px-2 py-1 text-xs rounded bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/40 dark:text-blue-200"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => onDelete(acct.id)}
+                      className="px-2 py-1 text-xs rounded bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/40 dark:text-red-300"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------------------
 // EPS EXPLORER NODE
 // ---------------------------------------------------------------------------
 interface EpsNodeProps {
@@ -4983,7 +5798,8 @@ const EpsNodeComponent: React.FC<EpsNodeProps> = ({
   const hasChildren = node.children && node.children.length > 0;
   const isExpanded = hasChildren && expanded.has(node.id);
   const paddingLeft = `${depth * 15}px`;
-  const meta = node.type === "project" ? pipelineMetaMap?.[node.id] : undefined;
+  const projectKey = node.projectId ?? node.id;
+  const meta = node.type === "project" ? pipelineMetaMap?.[projectKey] : undefined;
   const isNotAcquired = meta?.status === "under_contract";
 
   const handleContextMenu = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
@@ -5066,6 +5882,22 @@ export default function DashboardPage() {
   const [selectedNodeId, setSelectedNodeId] = useState<number | null>(null);
   const [activities, setActivities] = useState<Record<number, Activity[]>>({});
   const [transactions, setTransactions] = useState<Record<number, Transaction[]>>({});
+  const [projectUtilities, setProjectUtilities] = useState<Record<number, ProjectUtility[]>>({});
+  const [projectDraws, setProjectDraws] = useState<Record<number, ProjectDraw[]>>({});
+  const [projectLoans, setProjectLoans] = useState<Record<number, ProjectLoanEntry[]>>({});
+  const [projectPropertyTaxes, setProjectPropertyTaxes] = useState<Record<number, ProjectPropertyTax[]>>({});
+  const [projectAcquisitions, setProjectAcquisitions] = useState<Record<number, ProjectAcquisition>>({});
+  const [projectClosingCosts, setProjectClosingCosts] = useState<Record<number, ProjectClosingCost[]>>({});
+  const [projectDebtService, setProjectDebtService] = useState<Record<number, ProjectDebtService[]>>({});
+  const [costCategories, setCostCategories] = useState<CostCategory[]>([]);
+  const [projectCostOverrides, setProjectCostOverrides] = useState<Record<number, ProjectCostOverride[]>>({});
+  const [breakdownPresets, setBreakdownPresets] = useState<BreakdownPreset[]>([]);
+  const [breakdownPresetItems, setBreakdownPresetItems] = useState<Record<string, BreakdownPresetItem[]>>({});
+  const [projectBreakdownPrefs, setProjectBreakdownPrefs] = useState<Record<number, ProjectBreakdownPref>>({});
+  const [kpiPresets, setKpiPresets] = useState<KpiPreset[]>([]);
+  const [kpiPresetItems, setKpiPresetItems] = useState<Record<string, KpiPresetItem[]>>({});
+  const [projectKpiPrefs, setProjectKpiPrefs] = useState<Record<number, ProjectKpiPref>>({});
+  const [projectKpiOverrides, setProjectKpiOverrides] = useState<Record<number, ProjectKpiOverride[]>>({});
   const [projectDetails, setProjectDetails] = useState<Record<number, ProjectDetail[]>>({});
   const [customFormulas, setCustomFormulas] = useState<Record<number, CustomFormula[]>>({});
   const [formulaPresets, setFormulaPresets] = useState<CustomFormula[]>([]);
@@ -5157,6 +5989,149 @@ export default function DashboardPage() {
   const [rentExpenseCategories, setRentExpenseCategories] = useState<RentExpenseCategory[]>([]);
   const [rentRollDocLabel, setRentRollDocLabel] = useState("");
   const [rentRollExpenseForm, setRentRollExpenseForm] = useState({ date: toDateString(getCentralTodayMs()), categoryId: "", subCategoryId: "", description: "", amount: "" });
+  const [utilityForm, setUtilityForm] = useState({ date: toDateString(getCentralTodayMs()), service: "", provider: "", amount: "", note: "" });
+  const [editingUtilityId, setEditingUtilityId] = useState<string | null>(null);
+  const [drawForm, setDrawForm] = useState({ date: toDateString(getCentralTodayMs()), description: "", amount: "", note: "" });
+  const [editingDrawId, setEditingDrawId] = useState<string | null>(null);
+  const [loanForm, setLoanForm] = useState({ date: toDateString(getCentralTodayMs()), payment: "", interest: "", principal: "", balance: "", note: "" });
+  const [editingLoanId, setEditingLoanId] = useState<string | null>(null);
+  const [taxForm, setTaxForm] = useState<{ taxYear: string; dueDate: string; amount: string; status: ProjectPropertyTax["status"]; paidDate: string; note: string }>({
+    taxYear: String(new Date().getUTCFullYear()),
+    dueDate: toDateString(getCentralTodayMs()),
+    amount: "",
+    status: "due",
+    paidDate: "",
+    note: "",
+  });
+  const [editingTaxId, setEditingTaxId] = useState<string | null>(null);
+  const [acquisitionForm, setAcquisitionForm] = useState({
+    purchasePrice: "",
+    acquisitionDraw: "",
+    earnestMoney: "",
+    closeDate: "",
+    note: "",
+  });
+  const [editingAcquisitionId, setEditingAcquisitionId] = useState<string | null>(null);
+  const [closingCostForm, setClosingCostForm] = useState({
+    side: "purchase" as ProjectClosingCost["side"],
+    label: "",
+    amount: "",
+    paid: false,
+    paidDate: "",
+    note: "",
+  });
+  const [editingClosingCostId, setEditingClosingCostId] = useState<string | null>(null);
+  const [debtServiceFilterProjectId, setDebtServiceFilterProjectId] = useState("all");
+  const [debtServiceForm, setDebtServiceForm] = useState({
+    projectId: "",
+    bank: "",
+    balance: "",
+    payment: "",
+    interestRate: "",
+    rateType: "fixed" as ProjectDebtService["rateType"],
+    rateAdjustDate: "",
+    maturityDate: "",
+    note: "",
+  });
+  const [editingDebtServiceId, setEditingDebtServiceId] = useState<string | null>(null);
+  const [costCategoryForm, setCostCategoryForm] = useState({ name: "", code: "" });
+  const [editingCostCategoryId, setEditingCostCategoryId] = useState<string | null>(null);
+  const [showCostCategoryManager, setShowCostCategoryManager] = useState(false);
+  const [costOverrideDrafts, setCostOverrideDrafts] = useState<Record<string, { amount: string; note: string }>>({});
+  const [breakdownPresetForm, setBreakdownPresetForm] = useState({ name: "", description: "", isDefault: false });
+  const [editingBreakdownPresetId, setEditingBreakdownPresetId] = useState<string | null>(null);
+  const [showBreakdownPresetManager, setShowBreakdownPresetManager] = useState(false);
+  const [activeBreakdownPresetId, setActiveBreakdownPresetId] = useState<string | null>(null);
+  const [breakdownItemDrafts, setBreakdownItemDrafts] = useState<Record<string, { include: boolean; sortOrder: string }>>({});
+  const [kpiPresetForm, setKpiPresetForm] = useState({ name: "", description: "", isDefault: false });
+  const [editingKpiPresetId, setEditingKpiPresetId] = useState<string | null>(null);
+  const [showKpiPresetManager, setShowKpiPresetManager] = useState(false);
+  const [activeKpiPresetId, setActiveKpiPresetId] = useState<string | null>(null);
+  const [kpiItemForm, setKpiItemForm] = useState({
+    presetId: "",
+    name: "",
+    formula: "",
+    resultType: "currency" as KpiPresetItem["resultType"],
+    sortOrder: "",
+    enabled: true,
+    scaleMin: "",
+    scaleMax: "",
+    scaleInvert: false,
+  });
+  const [editingKpiItemId, setEditingKpiItemId] = useState<string | null>(null);
+  const [kpiOverrideDrafts, setKpiOverrideDrafts] = useState<Record<string, { value: string; note: string }>>({});
+  const kpiFormulaRef = useRef<HTMLInputElement | null>(null);
+  const kpiFormulaSelectionRef = useRef<{ start: number; end: number } | null>(null);
+  const [dismissedNotifications, setDismissedNotifications] = useState<Set<string>>(new Set());
+  const [readNotifications, setReadNotifications] = useState<Set<string>>(new Set());
+  const [toastItems, setToastItems] = useState<NotificationItem[]>([]);
+  const [hiddenToastIds, setHiddenToastIds] = useState<Set<string>>(new Set());
+  const [closingToastIds, setClosingToastIds] = useState<Set<string>>(new Set());
+  const toastTimersRef = useRef<Record<string, number>>({});
+  const toastEnqueueTimerRef = useRef<number | null>(null);
+  const dismissToast = useCallback((id: string) => {
+    setClosingToastIds((prev) => {
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
+    setHiddenToastIds((prev) => {
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
+    const timer = toastTimersRef.current[id];
+    if (timer) {
+      clearTimeout(timer);
+      delete toastTimersRef.current[id];
+    }
+    if (typeof window !== "undefined") {
+      window.setTimeout(() => {
+        setClosingToastIds((prev) => {
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        });
+        setToastItems((prev) => prev.filter((t) => t.id !== id));
+      }, 250);
+    }
+  }, []);
+  const handleNotificationDismiss = useCallback((id: string) => {
+    setDismissedNotifications((prev) => {
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
+    dismissToast(id);
+  }, [dismissToast]);
+  const handleNotificationRead = useCallback((id: string) => {
+    setReadNotifications((prev) => {
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
+    dismissToast(id);
+  }, [dismissToast]);
+  const handleNotificationUnread = useCallback((id: string) => {
+    setReadNotifications((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+    setHiddenToastIds((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+    setClosingToastIds((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  }, []);
   const [expenseCategoryModalOpen, setExpenseCategoryModalOpen] = useState(false);
   const [expenseCategoryForm, setExpenseCategoryForm] = useState<{ id: string; name: string; parentId: string }>({ id: "", name: "", parentId: "" });
   const [deleteActivityModal, setDeleteActivityModal] = useState<{ open: boolean; activity: Activity | null; targetId: string }>({
@@ -5450,6 +6425,8 @@ export default function DashboardPage() {
           category: t.category || "",
           subCategoryId: t.subCategoryId ? String(t.subCategoryId) : (t.sub_category_id ? String(t.sub_category_id) : undefined),
           subCategory: t.subCategory || undefined,
+          accountId: t.accountId ? String(t.accountId) : (t.account_id ? String(t.account_id) : undefined),
+          accountName: t.accountName || t.account_name || undefined,
           amount: Number(t.amount || 0),
           activityId: t.activityId ? String(t.activityId) : undefined,
         };
@@ -5459,6 +6436,409 @@ export default function DashboardPage() {
       return grouped;
     } catch (err) {
       console.error("Failed to load transactions", err);
+      return {};
+    }
+  }, []);
+
+  const loadUtilities = useCallback(async () => {
+    try {
+      const res = await fetch("/api/utilities");
+      if (!res.ok) return {};
+      const data = await res.json();
+      const grouped: Record<number, ProjectUtility[]> = {};
+      (data.utilities || []).forEach((u: any) => {
+        const projectId = u.projectId ? Number(u.projectId) : (u.project_id ? Number(u.project_id) : null);
+        if (!projectId) return;
+        const mapped: ProjectUtility = {
+          id: String(u.id),
+          projectId,
+          date: u.date ? toDateString(toDateMs(u.date)) : toDateString(getCentralTodayMs()),
+          service: u.service || "",
+          provider: u.provider || "",
+          amount: Number(u.amount || 0),
+          note: u.note || "",
+        };
+        grouped[projectId] = [...(grouped[projectId] || []), mapped];
+      });
+      setProjectUtilities(grouped);
+      return grouped;
+    } catch (err) {
+      console.error("Failed to load utilities", err);
+      return {};
+    }
+  }, []);
+
+  const loadDraws = useCallback(async () => {
+    try {
+      const res = await fetch("/api/draws");
+      if (!res.ok) return {};
+      const data = await res.json();
+      const grouped: Record<number, ProjectDraw[]> = {};
+      (data.draws || []).forEach((d: any) => {
+        const projectId = d.projectId ? Number(d.projectId) : (d.project_id ? Number(d.project_id) : null);
+        if (!projectId) return;
+        const mapped: ProjectDraw = {
+          id: String(d.id),
+          projectId,
+          date: d.date ? toDateString(toDateMs(d.date)) : toDateString(getCentralTodayMs()),
+          description: d.description || "",
+          amount: Number(d.amount || 0),
+          note: d.note || "",
+        };
+        grouped[projectId] = [...(grouped[projectId] || []), mapped];
+      });
+      setProjectDraws(grouped);
+      return grouped;
+    } catch (err) {
+      console.error("Failed to load draws", err);
+      return {};
+    }
+  }, []);
+
+  const loadLoans = useCallback(async () => {
+    try {
+      const res = await fetch("/api/loans");
+      if (!res.ok) return {};
+      const data = await res.json();
+      const grouped: Record<number, ProjectLoanEntry[]> = {};
+      (data.loans || []).forEach((l: any) => {
+        const projectId = l.projectId ? Number(l.projectId) : (l.project_id ? Number(l.project_id) : null);
+        if (!projectId) return;
+        const mapped: ProjectLoanEntry = {
+          id: String(l.id),
+          projectId,
+          date: l.date ? toDateString(toDateMs(l.date)) : toDateString(getCentralTodayMs()),
+          payment: Number(l.payment || 0),
+          interest: Number(l.interest || 0),
+          principal: Number(l.principal || 0),
+          balance: l.balance !== null && l.balance !== undefined ? Number(l.balance) : null,
+          note: l.note || "",
+        };
+        grouped[projectId] = [...(grouped[projectId] || []), mapped];
+      });
+      setProjectLoans(grouped);
+      return grouped;
+    } catch (err) {
+      console.error("Failed to load loans", err);
+      return {};
+    }
+  }, []);
+
+  const loadPropertyTaxes = useCallback(async () => {
+    try {
+      const res = await fetch("/api/property-taxes");
+      if (!res.ok) return {};
+      const data = await res.json();
+      const grouped: Record<number, ProjectPropertyTax[]> = {};
+      (data.taxes || []).forEach((t: any) => {
+        const projectId = t.projectId ? Number(t.projectId) : (t.project_id ? Number(t.project_id) : null);
+        if (!projectId) return;
+        const mapped: ProjectPropertyTax = {
+          id: String(t.id),
+          projectId,
+          taxYear: Number(t.taxYear ?? t.tax_year ?? new Date().getUTCFullYear()),
+          dueDate: t.dueDate ? toDateString(toDateMs(t.dueDate)) : (t.due_date ? toDateString(toDateMs(t.due_date)) : toDateString(getCentralTodayMs())),
+          amount: Number(t.amount || 0),
+          status: (String(t.status || "due").toLowerCase() as ProjectPropertyTax["status"]) || "due",
+          paidDate: t.paidDate ? toDateString(toDateMs(t.paidDate)) : (t.paid_date ? toDateString(toDateMs(t.paid_date)) : null),
+          note: t.note || "",
+        };
+        grouped[projectId] = [...(grouped[projectId] || []), mapped];
+      });
+      setProjectPropertyTaxes(grouped);
+      return grouped;
+    } catch (err) {
+      console.error("Failed to load property taxes", err);
+      return {};
+    }
+  }, []);
+
+  const loadAcquisitions = useCallback(async () => {
+    try {
+      const res = await fetch("/api/acquisitions");
+      if (!res.ok) return {};
+      const data = await res.json();
+      const grouped: Record<number, ProjectAcquisition> = {};
+      (data.acquisitions || []).forEach((a: any) => {
+        const projectId = a.projectId ? Number(a.projectId) : (a.project_id ? Number(a.project_id) : null);
+        if (!projectId) return;
+        const mapped: ProjectAcquisition = {
+          id: String(a.id),
+          projectId,
+          purchasePrice: Number(a.purchasePrice ?? a.purchase_price ?? 0),
+          acquisitionDraw: Number(a.acquisitionDraw ?? a.acquisition_draw ?? 0),
+          earnestMoney: Number(a.earnestMoney ?? a.earnest_money ?? 0),
+          closeDate: a.closeDate
+            ? toDateString(toDateMs(a.closeDate))
+            : (a.close_date ? toDateString(toDateMs(a.close_date)) : null),
+          note: a.note || "",
+        };
+        grouped[projectId] = mapped;
+      });
+      setProjectAcquisitions(grouped);
+      return grouped;
+    } catch (err) {
+      console.error("Failed to load acquisitions", err);
+      return {};
+    }
+  }, []);
+
+  const loadClosingCosts = useCallback(async () => {
+    try {
+      const res = await fetch("/api/closing-costs");
+      if (!res.ok) return {};
+      const data = await res.json();
+      const grouped: Record<number, ProjectClosingCost[]> = {};
+      (data.closingCosts || []).forEach((c: any) => {
+        const projectId = c.projectId ? Number(c.projectId) : (c.project_id ? Number(c.project_id) : null);
+        if (!projectId) return;
+        const side = String(c.side || "purchase").toLowerCase() === "sale" ? "sale" : "purchase";
+        const mapped: ProjectClosingCost = {
+          id: String(c.id),
+          projectId,
+          side,
+          code: c.code || null,
+          label: c.label || "",
+          amount: Number(c.amount || 0),
+          paid: Boolean(c.paid),
+          paidDate: c.paidDate
+            ? toDateString(toDateMs(c.paidDate))
+            : (c.paid_date ? toDateString(toDateMs(c.paid_date)) : null),
+          note: c.note || "",
+        };
+        grouped[projectId] = [...(grouped[projectId] || []), mapped];
+      });
+      setProjectClosingCosts(grouped);
+      return grouped;
+    } catch (err) {
+      console.error("Failed to load closing costs", err);
+      return {};
+    }
+  }, []);
+
+  const loadDebtService = useCallback(async () => {
+    try {
+      const res = await fetch("/api/debt-service");
+      if (!res.ok) return {};
+      const data = await res.json();
+      const grouped: Record<number, ProjectDebtService[]> = {};
+      (data.debtService || []).forEach((d: any) => {
+        const projectId = d.projectId ? Number(d.projectId) : (d.project_id ? Number(d.project_id) : null);
+        if (!projectId) return;
+        const rateType = String(d.rateType ?? d.rate_type ?? "fixed").toLowerCase() === "variable" ? "variable" : "fixed";
+        const mapped: ProjectDebtService = {
+          id: String(d.id),
+          projectId,
+          bank: d.bank || "",
+          balance: Number(d.balance || 0),
+          payment: Number(d.payment || 0),
+          interestRate: Number(d.interestRate ?? d.interest_rate ?? 0),
+          rateType,
+          rateAdjustDate: d.rateAdjustDate
+            ? toDateString(toDateMs(d.rateAdjustDate))
+            : (d.rate_adjust_date ? toDateString(toDateMs(d.rate_adjust_date)) : null),
+          maturityDate: d.maturityDate
+            ? toDateString(toDateMs(d.maturityDate))
+            : (d.maturity_date ? toDateString(toDateMs(d.maturity_date)) : null),
+          note: d.note || "",
+        };
+        grouped[projectId] = [...(grouped[projectId] || []), mapped];
+      });
+      setProjectDebtService(grouped);
+      return grouped;
+    } catch (err) {
+      console.error("Failed to load debt service", err);
+      return {};
+    }
+  }, []);
+
+  const loadCostCategories = useCallback(async () => {
+    try {
+      const res = await fetch("/api/cost-categories");
+      if (!res.ok) return [];
+      const data = await res.json();
+      const mapped: CostCategory[] = (data.categories || []).map((c: any) => ({
+        id: String(c.id),
+        name: c.name || "Category",
+        code: c.code || null,
+      }));
+      setCostCategories(mapped);
+      return mapped;
+    } catch (err) {
+      console.error("Failed to load cost categories", err);
+      return [];
+    }
+  }, []);
+
+  const loadCostOverrides = useCallback(async () => {
+    try {
+      const res = await fetch("/api/cost-overrides");
+      if (!res.ok) return {};
+      const data = await res.json();
+      const grouped: Record<number, ProjectCostOverride[]> = {};
+      (data.overrides || []).forEach((o: any) => {
+        const projectId = o.projectId ? Number(o.projectId) : (o.project_id ? Number(o.project_id) : null);
+        if (!projectId) return;
+        const mapped: ProjectCostOverride = {
+          id: String(o.id),
+          projectId,
+          categoryId: String(o.categoryId ?? o.category_id),
+          amount: Number(o.amount || 0),
+          note: o.note || "",
+        };
+        grouped[projectId] = [...(grouped[projectId] || []), mapped];
+      });
+      setProjectCostOverrides(grouped);
+      return grouped;
+    } catch (err) {
+      console.error("Failed to load cost overrides", err);
+      return {};
+    }
+  }, []);
+
+  const loadBreakdownPresets = useCallback(async () => {
+    try {
+      const res = await fetch("/api/breakdown-presets");
+      if (!res.ok) return { presets: [], items: {} };
+      const data = await res.json();
+      const presets: BreakdownPreset[] = (data.presets || []).map((p: any) => ({
+        id: String(p.id),
+        name: p.name || "Preset",
+        description: p.description || "",
+        isDefault: Boolean(p.isDefault ?? p.is_default),
+      }));
+      const itemsMap: Record<string, BreakdownPresetItem[]> = {};
+      (data.items || []).forEach((i: any) => {
+        const presetId = String(i.presetId ?? i.preset_id);
+        const item: BreakdownPresetItem = {
+          id: String(i.id),
+          presetId,
+          categoryId: String(i.categoryId ?? i.category_id),
+          sortOrder: Number(i.sortOrder ?? i.sort_order ?? 0),
+          include: Boolean(i.include),
+        };
+        itemsMap[presetId] = [...(itemsMap[presetId] || []), item];
+      });
+      Object.values(itemsMap).forEach((arr) => arr.sort((a, b) => a.sortOrder - b.sortOrder));
+      setBreakdownPresets(presets);
+      setBreakdownPresetItems(itemsMap);
+      return { presets, items: itemsMap };
+    } catch (err) {
+      console.error("Failed to load breakdown presets", err);
+      return { presets: [], items: {} };
+    }
+  }, []);
+
+  const loadBreakdownPrefs = useCallback(async () => {
+    try {
+      const res = await fetch("/api/breakdown-prefs");
+      if (!res.ok) return {};
+      const data = await res.json();
+      const map: Record<number, ProjectBreakdownPref> = {};
+      (data.prefs || []).forEach((p: any) => {
+        const projectId = Number(p.projectId ?? p.project_id);
+        if (!projectId) return;
+        map[projectId] = {
+          id: String(p.id),
+          projectId,
+          presetId: String(p.presetId ?? p.preset_id),
+        };
+      });
+      setProjectBreakdownPrefs(map);
+      return map;
+    } catch (err) {
+      console.error("Failed to load breakdown prefs", err);
+      return {};
+    }
+  }, []);
+
+  const loadKpiPresets = useCallback(async () => {
+    try {
+      const res = await fetch("/api/kpi-presets");
+      if (!res.ok) return { presets: [], items: {} };
+      const data = await res.json();
+      const presets: KpiPreset[] = (data.presets || []).map((p: any) => ({
+        id: String(p.id),
+        name: p.name || "Preset",
+        description: p.description || "",
+        isDefault: Boolean(p.isDefault ?? p.is_default),
+      }));
+      const itemsMap: Record<string, KpiPresetItem[]> = {};
+      (data.items || []).forEach((i: any) => {
+        const presetId = String(i.presetId ?? i.preset_id);
+        const rawScaleMin = i.scaleMin ?? i.scale_min;
+        const rawScaleMax = i.scaleMax ?? i.scale_max;
+        const parsedScaleMin = rawScaleMin === null || rawScaleMin === undefined || rawScaleMin === "" ? null : Number(rawScaleMin);
+        const parsedScaleMax = rawScaleMax === null || rawScaleMax === undefined || rawScaleMax === "" ? null : Number(rawScaleMax);
+        const item: KpiPresetItem = {
+          id: String(i.id),
+          presetId,
+          name: i.name || "KPI",
+          formula: i.formula || "",
+          resultType: (i.resultType ?? i.result_type ?? "currency") as KpiPresetItem["resultType"],
+          sortOrder: Number(i.sortOrder ?? i.sort_order ?? 0),
+          enabled: Boolean(i.enabled),
+          scaleMin: Number.isFinite(parsedScaleMin as number) ? parsedScaleMin : null,
+          scaleMax: Number.isFinite(parsedScaleMax as number) ? parsedScaleMax : null,
+          scaleInvert: Boolean(i.scaleInvert ?? i.scale_invert),
+        };
+        itemsMap[presetId] = [...(itemsMap[presetId] || []), item];
+      });
+      Object.values(itemsMap).forEach((arr) => arr.sort((a, b) => a.sortOrder - b.sortOrder));
+      setKpiPresets(presets);
+      setKpiPresetItems(itemsMap);
+      return { presets, items: itemsMap };
+    } catch (err) {
+      console.error("Failed to load kpi presets", err);
+      return { presets: [], items: {} };
+    }
+  }, []);
+
+  const loadKpiPrefs = useCallback(async () => {
+    try {
+      const res = await fetch("/api/kpi-prefs");
+      if (!res.ok) return {};
+      const data = await res.json();
+      const map: Record<number, ProjectKpiPref> = {};
+      (data.prefs || []).forEach((p: any) => {
+        const projectId = Number(p.projectId ?? p.project_id);
+        if (!projectId) return;
+        map[projectId] = {
+          id: String(p.id),
+          projectId,
+          presetId: String(p.presetId ?? p.preset_id),
+        };
+      });
+      setProjectKpiPrefs(map);
+      return map;
+    } catch (err) {
+      console.error("Failed to load kpi prefs", err);
+      return {};
+    }
+  }, []);
+
+  const loadKpiOverrides = useCallback(async () => {
+    try {
+      const res = await fetch("/api/kpi-overrides");
+      if (!res.ok) return {};
+      const data = await res.json();
+      const grouped: Record<number, ProjectKpiOverride[]> = {};
+      (data.overrides || []).forEach((o: any) => {
+        const projectId = Number(o.projectId ?? o.project_id);
+        if (!projectId) return;
+        const mapped: ProjectKpiOverride = {
+          id: String(o.id),
+          projectId,
+          itemId: String(o.itemId ?? o.item_id),
+          overrideValue: Number(o.overrideValue ?? o.override_value ?? 0),
+          note: o.note || "",
+        };
+        grouped[projectId] = [...(grouped[projectId] || []), mapped];
+      });
+      setProjectKpiOverrides(grouped);
+      return grouped;
+    } catch (err) {
+      console.error("Failed to load kpi overrides", err);
       return {};
     }
   }, []);
@@ -5477,6 +6857,26 @@ export default function DashboardPage() {
       return mapped;
     } catch (err) {
       console.error("Failed to load ledger categories", err);
+      return [];
+    }
+  }, []);
+
+  const loadLedgerAccounts = useCallback(async () => {
+    try {
+      const res = await fetch("/api/accounts");
+      if (!res.ok) return [];
+      const data = await res.json();
+      const mapped: LedgerAccount[] = (data.accounts || []).map((a: any) => ({
+        id: String(a.id),
+        name: a.name || "Account",
+        type: (String(a.type || "bank").toLowerCase() as LedgerAccount["type"]) || "bank",
+        institution: a.institution || "",
+        last4: a.last4 || "",
+      }));
+      setLedgerAccounts(mapped);
+      return mapped;
+    } catch (err) {
+      console.error("Failed to load accounts", err);
       return [];
     }
   }, []);
@@ -6090,12 +7490,8 @@ export default function DashboardPage() {
 
     await Promise.all([
       loadActivities(wbsLoaded),
-      loadTransactions(),
       loadLedgerCategories(),
-      loadResourcesFromDb(),
-      loadEmployees(),
-      loadTimeEntries(),
-      loadPaychecks(),
+      loadLedgerAccounts(),
       loadProjectDetailsDb(),
       loadCustomFormulasDb(),
       loadFormulaPresetsDb(),
@@ -6103,12 +7499,38 @@ export default function DashboardPage() {
       loadPipelineMeta(),
     ]);
     return { projectsLoaded, wbsLoaded };
-  }, [checkAuth, loadActivities, loadCustomFormulasDb, loadEpsNodes, loadEmployees, loadFormulaPresetsDb, loadLedgerCategories, loadPaychecks, loadPipelineMeta, loadProjectDetailsDb, loadProjects, loadResourcesFromDb, loadTaxRatesDb, loadTimeEntries, loadTransactions, loadWbs]);
+  }, [checkAuth, loadActivities, loadCustomFormulasDb, loadEpsNodes, loadFormulaPresetsDb, loadLedgerAccounts, loadLedgerCategories, loadPipelineMeta, loadProjectDetailsDb, loadProjects, loadTaxRatesDb, loadWbs]);
+
+  const loadSupplementalData = useCallback(async () => {
+    await Promise.all([
+      loadTransactions(),
+      loadUtilities(),
+      loadDraws(),
+      loadLoans(),
+      loadPropertyTaxes(),
+      loadAcquisitions(),
+      loadClosingCosts(),
+      loadDebtService(),
+      loadCostCategories(),
+      loadCostOverrides(),
+      loadBreakdownPresets(),
+      loadBreakdownPrefs(),
+      loadKpiPresets(),
+      loadKpiPrefs(),
+      loadKpiOverrides(),
+      loadResourcesFromDb(),
+      loadEmployees(),
+      loadTimeEntries(),
+      loadPaychecks(),
+    ]);
+  }, [loadAcquisitions, loadBreakdownPrefs, loadBreakdownPresets, loadClosingCosts, loadCostCategories, loadCostOverrides, loadDebtService, loadDraws, loadEmployees, loadKpiOverrides, loadKpiPrefs, loadKpiPresets, loadLoans, loadPaychecks, loadPropertyTaxes, loadResourcesFromDb, loadTimeEntries, loadTransactions, loadUtilities]);
   const [isDetailsPanelVisible, setIsDetailsPanelVisible] = useState(true);
   const [epsViewTab, setEpsViewTab] = useState<"overview" | "gantt">("overview");
-  const [activityView, setActivityView] = useState<"details" | "gantt" | "ledger">("details");
+  const [activityView, setActivityView] = useState<"overview" | "details" | "gantt" | "ledger" | "utilities" | "draws" | "loans" | "taxes">("details");
+  const [isProjectExplorerVisible, setIsProjectExplorerVisible] = useState(true);
   const [ledgerOpen, setLedgerOpen] = useState(false);
   const [ledgerCategories, setLedgerCategories] = useState<LedgerCategory[]>([]);
+  const [ledgerAccounts, setLedgerAccounts] = useState<LedgerAccount[]>([]);
   const [quickLedgerActivityId, setQuickLedgerActivityId] = useState<string | null>(null);
   const [selectedActivityId, setSelectedActivityId] = useState<string | null>(null);
   const [draggingActivity, setDraggingActivity] = useState<{
@@ -6153,6 +7575,7 @@ export default function DashboardPage() {
   const [formulaPresetDialogOpen, setFormulaPresetDialogOpen] = useState(false);
   const [presetPickerOpen, setPresetPickerOpen] = useState(false);
   const [ledgerCategoryDialogOpen, setLedgerCategoryDialogOpen] = useState(false);
+  const [accountsDialogOpen, setAccountsDialogOpen] = useState(false);
   const [emailOptionsDialogOpen, setEmailOptionsDialogOpen] = useState(false);
   const [acquireConfirmOpen, setAcquireConfirmOpen] = useState(false);
   const [pendingAcquireProjectId, setPendingAcquireProjectId] = useState<number | null>(null);
@@ -6335,21 +7758,31 @@ export default function DashboardPage() {
   const exportMainLedger = (fmt?: "csv" | "xlsx") => {
     const format = fmt ?? exportFormat;
     const rows: (string | number)[][] = [
-      ["Date", "Type", "Amount", "Description", "Source", "Property/Project", "Category", "Subcategory"],
+      ["Date", "Type", "Amount", "Description", "Source", "Property/Project", "Category", "Subcategory", "Account"],
     ];
     // Rent payments
     rentPayments.forEach((p) => {
       const entry = rentRollEntries.find((e) => e.id === p.rentRollEntryId);
       const propertyName = entry ? rentRollPropertyMap[entry.propertyId]?.name || "Unlinked Property" : "Unlinked Property";
       const desc = entry ? `Rent payment - ${entry.unit}` : "Rent payment";
-      rows.push([p.date, "Income", p.amount, desc, "Rent Payment", propertyName, "Rent", p.note || ""]);
+      rows.push([p.date, "Income", p.amount, desc, "Rent Payment", propertyName, "Rent", p.note || "", ""]);
     });
     // Project transactions
     Object.entries(transactions).forEach(([projIdStr, txns]) => {
       const projId = Number(projIdStr);
       const projName = epsProjectNameById(projId) || `Project ${projId}`;
       txns.forEach((t) => {
-        rows.push([t.date, t.type, t.amount, t.description, "Project", projName, resolveLedgerCategoryName(t), resolveLedgerSubCategoryName(t)]);
+        rows.push([
+          t.date,
+          t.type,
+          t.amount,
+          t.description,
+          "Project",
+          projName,
+          resolveLedgerCategoryName(t),
+          resolveLedgerSubCategoryName(t),
+          resolveLedgerAccountName(t),
+        ]);
       });
     });
     rows.sort((a, b) => toDateMs(String(b[0])) - toDateMs(String(a[0])));
@@ -6368,10 +7801,10 @@ export default function DashboardPage() {
 
     if (format === "csv") {
       projectIds.forEach((pid) => {
-        const rows: (string | number)[][] = [["Date", "Type", "Amount", "Description", "Source", "Category", "Subcategory"]];
+        const rows: (string | number)[][] = [["Date", "Type", "Amount", "Description", "Source", "Category", "Subcategory", "Account"]];
         const projTxns = (transactions[pid] || []).slice().sort((a, b) => toDateMs(b.date) - toDateMs(a.date));
         projTxns.forEach((t) => {
-          rows.push([t.date, t.type, t.amount, t.description, "Project", resolveLedgerCategoryName(t), resolveLedgerSubCategoryName(t)]);
+          rows.push([t.date, t.type, t.amount, t.description, "Project", resolveLedgerCategoryName(t), resolveLedgerSubCategoryName(t), resolveLedgerAccountName(t)]);
         });
         const projName = epsProjectNameById(pid) || `Project-${pid}`;
         const filename = `project-ledger-${slugify(projName)}.csv`;
@@ -6380,9 +7813,9 @@ export default function DashboardPage() {
       });
     } else {
       const sheets = projectIds.map((pid) => {
-        const rows: (string | number)[][] = [["Date", "Type", "Amount", "Description", "Source", "Category", "Subcategory"]];
+        const rows: (string | number)[][] = [["Date", "Type", "Amount", "Description", "Source", "Category", "Subcategory", "Account"]];
         const projTxns = (transactions[pid] || []).slice().sort((a, b) => toDateMs(b.date) - toDateMs(a.date));
-        projTxns.forEach((t) => rows.push([t.date, t.type, t.amount, t.description, "Project", resolveLedgerCategoryName(t), resolveLedgerSubCategoryName(t)]));
+        projTxns.forEach((t) => rows.push([t.date, t.type, t.amount, t.description, "Project", resolveLedgerCategoryName(t), resolveLedgerSubCategoryName(t), resolveLedgerAccountName(t)]));
         const projName = epsProjectNameById(pid) || `Project-${pid}`;
         return { name: projName.slice(0, 28) || `Project-${pid}`, rows };
       });
@@ -6485,6 +7918,12 @@ export default function DashboardPage() {
       return acc;
     }, {});
   }, [ledgerCategories]);
+  const ledgerAccountMap = useMemo(() => {
+    return ledgerAccounts.reduce<Record<string, LedgerAccount>>((acc, acct) => {
+      acc[acct.id] = acct;
+      return acc;
+    }, {});
+  }, [ledgerAccounts]);
   const resolveLedgerCategoryName = useCallback((t: Transaction) => {
     if (t.categoryId && ledgerCategoryMap[t.categoryId]) return ledgerCategoryMap[t.categoryId].name;
     return t.category;
@@ -6493,6 +7932,10 @@ export default function DashboardPage() {
     if (t.subCategoryId && ledgerCategoryMap[t.subCategoryId]) return ledgerCategoryMap[t.subCategoryId].name;
     return t.subCategory || "";
   }, [ledgerCategoryMap]);
+  const resolveLedgerAccountName = useCallback((t: Transaction) => {
+    if (t.accountId && ledgerAccountMap[t.accountId]) return ledgerAccountMap[t.accountId].name;
+    return t.accountName || "";
+  }, [ledgerAccountMap]);
   const rentRollDetailDocs = useMemo(() => {
     if (!rentRollDetailEntry) return [];
     return rentRollDocuments.filter((doc) => doc.entryId === rentRollDetailEntry.id);
@@ -6539,6 +7982,48 @@ export default function DashboardPage() {
     }
   }, [activityView, mode]);
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const raw = window.localStorage.getItem("dashboard_notifications_dismissed");
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        setDismissedNotifications(new Set(parsed.map((id) => String(id))));
+      }
+    } catch (err) {
+      console.warn("Failed to load dismissed notifications", err);
+    }
+  }, []);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const raw = window.localStorage.getItem("dashboard_notifications_read");
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        setReadNotifications(new Set(parsed.map((id) => String(id))));
+      }
+    } catch (err) {
+      console.warn("Failed to load read notifications", err);
+    }
+  }, []);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem("dashboard_notifications_dismissed", JSON.stringify(Array.from(dismissedNotifications)));
+    } catch (err) {
+      console.warn("Failed to persist dismissed notifications", err);
+    }
+  }, [dismissedNotifications]);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem("dashboard_notifications_read", JSON.stringify(Array.from(readNotifications)));
+    } catch (err) {
+      console.warn("Failed to persist read notifications", err);
+    }
+  }, [readNotifications]);
+  useEffect(() => {
     if (mode === "Statements") {
       loadStatements();
     }
@@ -6554,12 +8039,41 @@ export default function DashboardPage() {
   }, [mode, loadStatements, loadRentData, loadUsers, loadCommits]);
 
   const initialLoadRef = useRef(false);
+  const supplementalLoadRef = useRef(false);
+  const supplementalLoadingRef = useRef(false);
   useEffect(() => {
     if (initialLoadRef.current) return;
     initialLoadRef.current = true;
-    loadDbData();
-    loadRentData();
-  }, [loadDbData, loadRentData]);
+    loadDbData().then(() => {
+      if (supplementalLoadRef.current) return;
+      supplementalLoadRef.current = true;
+      if (typeof window === "undefined") return;
+      const schedule = (cb: () => void) => {
+        if ("requestIdleCallback" in window) {
+          (window as any).requestIdleCallback(cb, { timeout: 1200 });
+        } else {
+          globalThis.setTimeout(cb, 200);
+        }
+      };
+      schedule(() => {
+        if (supplementalLoadingRef.current) return;
+        supplementalLoadingRef.current = true;
+        loadSupplementalData().finally(() => {
+          supplementalLoadingRef.current = false;
+        });
+      });
+    });
+  }, [loadDbData, loadSupplementalData]);
+
+  useEffect(() => {
+    if (activityView !== "overview") return;
+    if (supplementalLoadRef.current || supplementalLoadingRef.current) return;
+    supplementalLoadRef.current = true;
+    supplementalLoadingRef.current = true;
+    loadSupplementalData().finally(() => {
+      supplementalLoadingRef.current = false;
+    });
+  }, [activityView, loadSupplementalData]);
 
   useEffect(() => {
     if (!currentUser) return;
@@ -7266,8 +8780,7 @@ export default function DashboardPage() {
   }, [epsNodes]);
 
   const handleAddTransaction = useCallback(async (transaction: Omit<Transaction, "id">, projectIdOverride?: number) => {
-    const mappedOverride = projectIdOverride ? (getProjectDbIdFromNode(projectIdOverride) ?? projectIdOverride) : null;
-    const projectKey = mappedOverride || activeProjectDbId || resolveProjectId();
+    const projectKey = projectIdOverride ?? activeProjectDbId ?? resolveProjectId();
     if (!projectKey) return;
     const normalizedCategoryId = transaction.categoryId && !Number.isNaN(Number(transaction.categoryId))
       ? Number(transaction.categoryId)
@@ -7275,12 +8788,21 @@ export default function DashboardPage() {
     const normalizedSubCategoryId = transaction.subCategoryId && !Number.isNaN(Number(transaction.subCategoryId))
       ? Number(transaction.subCategoryId)
       : null;
+    const normalizedAccountId = transaction.accountId && !Number.isNaN(Number(transaction.accountId))
+      ? Number(transaction.accountId)
+      : null;
     if (!currentUser || currentUser.role !== "admin") {
       stageChange({
         entity: "ledger_transactions",
         entityId: null,
         operation: "create",
-        after: { ...transaction, categoryId: normalizedCategoryId, subCategoryId: normalizedSubCategoryId, projectId: projectKey },
+        after: {
+          ...transaction,
+          categoryId: normalizedCategoryId,
+          subCategoryId: normalizedSubCategoryId,
+          accountId: normalizedAccountId,
+          projectId: projectKey,
+        },
         impact: "Staged ledger transaction",
       });
       setTransactions(prev => ({
@@ -7299,6 +8821,7 @@ export default function DashboardPage() {
           activityId: transaction.activityId ? Number(transaction.activityId) : null,
           categoryId: normalizedCategoryId,
           subCategoryId: normalizedSubCategoryId,
+          accountId: normalizedAccountId,
         }),
       });
       if (!res.ok) throw new Error("Failed to create transaction");
@@ -7315,17 +8838,19 @@ export default function DashboardPage() {
     } catch (err) {
       console.error("Failed to add transaction", err);
     }
-  }, [activeProjectDbId, resolveProjectId, getProjectDbIdFromNode, currentUser, stageChange]);
+  }, [activeProjectDbId, resolveProjectId, currentUser, stageChange]);
 
   const handleUpdateTransaction = (transaction: Transaction, projectIdOverride?: number) => {
-    const mappedOverride = projectIdOverride ? (getProjectDbIdFromNode(projectIdOverride) ?? projectIdOverride) : null;
-    const projectKey = mappedOverride || activeProjectDbId || resolveProjectId();
+    const projectKey = projectIdOverride ?? activeProjectDbId ?? resolveProjectId();
     if (!projectKey) return;
     const normalizedCategoryId = transaction.categoryId && !Number.isNaN(Number(transaction.categoryId))
       ? Number(transaction.categoryId)
       : null;
     const normalizedSubCategoryId = transaction.subCategoryId && !Number.isNaN(Number(transaction.subCategoryId))
       ? Number(transaction.subCategoryId)
+      : null;
+    const normalizedAccountId = transaction.accountId && !Number.isNaN(Number(transaction.accountId))
+      ? Number(transaction.accountId)
       : null;
     if (!currentUser || currentUser.role !== "admin") {
       const existing = (transactions[projectKey] || []).find(t => t.id === transaction.id);
@@ -7334,7 +8859,12 @@ export default function DashboardPage() {
         entityId: transaction.id,
         operation: "update",
         before: existing || null,
-        after: { ...transaction, categoryId: normalizedCategoryId, subCategoryId: normalizedSubCategoryId },
+        after: {
+          ...transaction,
+          categoryId: normalizedCategoryId,
+          subCategoryId: normalizedSubCategoryId,
+          accountId: normalizedAccountId,
+        },
         impact: "Staged ledger transaction update",
       });
       setTransactions(prev => ({
@@ -7353,6 +8883,8 @@ export default function DashboardPage() {
         type: transaction.type,
         categoryId: normalizedCategoryId,
         subCategoryId: normalizedSubCategoryId,
+        accountId: normalizedAccountId,
+        accountName: transaction.accountName,
         category: transaction.category,
         subCategory: transaction.subCategory,
         date: transaction.date,
@@ -7367,8 +8899,7 @@ export default function DashboardPage() {
   };
 
   const handleDeleteTransaction = (transactionId: string, projectIdOverride?: number) => {
-    const mappedOverride = projectIdOverride ? (getProjectDbIdFromNode(projectIdOverride) ?? projectIdOverride) : null;
-    const projectKey = mappedOverride || activeProjectDbId || resolveProjectId();
+    const projectKey = projectIdOverride ?? activeProjectDbId ?? resolveProjectId();
     if (!projectKey) return;
     if (!currentUser || currentUser.role !== "admin") {
       const existing = (transactions[projectKey] || []).find(t => t.id === transactionId);
@@ -7391,6 +8922,1508 @@ export default function DashboardPage() {
       [projectKey]: (prev[projectKey] || []).filter(t => t.id !== transactionId),
     }));
   };
+
+  const resetUtilityForm = () => {
+    setUtilityForm({ date: toDateString(getCentralTodayMs()), service: "", provider: "", amount: "", note: "" });
+    setEditingUtilityId(null);
+  };
+
+  const handleSaveUtility = async () => {
+    const projectKey = activeProjectDbId ?? resolveProjectId();
+    if (!projectKey) return;
+    const amount = parseFloat(utilityForm.amount);
+    const service = utilityForm.service.trim();
+    if (!utilityForm.date || !service || !Number.isFinite(amount)) return;
+    const payload = {
+      projectId: projectKey,
+      date: utilityForm.date,
+      service,
+      provider: utilityForm.provider.trim(),
+      amount,
+      note: utilityForm.note.trim() || null,
+    };
+    if (!currentUser || currentUser.role !== "admin") {
+      const tempId = editingUtilityId || `UTIL-${Date.now().toString(36)}`;
+      const existing = (projectUtilities[projectKey] || []).find((u) => u.id === editingUtilityId) || null;
+      stageChange({
+        entity: "project_utilities",
+        entityId: editingUtilityId || null,
+        operation: editingUtilityId ? "update" : "create",
+        before: existing,
+        after: { id: tempId, ...payload },
+        impact: editingUtilityId ? "Staged utility update" : "Staged utility create",
+      });
+      setProjectUtilities((prev) => {
+        const list = prev[projectKey] || [];
+        const next = editingUtilityId
+          ? list.map((u) => (u.id === editingUtilityId ? { ...u, ...payload, id: tempId } : u))
+          : [...list, { id: tempId, ...payload }];
+        return { ...prev, [projectKey]: next };
+      });
+      resetUtilityForm();
+      return;
+    }
+    try {
+      const method = editingUtilityId ? "PATCH" : "POST";
+      const res = await fetch("/api/utilities", {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(editingUtilityId ? { id: Number(editingUtilityId), ...payload } : payload),
+      });
+      if (!res.ok) throw new Error("Failed to save utility");
+      const data = await res.json();
+      const saved = data.utility || {};
+      setProjectUtilities((prev) => {
+        const list = prev[projectKey] || [];
+        const mapped: ProjectUtility = {
+          id: String(saved.id || editingUtilityId || `UTIL-${Date.now().toString(36)}`),
+          projectId: Number(saved.projectId || payload.projectId),
+          date: saved.date ? toDateString(toDateMs(saved.date)) : payload.date,
+          service: saved.service || payload.service,
+          provider: saved.provider || payload.provider,
+          amount: Number(saved.amount ?? payload.amount),
+          note: saved.note || payload.note || "",
+        };
+        const next = editingUtilityId
+          ? list.map((u) => (u.id === editingUtilityId ? mapped : u))
+          : [...list, mapped];
+        return { ...prev, [projectKey]: next };
+      });
+      resetUtilityForm();
+    } catch (err) {
+      console.error("Failed to save utility", err);
+    }
+  };
+
+  const handleEditUtility = (utility: ProjectUtility) => {
+    setUtilityForm({
+      date: utility.date,
+      service: utility.service,
+      provider: utility.provider,
+      amount: utility.amount.toString(),
+      note: utility.note || "",
+    });
+    setEditingUtilityId(utility.id);
+  };
+
+  const handleDeleteUtility = (utilityId: string) => {
+    const projectKey = activeProjectDbId ?? resolveProjectId();
+    if (!projectKey) return;
+    const existing = (projectUtilities[projectKey] || []).find((u) => u.id === utilityId) || null;
+    if (!currentUser || currentUser.role !== "admin") {
+      stageChange({
+        entity: "project_utilities",
+        entityId: utilityId,
+        operation: "delete",
+        before: existing,
+        impact: "Staged utility delete",
+      });
+      setProjectUtilities((prev) => ({
+        ...prev,
+        [projectKey]: (prev[projectKey] || []).filter((u) => u.id !== utilityId),
+      }));
+      return;
+    }
+    fetch(`/api/utilities?id=${Number(utilityId)}`, { method: "DELETE" })
+      .catch((err) => console.error("Failed to delete utility", err))
+      .finally(() => {
+        setProjectUtilities((prev) => ({
+          ...prev,
+          [projectKey]: (prev[projectKey] || []).filter((u) => u.id !== utilityId),
+        }));
+      });
+  };
+
+  const resetDrawForm = () => {
+    setDrawForm({ date: toDateString(getCentralTodayMs()), description: "", amount: "", note: "" });
+    setEditingDrawId(null);
+  };
+
+  const handleSaveDraw = async () => {
+    const projectKey = activeProjectDbId ?? resolveProjectId();
+    if (!projectKey) return;
+    const amount = parseFloat(drawForm.amount);
+    const description = drawForm.description.trim();
+    if (!drawForm.date || !description || !Number.isFinite(amount)) return;
+    const payload = {
+      projectId: projectKey,
+      date: drawForm.date,
+      description,
+      amount,
+      note: drawForm.note.trim() || null,
+    };
+    if (!currentUser || currentUser.role !== "admin") {
+      const tempId = editingDrawId || `DRAW-${Date.now().toString(36)}`;
+      const existing = (projectDraws[projectKey] || []).find((d) => d.id === editingDrawId) || null;
+      stageChange({
+        entity: "project_draws",
+        entityId: editingDrawId || null,
+        operation: editingDrawId ? "update" : "create",
+        before: existing,
+        after: { id: tempId, ...payload },
+        impact: editingDrawId ? "Staged draw update" : "Staged draw create",
+      });
+      setProjectDraws((prev) => {
+        const list = prev[projectKey] || [];
+        const next = editingDrawId
+          ? list.map((d) => (d.id === editingDrawId ? { ...d, ...payload, id: tempId } : d))
+          : [...list, { id: tempId, ...payload }];
+        return { ...prev, [projectKey]: next };
+      });
+      resetDrawForm();
+      return;
+    }
+    try {
+      const method = editingDrawId ? "PATCH" : "POST";
+      const res = await fetch("/api/draws", {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(editingDrawId ? { id: Number(editingDrawId), ...payload } : payload),
+      });
+      if (!res.ok) throw new Error("Failed to save draw");
+      const data = await res.json();
+      const saved = data.draw || {};
+      setProjectDraws((prev) => {
+        const list = prev[projectKey] || [];
+        const mapped: ProjectDraw = {
+          id: String(saved.id || editingDrawId || `DRAW-${Date.now().toString(36)}`),
+          projectId: Number(saved.projectId || payload.projectId),
+          date: saved.date ? toDateString(toDateMs(saved.date)) : payload.date,
+          description: saved.description || payload.description,
+          amount: Number(saved.amount ?? payload.amount),
+          note: saved.note || payload.note || "",
+        };
+        const next = editingDrawId
+          ? list.map((d) => (d.id === editingDrawId ? mapped : d))
+          : [...list, mapped];
+        return { ...prev, [projectKey]: next };
+      });
+      resetDrawForm();
+    } catch (err) {
+      console.error("Failed to save draw", err);
+    }
+  };
+
+  const handleEditDraw = (draw: ProjectDraw) => {
+    setDrawForm({
+      date: draw.date,
+      description: draw.description,
+      amount: draw.amount.toString(),
+      note: draw.note || "",
+    });
+    setEditingDrawId(draw.id);
+  };
+
+  const handleDeleteDraw = (drawId: string) => {
+    const projectKey = activeProjectDbId ?? resolveProjectId();
+    if (!projectKey) return;
+    const existing = (projectDraws[projectKey] || []).find((d) => d.id === drawId) || null;
+    if (!currentUser || currentUser.role !== "admin") {
+      stageChange({
+        entity: "project_draws",
+        entityId: drawId,
+        operation: "delete",
+        before: existing,
+        impact: "Staged draw delete",
+      });
+      setProjectDraws((prev) => ({
+        ...prev,
+        [projectKey]: (prev[projectKey] || []).filter((d) => d.id !== drawId),
+      }));
+      return;
+    }
+    fetch(`/api/draws?id=${Number(drawId)}`, { method: "DELETE" })
+      .catch((err) => console.error("Failed to delete draw", err))
+      .finally(() => {
+        setProjectDraws((prev) => ({
+          ...prev,
+          [projectKey]: (prev[projectKey] || []).filter((d) => d.id !== drawId),
+        }));
+      });
+  };
+
+  const resetLoanForm = () => {
+    setLoanForm({ date: toDateString(getCentralTodayMs()), payment: "", interest: "", principal: "", balance: "", note: "" });
+    setEditingLoanId(null);
+  };
+
+  const handleSaveLoan = async () => {
+    const projectKey = activeProjectDbId ?? resolveProjectId();
+    if (!projectKey) return;
+    const payment = parseFloat(loanForm.payment);
+    if (!loanForm.date || !Number.isFinite(payment)) return;
+    const payload = {
+      projectId: projectKey,
+      date: loanForm.date,
+      payment,
+      interest: loanForm.interest !== "" ? Number(loanForm.interest) : 0,
+      principal: loanForm.principal !== "" ? Number(loanForm.principal) : 0,
+      balance: loanForm.balance !== "" ? Number(loanForm.balance) : null,
+      note: loanForm.note.trim() || null,
+    };
+    if (!currentUser || currentUser.role !== "admin") {
+      const tempId = editingLoanId || `LOAN-${Date.now().toString(36)}`;
+      const existing = (projectLoans[projectKey] || []).find((l) => l.id === editingLoanId) || null;
+      stageChange({
+        entity: "project_loans",
+        entityId: editingLoanId || null,
+        operation: editingLoanId ? "update" : "create",
+        before: existing,
+        after: { id: tempId, ...payload },
+        impact: editingLoanId ? "Staged loan update" : "Staged loan create",
+      });
+      setProjectLoans((prev) => {
+        const list = prev[projectKey] || [];
+        const next = editingLoanId
+          ? list.map((l) => (l.id === editingLoanId ? { ...l, ...payload, id: tempId } : l))
+          : [...list, { id: tempId, ...payload }];
+        return { ...prev, [projectKey]: next };
+      });
+      resetLoanForm();
+      return;
+    }
+    try {
+      const method = editingLoanId ? "PATCH" : "POST";
+      const res = await fetch("/api/loans", {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(editingLoanId ? { id: Number(editingLoanId), ...payload } : payload),
+      });
+      if (!res.ok) throw new Error("Failed to save loan entry");
+      const data = await res.json();
+      const saved = data.loan || {};
+      setProjectLoans((prev) => {
+        const list = prev[projectKey] || [];
+        const mapped: ProjectLoanEntry = {
+          id: String(saved.id || editingLoanId || `LOAN-${Date.now().toString(36)}`),
+          projectId: Number(saved.projectId || payload.projectId),
+          date: saved.date ? toDateString(toDateMs(saved.date)) : payload.date,
+          payment: Number(saved.payment ?? payload.payment),
+          interest: Number(saved.interest ?? payload.interest),
+          principal: Number(saved.principal ?? payload.principal),
+          balance: saved.balance !== null && saved.balance !== undefined ? Number(saved.balance) : payload.balance,
+          note: saved.note || payload.note || "",
+        };
+        const next = editingLoanId
+          ? list.map((l) => (l.id === editingLoanId ? mapped : l))
+          : [...list, mapped];
+        return { ...prev, [projectKey]: next };
+      });
+      resetLoanForm();
+    } catch (err) {
+      console.error("Failed to save loan entry", err);
+    }
+  };
+
+  const handleEditLoan = (entry: ProjectLoanEntry) => {
+    setLoanForm({
+      date: entry.date,
+      payment: entry.payment.toString(),
+      interest: entry.interest?.toString() ?? "",
+      principal: entry.principal?.toString() ?? "",
+      balance: entry.balance !== null && entry.balance !== undefined ? String(entry.balance) : "",
+      note: entry.note || "",
+    });
+    setEditingLoanId(entry.id);
+  };
+
+  const handleDeleteLoan = (loanId: string) => {
+    const projectKey = activeProjectDbId ?? resolveProjectId();
+    if (!projectKey) return;
+    const existing = (projectLoans[projectKey] || []).find((l) => l.id === loanId) || null;
+    if (!currentUser || currentUser.role !== "admin") {
+      stageChange({
+        entity: "project_loans",
+        entityId: loanId,
+        operation: "delete",
+        before: existing,
+        impact: "Staged loan delete",
+      });
+      setProjectLoans((prev) => ({
+        ...prev,
+        [projectKey]: (prev[projectKey] || []).filter((l) => l.id !== loanId),
+      }));
+      return;
+    }
+    fetch(`/api/loans?id=${Number(loanId)}`, { method: "DELETE" })
+      .catch((err) => console.error("Failed to delete loan entry", err))
+      .finally(() => {
+        setProjectLoans((prev) => ({
+          ...prev,
+          [projectKey]: (prev[projectKey] || []).filter((l) => l.id !== loanId),
+        }));
+      });
+  };
+
+  const resetTaxForm = () => {
+    setTaxForm({ taxYear: String(new Date().getUTCFullYear()), dueDate: toDateString(getCentralTodayMs()), amount: "", status: "due", paidDate: "", note: "" });
+    setEditingTaxId(null);
+  };
+
+  const handleSaveTax = async () => {
+    const projectKey = activeProjectDbId ?? resolveProjectId();
+    if (!projectKey) return;
+    const amount = parseFloat(taxForm.amount);
+    const taxYear = Number(taxForm.taxYear);
+    if (!taxForm.dueDate || !Number.isFinite(amount) || !Number.isFinite(taxYear)) return;
+    const payload = {
+      projectId: projectKey,
+      taxYear,
+      dueDate: taxForm.dueDate,
+      amount,
+      status: taxForm.status,
+      paidDate: taxForm.status === "paid" && taxForm.paidDate ? taxForm.paidDate : null,
+      note: taxForm.note.trim() || null,
+    };
+    if (!currentUser || currentUser.role !== "admin") {
+      const tempId = editingTaxId || `TAX-${Date.now().toString(36)}`;
+      const existing = (projectPropertyTaxes[projectKey] || []).find((t) => t.id === editingTaxId) || null;
+      stageChange({
+        entity: "project_property_taxes",
+        entityId: editingTaxId || null,
+        operation: editingTaxId ? "update" : "create",
+        before: existing,
+        after: { id: tempId, ...payload },
+        impact: editingTaxId ? "Staged property tax update" : "Staged property tax create",
+      });
+      setProjectPropertyTaxes((prev) => {
+        const list = prev[projectKey] || [];
+        const next = editingTaxId
+          ? list.map((t) => (t.id === editingTaxId ? { ...t, ...payload, id: tempId } : t))
+          : [...list, { id: tempId, ...payload }];
+        return { ...prev, [projectKey]: next };
+      });
+      resetTaxForm();
+      return;
+    }
+    try {
+      const method = editingTaxId ? "PATCH" : "POST";
+      const res = await fetch("/api/property-taxes", {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(editingTaxId ? { id: Number(editingTaxId), ...payload } : payload),
+      });
+      if (!res.ok) throw new Error("Failed to save property tax");
+      const data = await res.json();
+      const saved = data.tax || {};
+      setProjectPropertyTaxes((prev) => {
+        const list = prev[projectKey] || [];
+        const mapped: ProjectPropertyTax = {
+          id: String(saved.id || editingTaxId || `TAX-${Date.now().toString(36)}`),
+          projectId: Number(saved.projectId || payload.projectId),
+          taxYear: Number(saved.taxYear ?? payload.taxYear),
+          dueDate: saved.dueDate ? toDateString(toDateMs(saved.dueDate)) : payload.dueDate,
+          amount: Number(saved.amount ?? payload.amount),
+          status: (String(saved.status || payload.status).toLowerCase() as ProjectPropertyTax["status"]) || payload.status,
+          paidDate: saved.paidDate ? toDateString(toDateMs(saved.paidDate)) : payload.paidDate,
+          note: saved.note || payload.note || "",
+        };
+        const next = editingTaxId
+          ? list.map((t) => (t.id === editingTaxId ? mapped : t))
+          : [...list, mapped];
+        return { ...prev, [projectKey]: next };
+      });
+      resetTaxForm();
+    } catch (err) {
+      console.error("Failed to save property tax", err);
+    }
+  };
+
+  const handleEditTax = (entry: ProjectPropertyTax) => {
+    setTaxForm({
+      taxYear: String(entry.taxYear),
+      dueDate: entry.dueDate,
+      amount: entry.amount.toString(),
+      status: entry.status,
+      paidDate: entry.paidDate || "",
+      note: entry.note || "",
+    });
+    setEditingTaxId(entry.id);
+  };
+
+  const handleDeleteTax = (taxId: string) => {
+    const projectKey = activeProjectDbId ?? resolveProjectId();
+    if (!projectKey) return;
+    const existing = (projectPropertyTaxes[projectKey] || []).find((t) => t.id === taxId) || null;
+    if (!currentUser || currentUser.role !== "admin") {
+      stageChange({
+        entity: "project_property_taxes",
+        entityId: taxId,
+        operation: "delete",
+        before: existing,
+        impact: "Staged property tax delete",
+      });
+      setProjectPropertyTaxes((prev) => ({
+        ...prev,
+        [projectKey]: (prev[projectKey] || []).filter((t) => t.id !== taxId),
+      }));
+      return;
+    }
+    fetch(`/api/property-taxes?id=${Number(taxId)}`, { method: "DELETE" })
+      .catch((err) => console.error("Failed to delete property tax", err))
+      .finally(() => {
+        setProjectPropertyTaxes((prev) => ({
+          ...prev,
+          [projectKey]: (prev[projectKey] || []).filter((t) => t.id !== taxId),
+        }));
+      });
+  };
+
+  const resetAcquisitionForm = () => {
+    setAcquisitionForm({ purchasePrice: "", acquisitionDraw: "", earnestMoney: "", closeDate: "", note: "" });
+    setEditingAcquisitionId(null);
+  };
+
+  const handleSaveAcquisition = async () => {
+    const projectKey = activeProjectDbId ?? resolveProjectId();
+    if (!projectKey) return;
+    const payload = {
+      projectId: projectKey,
+      purchasePrice: acquisitionForm.purchasePrice !== "" ? Number(acquisitionForm.purchasePrice) : 0,
+      acquisitionDraw: acquisitionForm.acquisitionDraw !== "" ? Number(acquisitionForm.acquisitionDraw) : 0,
+      earnestMoney: acquisitionForm.earnestMoney !== "" ? Number(acquisitionForm.earnestMoney) : 0,
+      closeDate: acquisitionForm.closeDate || null,
+      note: acquisitionForm.note.trim() || null,
+    };
+    if (!currentUser || currentUser.role !== "admin") {
+      const tempId = editingAcquisitionId || `ACQ-${Date.now().toString(36)}`;
+      const existing = projectAcquisitions[projectKey] || null;
+      stageChange({
+        entity: "project_acquisitions",
+        entityId: editingAcquisitionId || null,
+        operation: editingAcquisitionId ? "update" : "create",
+        before: existing,
+        after: { id: tempId, ...payload },
+        impact: editingAcquisitionId ? "Staged acquisition update" : "Staged acquisition create",
+      });
+      setProjectAcquisitions((prev) => ({
+        ...prev,
+        [projectKey]: { id: tempId, ...payload },
+      }));
+      setEditingAcquisitionId(tempId);
+      return;
+    }
+    try {
+      const method = editingAcquisitionId ? "PATCH" : "POST";
+      const res = await fetch("/api/acquisitions", {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(editingAcquisitionId ? { id: Number(editingAcquisitionId), ...payload } : payload),
+      });
+      if (!res.ok) throw new Error("Failed to save acquisition");
+      const data = await res.json();
+      const saved = data.acquisition || {};
+      const mapped: ProjectAcquisition = {
+        id: String(saved.id || editingAcquisitionId || `ACQ-${Date.now().toString(36)}`),
+        projectId: Number(saved.projectId || payload.projectId),
+        purchasePrice: Number(saved.purchasePrice ?? payload.purchasePrice ?? 0),
+        acquisitionDraw: Number(saved.acquisitionDraw ?? payload.acquisitionDraw ?? 0),
+        earnestMoney: Number(saved.earnestMoney ?? payload.earnestMoney ?? 0),
+        closeDate: saved.closeDate ? toDateString(toDateMs(saved.closeDate)) : payload.closeDate,
+        note: saved.note || payload.note || "",
+      };
+      setProjectAcquisitions((prev) => ({
+        ...prev,
+        [projectKey]: mapped,
+      }));
+      setEditingAcquisitionId(mapped.id);
+    } catch (err) {
+      console.error("Failed to save acquisition", err);
+    }
+  };
+
+  const resetClosingCostForm = () => {
+    setClosingCostForm({ side: "purchase", label: "", amount: "", paid: false, paidDate: "", note: "" });
+    setEditingClosingCostId(null);
+  };
+
+  const handleSaveClosingCost = async () => {
+    const projectKey = activeProjectDbId ?? resolveProjectId();
+    if (!projectKey) return;
+    const label = closingCostForm.label.trim();
+    if (!label) return;
+    const amount = closingCostForm.amount !== "" ? Number(closingCostForm.amount) : 0;
+    const payload = {
+      projectId: projectKey,
+      side: closingCostForm.side,
+      label,
+      amount,
+      paid: Boolean(closingCostForm.paid),
+      paidDate: closingCostForm.paid ? (closingCostForm.paidDate || toDateString(getCentralTodayMs())) : null,
+      note: closingCostForm.note.trim() || null,
+    };
+    if (!currentUser || currentUser.role !== "admin") {
+      const tempId = editingClosingCostId || `CC-${Date.now().toString(36)}`;
+      const existing = (projectClosingCosts[projectKey] || []).find((c) => c.id === editingClosingCostId) || null;
+      stageChange({
+        entity: "project_closing_costs",
+        entityId: editingClosingCostId || null,
+        operation: editingClosingCostId ? "update" : "create",
+        before: existing,
+        after: { id: tempId, ...payload },
+        impact: editingClosingCostId ? "Staged closing cost update" : "Staged closing cost create",
+      });
+      setProjectClosingCosts((prev) => {
+        const list = prev[projectKey] || [];
+        const next = editingClosingCostId
+          ? list.map((c) => (c.id === editingClosingCostId ? { ...c, ...payload, id: tempId } : c))
+          : [...list, { id: tempId, ...payload }];
+        return { ...prev, [projectKey]: next };
+      });
+      resetClosingCostForm();
+      return;
+    }
+    try {
+      const method = editingClosingCostId ? "PATCH" : "POST";
+      const res = await fetch("/api/closing-costs", {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(editingClosingCostId ? { id: Number(editingClosingCostId), ...payload } : payload),
+      });
+      if (!res.ok) throw new Error("Failed to save closing cost");
+      const data = await res.json();
+      const saved = data.closingCost || {};
+      const mapped: ProjectClosingCost = {
+        id: String(saved.id || editingClosingCostId || `CC-${Date.now().toString(36)}`),
+        projectId: Number(saved.projectId || payload.projectId),
+        side: (String(saved.side || payload.side).toLowerCase() === "sale" ? "sale" : "purchase"),
+        code: saved.code || null,
+        label: saved.label || payload.label,
+        amount: Number(saved.amount ?? payload.amount),
+        paid: Boolean(saved.paid ?? payload.paid),
+        paidDate: saved.paidDate ? toDateString(toDateMs(saved.paidDate)) : payload.paidDate,
+        note: saved.note || payload.note || "",
+      };
+      setProjectClosingCosts((prev) => {
+        const list = prev[projectKey] || [];
+        const next = editingClosingCostId
+          ? list.map((c) => (c.id === editingClosingCostId ? mapped : c))
+          : [...list, mapped];
+        return { ...prev, [projectKey]: next };
+      });
+      resetClosingCostForm();
+    } catch (err) {
+      console.error("Failed to save closing cost", err);
+    }
+  };
+
+  const handleEditClosingCost = (cost: ProjectClosingCost) => {
+    setClosingCostForm({
+      side: cost.side,
+      label: cost.label,
+      amount: cost.amount.toString(),
+      paid: cost.paid,
+      paidDate: cost.paidDate || "",
+      note: cost.note || "",
+    });
+    setEditingClosingCostId(cost.id);
+  };
+
+  const handleDeleteClosingCost = (costId: string) => {
+    const projectKey = activeProjectDbId ?? resolveProjectId();
+    if (!projectKey) return;
+    const existing = (projectClosingCosts[projectKey] || []).find((c) => c.id === costId) || null;
+    if (!currentUser || currentUser.role !== "admin") {
+      stageChange({
+        entity: "project_closing_costs",
+        entityId: costId,
+        operation: "delete",
+        before: existing,
+        impact: "Staged closing cost delete",
+      });
+      setProjectClosingCosts((prev) => ({
+        ...prev,
+        [projectKey]: (prev[projectKey] || []).filter((c) => c.id !== costId),
+      }));
+      return;
+    }
+    fetch(`/api/closing-costs?id=${Number(costId)}`, { method: "DELETE" })
+      .catch((err) => console.error("Failed to delete closing cost", err))
+      .finally(() => {
+        setProjectClosingCosts((prev) => ({
+          ...prev,
+          [projectKey]: (prev[projectKey] || []).filter((c) => c.id !== costId),
+        }));
+      });
+  };
+
+  const handleToggleClosingCostPaid = (cost: ProjectClosingCost) => {
+    const projectKey = activeProjectDbId ?? resolveProjectId();
+    if (!projectKey) return;
+    const nextPaid = !cost.paid;
+    const payload = {
+      paid: nextPaid,
+      paidDate: nextPaid ? toDateString(getCentralTodayMs()) : null,
+    };
+    if (!currentUser || currentUser.role !== "admin") {
+      stageChange({
+        entity: "project_closing_costs",
+        entityId: cost.id,
+        operation: "update",
+        before: cost,
+        after: { ...cost, ...payload },
+        impact: "Staged closing cost paid status",
+      });
+      setProjectClosingCosts((prev) => ({
+        ...prev,
+        [projectKey]: (prev[projectKey] || []).map((c) => (c.id === cost.id ? { ...c, ...payload } : c)),
+      }));
+      return;
+    }
+    fetch("/api/closing-costs", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: Number(cost.id), ...payload }),
+    }).catch((err) => console.error("Failed to update closing cost", err));
+    setProjectClosingCosts((prev) => ({
+      ...prev,
+      [projectKey]: (prev[projectKey] || []).map((c) => (c.id === cost.id ? { ...c, ...payload } : c)),
+    }));
+  };
+
+  const handleSeedClosingCosts = async (side: ProjectClosingCost["side"]) => {
+    const projectKey = activeProjectDbId ?? resolveProjectId();
+    if (!projectKey) return;
+    const existing = (projectClosingCosts[projectKey] || []).filter((c) => c.side === side);
+    const existingCodes = new Set(existing.map((c) => c.code || c.label.toLowerCase()));
+    const defaults = DEFAULT_CLOSING_COSTS[side].filter((d) => !existingCodes.has(d.code));
+    if (!defaults.length) return;
+    if (!currentUser || currentUser.role !== "admin") {
+      const newItems = defaults.map((d, idx) => {
+        const tempId = `CC-${Date.now().toString(36)}-${idx}`;
+        return { id: tempId, projectId: projectKey, side, code: d.code, label: d.label, amount: 0, paid: false };
+      });
+      newItems.forEach((payload) => {
+        stageChange({
+          entity: "project_closing_costs",
+          entityId: null,
+          operation: "create",
+          after: payload,
+          impact: "Staged closing cost create",
+        });
+      });
+      setProjectClosingCosts((prev) => ({
+        ...prev,
+        [projectKey]: [...(prev[projectKey] || []), ...newItems],
+      }));
+      return;
+    }
+    try {
+      const created: ProjectClosingCost[] = [];
+      for (const d of defaults) {
+        const res = await fetch("/api/closing-costs", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ projectId: projectKey, side, code: d.code, label: d.label, amount: 0, paid: false }),
+        });
+        if (!res.ok) continue;
+        const data = await res.json();
+        const saved = data.closingCost || {};
+        created.push({
+          id: String(saved.id || `CC-${Date.now().toString(36)}`),
+          projectId: Number(saved.projectId || projectKey),
+          side,
+          code: saved.code || d.code,
+          label: saved.label || d.label,
+          amount: Number(saved.amount ?? 0),
+          paid: Boolean(saved.paid ?? false),
+          paidDate: saved.paidDate ? toDateString(toDateMs(saved.paidDate)) : null,
+          note: saved.note || "",
+        });
+      }
+      if (created.length) {
+        setProjectClosingCosts((prev) => {
+          const list = prev[projectKey] || [];
+          return { ...prev, [projectKey]: [...list, ...created] };
+        });
+      }
+    } catch (err) {
+      console.error("Failed to seed closing costs", err);
+    }
+  };
+
+  const resetDebtServiceForm = () => {
+    setDebtServiceForm({
+      projectId: "",
+      bank: "",
+      balance: "",
+      payment: "",
+      interestRate: "",
+      rateType: "fixed",
+      rateAdjustDate: "",
+      maturityDate: "",
+      note: "",
+    });
+    setEditingDebtServiceId(null);
+  };
+
+  const handleSaveDebtService = async () => {
+    const projectId = debtServiceForm.projectId ? Number(debtServiceForm.projectId) : null;
+    if (!projectId || !debtServiceForm.bank.trim()) return;
+    const payload = {
+      projectId,
+      bank: debtServiceForm.bank.trim(),
+      balance: debtServiceForm.balance !== "" ? Number(debtServiceForm.balance) : 0,
+      payment: debtServiceForm.payment !== "" ? Number(debtServiceForm.payment) : 0,
+      interestRate: debtServiceForm.interestRate !== "" ? Number(debtServiceForm.interestRate) : 0,
+      rateType: debtServiceForm.rateType,
+      rateAdjustDate: debtServiceForm.rateAdjustDate || null,
+      maturityDate: debtServiceForm.maturityDate || null,
+      note: debtServiceForm.note.trim() || null,
+    };
+    if (!currentUser || currentUser.role !== "admin") {
+      const tempId = editingDebtServiceId || `DEBT-${Date.now().toString(36)}`;
+      const existing = (projectDebtService[projectId] || []).find((d) => d.id === editingDebtServiceId) || null;
+      stageChange({
+        entity: "project_debt_service",
+        entityId: editingDebtServiceId || null,
+        operation: editingDebtServiceId ? "update" : "create",
+        before: existing,
+        after: { id: tempId, ...payload },
+        impact: editingDebtServiceId ? "Staged debt service update" : "Staged debt service create",
+      });
+      setProjectDebtService((prev) => {
+        const list = prev[projectId] || [];
+        const next = editingDebtServiceId
+          ? list.map((d) => (d.id === editingDebtServiceId ? { ...d, ...payload, id: tempId } : d))
+          : [...list, { id: tempId, ...payload }];
+        return { ...prev, [projectId]: next };
+      });
+      resetDebtServiceForm();
+      return;
+    }
+    try {
+      const method = editingDebtServiceId ? "PATCH" : "POST";
+      const res = await fetch("/api/debt-service", {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(editingDebtServiceId ? { id: Number(editingDebtServiceId), ...payload } : payload),
+      });
+      if (!res.ok) throw new Error("Failed to save debt service");
+      const data = await res.json();
+      const saved = data.debtService || {};
+      const mapped: ProjectDebtService = {
+        id: String(saved.id || editingDebtServiceId || `DEBT-${Date.now().toString(36)}`),
+        projectId: Number(saved.projectId || payload.projectId),
+        bank: saved.bank || payload.bank,
+        balance: Number(saved.balance ?? payload.balance),
+        payment: Number(saved.payment ?? payload.payment),
+        interestRate: Number(saved.interestRate ?? payload.interestRate),
+        rateType: (String(saved.rateType || payload.rateType).toLowerCase() === "variable" ? "variable" : "fixed"),
+        rateAdjustDate: saved.rateAdjustDate ? toDateString(toDateMs(saved.rateAdjustDate)) : payload.rateAdjustDate,
+        maturityDate: saved.maturityDate ? toDateString(toDateMs(saved.maturityDate)) : payload.maturityDate,
+        note: saved.note || payload.note || "",
+      };
+      setProjectDebtService((prev) => {
+        const list = prev[projectId] || [];
+        const next = editingDebtServiceId
+          ? list.map((d) => (d.id === editingDebtServiceId ? mapped : d))
+          : [...list, mapped];
+        return { ...prev, [projectId]: next };
+      });
+      resetDebtServiceForm();
+    } catch (err) {
+      console.error("Failed to save debt service", err);
+    }
+  };
+
+  const handleEditDebtService = (entry: ProjectDebtService) => {
+    setDebtServiceForm({
+      projectId: String(entry.projectId),
+      bank: entry.bank,
+      balance: entry.balance.toString(),
+      payment: entry.payment.toString(),
+      interestRate: entry.interestRate.toString(),
+      rateType: entry.rateType,
+      rateAdjustDate: entry.rateAdjustDate || "",
+      maturityDate: entry.maturityDate || "",
+      note: entry.note || "",
+    });
+    setEditingDebtServiceId(entry.id);
+  };
+
+  const handleDeleteDebtService = (entry: ProjectDebtService) => {
+    const projectId = entry.projectId;
+    const existing = (projectDebtService[projectId] || []).find((d) => d.id === entry.id) || null;
+    if (!currentUser || currentUser.role !== "admin") {
+      stageChange({
+        entity: "project_debt_service",
+        entityId: entry.id,
+        operation: "delete",
+        before: existing,
+        impact: "Staged debt service delete",
+      });
+      setProjectDebtService((prev) => ({
+        ...prev,
+        [projectId]: (prev[projectId] || []).filter((d) => d.id !== entry.id),
+      }));
+      return;
+    }
+    fetch(`/api/debt-service?id=${Number(entry.id)}`, { method: "DELETE" })
+      .catch((err) => console.error("Failed to delete debt service", err))
+      .finally(() => {
+        setProjectDebtService((prev) => ({
+          ...prev,
+          [projectId]: (prev[projectId] || []).filter((d) => d.id !== entry.id),
+        }));
+      });
+  };
+
+  const handleOpenDebtDraws = (projectId: number) => {
+    const node = epsNodes.find((n) => n.type === "project" && n.projectId === projectId);
+    if (node) {
+      setSelectedNodeId(node.id);
+    }
+    setMode("Activities");
+    setActiveProjectId(projectId);
+    setActivityView("draws");
+  };
+
+  const resetCostCategoryForm = () => {
+    setCostCategoryForm({ name: "", code: "" });
+    setEditingCostCategoryId(null);
+  };
+
+  const handleSaveCostCategory = async () => {
+    const name = costCategoryForm.name.trim();
+    if (!name) return;
+    if (!currentUser || currentUser.role !== "admin") {
+      const tempId = editingCostCategoryId || `COSTCAT-${Date.now().toString(36)}`;
+      const existing = costCategories.find((c) => c.id === editingCostCategoryId) || null;
+      stageChange({
+        entity: "cost_categories",
+        entityId: editingCostCategoryId || null,
+        operation: editingCostCategoryId ? "update" : "create",
+        before: existing,
+        after: { id: tempId, name, code: costCategoryForm.code.trim() || null },
+        impact: editingCostCategoryId ? "Staged cost category update" : "Staged cost category create",
+      });
+      setCostCategories((prev) => {
+        const next = editingCostCategoryId
+          ? prev.map((c) => (c.id === editingCostCategoryId ? { ...c, name, code: costCategoryForm.code.trim() || null } : c))
+          : [...prev, { id: tempId, name, code: costCategoryForm.code.trim() || null }];
+        return next;
+      });
+      resetCostCategoryForm();
+      return;
+    }
+    try {
+      const method = editingCostCategoryId ? "PATCH" : "POST";
+      const res = await fetch("/api/cost-categories", {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(
+          editingCostCategoryId
+            ? { id: Number(editingCostCategoryId), name, code: costCategoryForm.code.trim() || null }
+            : { name, code: costCategoryForm.code.trim() || null }
+        ),
+      });
+      if (!res.ok) throw new Error("Failed to save cost category");
+      const data = await res.json();
+      const saved = data.category || {};
+      const mapped: CostCategory = {
+        id: String(saved.id || editingCostCategoryId || `COSTCAT-${Date.now().toString(36)}`),
+        name: saved.name || name,
+        code: saved.code || costCategoryForm.code.trim() || null,
+      };
+      setCostCategories((prev) => {
+        const next = editingCostCategoryId
+          ? prev.map((c) => (c.id === editingCostCategoryId ? mapped : c))
+          : [...prev, mapped];
+        return next;
+      });
+      resetCostCategoryForm();
+    } catch (err) {
+      console.error("Failed to save cost category", err);
+    }
+  };
+
+  const handleEditCostCategory = (cat: CostCategory) => {
+    setCostCategoryForm({ name: cat.name, code: cat.code || "" });
+    setEditingCostCategoryId(cat.id);
+  };
+
+  const handleDeleteCostCategory = (catId: string) => {
+    const existing = costCategories.find((c) => c.id === catId) || null;
+    if (!currentUser || currentUser.role !== "admin") {
+      stageChange({
+        entity: "cost_categories",
+        entityId: catId,
+        operation: "delete",
+        before: existing,
+        impact: "Staged cost category delete",
+      });
+      setCostCategories((prev) => prev.filter((c) => c.id !== catId));
+      return;
+    }
+    fetch(`/api/cost-categories?id=${Number(catId)}`, { method: "DELETE" })
+      .catch((err) => console.error("Failed to delete cost category", err))
+      .finally(() => {
+        setCostCategories((prev) => prev.filter((c) => c.id !== catId));
+      });
+  };
+
+  const handleSaveCostOverride = async (categoryId: string) => {
+    const projectId = activeProjectDbId ?? resolveProjectId();
+    if (!projectId) return;
+    const draft = costOverrideDrafts[categoryId] || { amount: "", note: "" };
+    const amount = draft.amount !== "" ? Number(draft.amount) : 0;
+    const note = draft.note.trim();
+    const existing = (projectCostOverrides[projectId] || []).find((o) => o.categoryId === categoryId) || null;
+    if (!currentUser || currentUser.role !== "admin") {
+      const tempId = existing?.id || `OVR-${Date.now().toString(36)}`;
+      stageChange({
+        entity: "project_cost_overrides",
+        entityId: existing?.id || null,
+        operation: existing ? "update" : "create",
+        before: existing,
+        after: { id: tempId, projectId, categoryId: Number(categoryId), amount, note: note || null },
+        impact: existing ? "Staged cost override update" : "Staged cost override create",
+      });
+      setProjectCostOverrides((prev) => {
+        const list = prev[projectId] || [];
+        const next = existing
+          ? list.map((o) => (o.categoryId === categoryId ? { ...o, amount, note, id: tempId } : o))
+          : [...list, { id: tempId, projectId, categoryId, amount, note }];
+        return { ...prev, [projectId]: next };
+      });
+      return;
+    }
+    try {
+      const method = existing ? "PATCH" : "POST";
+      const res = await fetch("/api/cost-overrides", {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(
+          existing
+            ? { id: Number(existing.id), amount, note: note || null }
+            : { projectId, categoryId: Number(categoryId), amount, note: note || null }
+        ),
+      });
+      if (!res.ok) throw new Error("Failed to save cost override");
+      const data = await res.json();
+      const saved = data.override || {};
+      const mapped: ProjectCostOverride = {
+        id: String(saved.id || existing?.id || `OVR-${Date.now().toString(36)}`),
+        projectId: Number(saved.projectId || projectId),
+        categoryId: String(saved.categoryId || categoryId),
+        amount: Number(saved.amount ?? amount),
+        note: saved.note || note || "",
+      };
+      setProjectCostOverrides((prev) => {
+        const list = prev[projectId] || [];
+        const next = existing
+          ? list.map((o) => (o.categoryId === categoryId ? mapped : o))
+          : [...list, mapped];
+        return { ...prev, [projectId]: next };
+      });
+    } catch (err) {
+      console.error("Failed to save cost override", err);
+    }
+  };
+
+  const handleClearCostOverride = (categoryId: string) => {
+    const projectId = activeProjectDbId ?? resolveProjectId();
+    if (!projectId) return;
+    const existing = (projectCostOverrides[projectId] || []).find((o) => o.categoryId === categoryId) || null;
+    if (!existing) return;
+    if (!currentUser || currentUser.role !== "admin") {
+      stageChange({
+        entity: "project_cost_overrides",
+        entityId: existing.id,
+        operation: "delete",
+        before: existing,
+        impact: "Staged cost override delete",
+      });
+      setProjectCostOverrides((prev) => ({
+        ...prev,
+        [projectId]: (prev[projectId] || []).filter((o) => o.categoryId !== categoryId),
+      }));
+      setCostOverrideDrafts((prev) => ({
+        ...prev,
+        [categoryId]: { amount: "", note: "" },
+      }));
+      return;
+    }
+    fetch(`/api/cost-overrides?id=${Number(existing.id)}`, { method: "DELETE" })
+      .catch((err) => console.error("Failed to delete cost override", err))
+      .finally(() => {
+        setProjectCostOverrides((prev) => ({
+          ...prev,
+          [projectId]: (prev[projectId] || []).filter((o) => o.categoryId !== categoryId),
+        }));
+        setCostOverrideDrafts((prev) => ({
+          ...prev,
+          [categoryId]: { amount: "", note: "" },
+        }));
+      });
+  };
+
+  const resetBreakdownPresetForm = () => {
+    setBreakdownPresetForm({ name: "", description: "", isDefault: false });
+    setEditingBreakdownPresetId(null);
+  };
+
+  const handleSaveBreakdownPreset = async () => {
+    const name = breakdownPresetForm.name.trim();
+    if (!name) return;
+    if (!currentUser || currentUser.role !== "admin") return;
+    try {
+      const method = editingBreakdownPresetId ? "PATCH" : "POST";
+      const res = await fetch("/api/breakdown-presets", {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(
+          editingBreakdownPresetId
+            ? { id: Number(editingBreakdownPresetId), name, description: breakdownPresetForm.description, isDefault: breakdownPresetForm.isDefault }
+            : { name, description: breakdownPresetForm.description, isDefault: breakdownPresetForm.isDefault }
+        ),
+      });
+      if (!res.ok) throw new Error("Failed to save breakdown preset");
+      const data = await res.json();
+      const saved = data.preset || {};
+      const presetId = String(saved.id || editingBreakdownPresetId);
+      if (!editingBreakdownPresetId && presetId) {
+        const itemsPayload = costCategories.map((cat, idx) => ({
+          presetId: Number(presetId),
+          categoryId: Number(cat.id),
+          sortOrder: idx,
+          include: true,
+        }));
+        if (itemsPayload.length) {
+          await fetch("/api/breakdown-preset-items", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ items: itemsPayload }),
+          });
+        }
+      }
+      await loadBreakdownPresets();
+      resetBreakdownPresetForm();
+    } catch (err) {
+      console.error("Failed to save breakdown preset", err);
+    }
+  };
+
+  const handleEditBreakdownPreset = (preset: BreakdownPreset) => {
+    setBreakdownPresetForm({
+      name: preset.name,
+      description: preset.description || "",
+      isDefault: preset.isDefault,
+    });
+    setEditingBreakdownPresetId(preset.id);
+  };
+
+  const handleDeleteBreakdownPreset = async (presetId: string) => {
+    if (!currentUser || currentUser.role !== "admin") return;
+    try {
+      await fetch(`/api/breakdown-presets?id=${Number(presetId)}`, { method: "DELETE" });
+      await loadBreakdownPresets();
+    } catch (err) {
+      console.error("Failed to delete breakdown preset", err);
+    }
+  };
+
+  const handleSaveBreakdownItems = async (presetId: string) => {
+    if (!currentUser || currentUser.role !== "admin") return;
+    const items = breakdownPresetItems[presetId] || [];
+    const payload = items.map((item) => ({
+      id: Number(item.id),
+      sortOrder: Number(breakdownItemDrafts[item.id]?.sortOrder ?? item.sortOrder ?? 0),
+      include: breakdownItemDrafts[item.id]?.include ?? item.include,
+    }));
+    try {
+      await fetch("/api/breakdown-preset-items", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ items: payload }),
+      });
+      await loadBreakdownPresets();
+    } catch (err) {
+      console.error("Failed to update breakdown preset items", err);
+    }
+  };
+
+  const handleSyncBreakdownItems = async (presetId: string) => {
+    if (!currentUser || currentUser.role !== "admin") return;
+    const existing = breakdownPresetItems[presetId] || [];
+    const existingCatIds = new Set(existing.map((i) => i.categoryId));
+    const missing = costCategories.filter((cat) => !existingCatIds.has(cat.id));
+    if (!missing.length) return;
+    const payload = missing.map((cat, idx) => ({
+      presetId: Number(presetId),
+      categoryId: Number(cat.id),
+      sortOrder: existing.length + idx,
+      include: true,
+    }));
+    try {
+      await fetch("/api/breakdown-preset-items", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ items: payload }),
+      });
+      await loadBreakdownPresets();
+    } catch (err) {
+      console.error("Failed to sync breakdown items", err);
+    }
+  };
+
+  const handleSaveBreakdownPref = async (presetId: string) => {
+    const projectId = activeProjectDbId ?? resolveProjectId();
+    if (!projectId || !presetId) return;
+    const existing = projectBreakdownPrefs[projectId] || null;
+    if (!currentUser || currentUser.role !== "admin") {
+      stageChange({
+        entity: "project_breakdown_prefs",
+        entityId: existing?.id || null,
+        operation: existing ? "update" : "create",
+        before: existing,
+        after: { id: existing?.id || `BDP-${Date.now().toString(36)}`, projectId, presetId: Number(presetId) },
+        impact: "Staged breakdown preset selection",
+      });
+      setProjectBreakdownPrefs((prev) => ({
+        ...prev,
+        [projectId]: { id: existing?.id || `BDP-${Date.now().toString(36)}`, projectId, presetId },
+      }));
+      setActiveBreakdownPresetId(presetId);
+      return;
+    }
+    try {
+      const method = existing ? "PATCH" : "POST";
+      const res = await fetch("/api/breakdown-prefs", {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(existing ? { id: Number(existing.id), presetId: Number(presetId) } : { projectId, presetId: Number(presetId) }),
+      });
+      if (!res.ok) throw new Error("Failed to save breakdown pref");
+      const data = await res.json();
+      const saved = data.pref || {};
+      setProjectBreakdownPrefs((prev) => ({
+        ...prev,
+        [projectId]: { id: String(saved.id || existing?.id), projectId, presetId: String(saved.presetId || presetId) },
+      }));
+      setActiveBreakdownPresetId(presetId);
+    } catch (err) {
+      console.error("Failed to save breakdown pref", err);
+    }
+  };
+
+  const resetKpiPresetForm = () => {
+    setKpiPresetForm({ name: "", description: "", isDefault: false });
+    setEditingKpiPresetId(null);
+  };
+
+  const handleSaveKpiPreset = async () => {
+    const name = kpiPresetForm.name.trim();
+    if (!name) return;
+    if (!currentUser || currentUser.role !== "admin") return;
+    try {
+      const method = editingKpiPresetId ? "PATCH" : "POST";
+      const res = await fetch("/api/kpi-presets", {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(
+          editingKpiPresetId
+            ? { id: Number(editingKpiPresetId), name, description: kpiPresetForm.description, isDefault: kpiPresetForm.isDefault }
+            : { name, description: kpiPresetForm.description, isDefault: kpiPresetForm.isDefault }
+        ),
+      });
+      if (!res.ok) throw new Error("Failed to save kpi preset");
+      await loadKpiPresets();
+      resetKpiPresetForm();
+    } catch (err) {
+      console.error("Failed to save kpi preset", err);
+    }
+  };
+
+  const handleEditKpiPreset = (preset: KpiPreset) => {
+    setKpiPresetForm({
+      name: preset.name,
+      description: preset.description || "",
+      isDefault: preset.isDefault,
+    });
+    setEditingKpiPresetId(preset.id);
+  };
+
+  const handleDeleteKpiPreset = async (presetId: string) => {
+    if (!currentUser || currentUser.role !== "admin") return;
+    try {
+      await fetch(`/api/kpi-presets?id=${Number(presetId)}`, { method: "DELETE" });
+      await loadKpiPresets();
+    } catch (err) {
+      console.error("Failed to delete kpi preset", err);
+    }
+  };
+
+  const resetKpiItemForm = () => {
+    setKpiItemForm({
+      presetId: "",
+      name: "",
+      formula: "",
+      resultType: "currency",
+      sortOrder: "",
+      enabled: true,
+      scaleMin: "",
+      scaleMax: "",
+      scaleInvert: false,
+    });
+    setEditingKpiItemId(null);
+  };
+
+  const handleSaveKpiItem = async () => {
+    const presetId = kpiItemForm.presetId || activeKpiPresetId;
+    if (!presetId || !kpiItemForm.name.trim() || !kpiItemForm.formula.trim()) return;
+    if (!currentUser || currentUser.role !== "admin") return;
+    try {
+      const method = editingKpiItemId ? "PATCH" : "POST";
+      const res = await fetch("/api/kpi-preset-items", {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(
+          editingKpiItemId
+            ? {
+                items: [
+                  {
+                    id: Number(editingKpiItemId),
+                    name: kpiItemForm.name,
+                    formula: kpiItemForm.formula,
+                    resultType: kpiItemForm.resultType,
+                    sortOrder: kpiItemForm.sortOrder ? Number(kpiItemForm.sortOrder) : 0,
+                    enabled: kpiItemForm.enabled,
+                    scaleMin: kpiItemForm.scaleMin,
+                    scaleMax: kpiItemForm.scaleMax,
+                    scaleInvert: kpiItemForm.scaleInvert,
+                  },
+                ],
+              }
+            : {
+                items: [
+                  {
+                    presetId: Number(presetId),
+                    name: kpiItemForm.name,
+                    formula: kpiItemForm.formula,
+                    resultType: kpiItemForm.resultType,
+                    sortOrder: kpiItemForm.sortOrder ? Number(kpiItemForm.sortOrder) : 0,
+                    enabled: kpiItemForm.enabled,
+                    scaleMin: kpiItemForm.scaleMin,
+                    scaleMax: kpiItemForm.scaleMax,
+                    scaleInvert: kpiItemForm.scaleInvert,
+                  },
+                ],
+              }
+        ),
+      });
+      if (!res.ok) throw new Error("Failed to save kpi item");
+      await loadKpiPresets();
+      resetKpiItemForm();
+    } catch (err) {
+      console.error("Failed to save kpi item", err);
+    }
+  };
+
+  const handleEditKpiItem = (item: KpiPresetItem) => {
+    setKpiItemForm({
+      presetId: item.presetId,
+      name: item.name,
+      formula: item.formula,
+      resultType: item.resultType,
+      sortOrder: String(item.sortOrder),
+      enabled: item.enabled,
+      scaleMin: item.scaleMin !== null && item.scaleMin !== undefined ? String(item.scaleMin) : "",
+      scaleMax: item.scaleMax !== null && item.scaleMax !== undefined ? String(item.scaleMax) : "",
+      scaleInvert: Boolean(item.scaleInvert),
+    });
+    setEditingKpiItemId(item.id);
+  };
+
+  const handleDeleteKpiItem = async (itemId: string) => {
+    if (!currentUser || currentUser.role !== "admin") return;
+    try {
+      await fetch(`/api/kpi-preset-items?id=${Number(itemId)}`, { method: "DELETE" });
+      await loadKpiPresets();
+    } catch (err) {
+      console.error("Failed to delete kpi item", err);
+    }
+  };
+
+  const handleSaveKpiPref = async (presetId: string) => {
+    const projectId = activeProjectDbId ?? resolveProjectId();
+    if (!projectId || !presetId) return;
+    const existing = projectKpiPrefs[projectId] || null;
+    if (!currentUser || currentUser.role !== "admin") {
+      stageChange({
+        entity: "project_kpi_prefs",
+        entityId: existing?.id || null,
+        operation: existing ? "update" : "create",
+        before: existing,
+        after: { id: existing?.id || `KPI-${Date.now().toString(36)}`, projectId, presetId: Number(presetId) },
+        impact: "Staged KPI preset selection",
+      });
+      setProjectKpiPrefs((prev) => ({
+        ...prev,
+        [projectId]: { id: existing?.id || `KPI-${Date.now().toString(36)}`, projectId, presetId },
+      }));
+      setActiveKpiPresetId(presetId);
+      return;
+    }
+    try {
+      const method = existing ? "PATCH" : "POST";
+      const res = await fetch("/api/kpi-prefs", {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(existing ? { id: Number(existing.id), presetId: Number(presetId) } : { projectId, presetId: Number(presetId) }),
+      });
+      if (!res.ok) throw new Error("Failed to save kpi pref");
+      const data = await res.json();
+      const saved = data.pref || {};
+      setProjectKpiPrefs((prev) => ({
+        ...prev,
+        [projectId]: { id: String(saved.id || existing?.id), projectId, presetId: String(saved.presetId || presetId) },
+      }));
+      setActiveKpiPresetId(presetId);
+    } catch (err) {
+      console.error("Failed to save kpi pref", err);
+    }
+  };
+
+  const handleSaveKpiOverride = async (itemId: string) => {
+    const projectId = activeProjectDbId ?? resolveProjectId();
+    if (!projectId) return;
+    const draft = kpiOverrideDrafts[itemId] || { value: "", note: "" };
+    const overrideValue = draft.value !== "" ? Number(draft.value) : 0;
+    const note = draft.note.trim();
+    const existing = (projectKpiOverrides[projectId] || []).find((o) => o.itemId === itemId) || null;
+    if (!currentUser || currentUser.role !== "admin") {
+      const tempId = existing?.id || `KPIO-${Date.now().toString(36)}`;
+      stageChange({
+        entity: "project_kpi_overrides",
+        entityId: existing?.id || null,
+        operation: existing ? "update" : "create",
+        before: existing,
+        after: { id: tempId, projectId, itemId: Number(itemId), overrideValue, note: note || null },
+        impact: existing ? "Staged KPI override update" : "Staged KPI override create",
+      });
+      setProjectKpiOverrides((prev) => {
+        const list = prev[projectId] || [];
+        const next = existing
+          ? list.map((o) => (o.itemId === itemId ? { ...o, overrideValue, note, id: tempId } : o))
+          : [...list, { id: tempId, projectId, itemId, overrideValue, note }];
+        return { ...prev, [projectId]: next };
+      });
+      return;
+    }
+    try {
+      const method = existing ? "PATCH" : "POST";
+      const res = await fetch("/api/kpi-overrides", {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(
+          existing
+            ? { id: Number(existing.id), overrideValue, note: note || null }
+            : { projectId, itemId: Number(itemId), overrideValue, note: note || null }
+        ),
+      });
+      if (!res.ok) throw new Error("Failed to save KPI override");
+      const data = await res.json();
+      const saved = data.override || {};
+      const mapped: ProjectKpiOverride = {
+        id: String(saved.id || existing?.id || `KPIO-${Date.now().toString(36)}`),
+        projectId: Number(saved.projectId || projectId),
+        itemId: String(saved.itemId || itemId),
+        overrideValue: Number(saved.overrideValue ?? overrideValue),
+        note: saved.note || note || "",
+      };
+      setProjectKpiOverrides((prev) => {
+        const list = prev[projectId] || [];
+        const next = existing
+          ? list.map((o) => (o.itemId === itemId ? mapped : o))
+          : [...list, mapped];
+        return { ...prev, [projectId]: next };
+      });
+    } catch (err) {
+      console.error("Failed to save KPI override", err);
+    }
+  };
+
+  const handleClearKpiOverride = (itemId: string) => {
+    const projectId = activeProjectDbId ?? resolveProjectId();
+    if (!projectId) return;
+    const existing = (projectKpiOverrides[projectId] || []).find((o) => o.itemId === itemId) || null;
+    if (!existing) return;
+    if (!currentUser || currentUser.role !== "admin") {
+      stageChange({
+        entity: "project_kpi_overrides",
+        entityId: existing.id,
+        operation: "delete",
+        before: existing,
+        impact: "Staged KPI override delete",
+      });
+      setProjectKpiOverrides((prev) => ({
+        ...prev,
+        [projectId]: (prev[projectId] || []).filter((o) => o.itemId !== itemId),
+      }));
+      setKpiOverrideDrafts((prev) => ({
+        ...prev,
+        [itemId]: { value: "", note: "" },
+      }));
+      return;
+    }
+    fetch(`/api/kpi-overrides?id=${Number(existing.id)}`, { method: "DELETE" })
+      .catch((err) => console.error("Failed to delete KPI override", err))
+      .finally(() => {
+        setProjectKpiOverrides((prev) => ({
+          ...prev,
+          [projectId]: (prev[projectId] || []).filter((o) => o.itemId !== itemId),
+        }));
+        setKpiOverrideDrafts((prev) => ({
+          ...prev,
+          [itemId]: { value: "", note: "" },
+        }));
+      });
+  };
+
+  const handleInsertKpiVariable = (name: string) => {
+    const token = `{${name}}`;
+    const current = kpiItemForm.formula || "";
+    const selection = kpiFormulaSelectionRef.current;
+    const start = selection?.start ?? current.length;
+    const end = selection?.end ?? start;
+    const next = current.slice(0, start) + token + current.slice(end);
+    setKpiItemForm((prev) => ({ ...prev, formula: next }));
+    if (typeof window !== "undefined") {
+      window.requestAnimationFrame(() => {
+        if (kpiFormulaRef.current) {
+          kpiFormulaRef.current.focus();
+          const caret = start + token.length;
+          kpiFormulaRef.current.setSelectionRange(caret, caret);
+          kpiFormulaSelectionRef.current = { start: caret, end: caret };
+        }
+      });
+    }
+  };
+
+  const handleNotificationClick = useCallback((note: NotificationItem) => {
+    if (!note) return;
+    if (note.target.mode) {
+      setMode(note.target.mode);
+    }
+    if (note.target.projectId) {
+      setActiveProjectId(note.target.projectId);
+    }
+    if (note.target.activityView) {
+      setActivityView(note.target.activityView);
+    }
+    if (note.target.rentPropertyId) {
+      setRentRollProperty(note.target.rentPropertyId);
+    }
+    if (note.target.rentUnitId) {
+      setRentRollDetailView({ type: "unit", id: note.target.rentUnitId });
+    }
+    handleNotificationRead(note.id);
+  }, [handleNotificationRead]);
+  const handleToastClick = useCallback((note: NotificationItem) => {
+    handleNotificationClick(note);
+  }, [handleNotificationClick]);
 
   const handleCreateLedgerCategory = async (name: string, parentId: string) => {
     const trimmed = name.trim();
@@ -7550,6 +10583,146 @@ export default function DashboardPage() {
       });
     } catch (err) {
       console.error("Failed to delete ledger category", err);
+    }
+  };
+
+  const handleSaveLedgerAccount = async (payload: {
+    id?: string | null;
+    name: string;
+    type: LedgerAccount["type"];
+    institution?: string;
+    last4?: string;
+  }) => {
+    const name = payload.name.trim();
+    if (!name) return;
+    const type = payload.type || "bank";
+    const institution = payload.institution?.trim() || "";
+    const last4 = payload.last4?.trim() || "";
+    const existing = payload.id ? ledgerAccounts.find((acct) => acct.id === payload.id) : null;
+    if (!currentUser || currentUser.role !== "admin") {
+      const tempId = payload.id || `ACCT-${Date.now().toString(36)}`;
+      stageChange({
+        entity: "ledger_accounts",
+        entityId: payload.id || null,
+        operation: payload.id ? "update" : "create",
+        before: existing || null,
+        after: { id: tempId, name, type, institution, last4 },
+        impact: payload.id ? "Staged ledger account update" : "Staged ledger account create",
+      });
+      setLedgerAccounts((prev) => {
+        if (payload.id) {
+          return prev.map((acct) => acct.id === payload.id ? { ...acct, name, type, institution, last4 } : acct);
+        }
+        return [...prev, { id: tempId, name, type, institution, last4 }];
+      });
+      if (payload.id) {
+        setTransactions((prev) => {
+          const next: Record<number, Transaction[]> = {};
+          Object.entries(prev).forEach(([projectId, list]) => {
+            next[Number(projectId)] = list.map((t) =>
+              t.accountId === payload.id ? { ...t, accountName: name } : t
+            );
+          });
+          return next;
+        });
+      }
+      return;
+    }
+    try {
+      const method = payload.id ? "PATCH" : "POST";
+      const res = await fetch("/api/accounts", {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(
+          payload.id
+            ? { items: [{ id: Number(payload.id), name, type, institution, last4 }] }
+            : { items: [{ name, type, institution, last4 }] }
+        ),
+      });
+      if (!res.ok) throw new Error("Failed to save account");
+      const data = await res.json();
+      const saved = (data.accounts || [])[0] || {};
+      const savedId = String(saved.id || payload.id || `ACCT-${Date.now().toString(36)}`);
+      setLedgerAccounts((prev) => {
+        if (payload.id) {
+          return prev.map((acct) =>
+            acct.id === payload.id
+              ? {
+                  ...acct,
+                  id: savedId,
+                  name: saved.name || name,
+                  type: (String(saved.type || type).toLowerCase() as LedgerAccount["type"]) || type,
+                  institution: saved.institution || institution,
+                  last4: saved.last4 || last4,
+                }
+              : acct
+          );
+        }
+        return [
+          ...prev,
+          {
+            id: savedId,
+            name: saved.name || name,
+            type: (String(saved.type || type).toLowerCase() as LedgerAccount["type"]) || type,
+            institution: saved.institution || institution,
+            last4: saved.last4 || last4,
+          },
+        ];
+      });
+      if (payload.id) {
+        setTransactions((prev) => {
+          const next: Record<number, Transaction[]> = {};
+          Object.entries(prev).forEach(([projectId, list]) => {
+            next[Number(projectId)] = list.map((t) =>
+              t.accountId === payload.id ? { ...t, accountName: saved.name || name } : t
+            );
+          });
+          return next;
+        });
+      }
+    } catch (err) {
+      console.error("Failed to save account", err);
+    }
+  };
+
+  const handleDeleteLedgerAccount = async (id: string) => {
+    const existing = ledgerAccounts.find((acct) => acct.id === id);
+    if (!existing) return;
+    if (!currentUser || currentUser.role !== "admin") {
+      stageChange({
+        entity: "ledger_accounts",
+        entityId: id,
+        operation: "delete",
+        before: existing,
+        impact: "Staged ledger account delete",
+      });
+      setLedgerAccounts((prev) => prev.filter((acct) => acct.id !== id));
+      setTransactions((prev) => {
+        const next: Record<number, Transaction[]> = {};
+        Object.entries(prev).forEach(([projectId, list]) => {
+          next[Number(projectId)] = list.map((t) =>
+            t.accountId === id ? { ...t, accountId: undefined, accountName: t.accountName || existing.name } : t
+          );
+        });
+        return next;
+      });
+      return;
+    }
+    try {
+      const res = await fetch(`/api/accounts?id=${Number(id)}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to delete account");
+      setLedgerAccounts((prev) => prev.filter((acct) => acct.id !== id));
+      setTransactions((prev) => {
+        const next: Record<number, Transaction[]> = {};
+        Object.entries(prev).forEach(([projectId, list]) => {
+          next[Number(projectId)] = list.map((t) =>
+            t.accountId === id ? { ...t, accountId: undefined, accountName: t.accountName || existing.name } : t
+          );
+        });
+        return next;
+      });
+    } catch (err) {
+      console.error("Failed to delete account", err);
     }
   };
 
@@ -7850,7 +11023,8 @@ export default function DashboardPage() {
   // --- Custom Formula Operations ---
   const handleCreateFormula = () => {
     if (selectedNode && selectedNode.type === "project") {
-      setActiveProjectId(selectedNode.id);
+      const projectDbId = getProjectDbIdFromNode(selectedNode.id) ?? selectedNode.projectId ?? null;
+      if (projectDbId) setActiveProjectId(projectDbId);
     }
     setEditingFormula(null);
     setFormulaDialogOpen(true);
@@ -8217,7 +11391,8 @@ export default function DashboardPage() {
 
   const openPresetPicker = () => {
     if (selectedNode && selectedNode.type === "project") {
-      setActiveProjectId(selectedNode.id);
+      const projectDbId = getProjectDbIdFromNode(selectedNode.id) ?? selectedNode.projectId ?? null;
+      if (projectDbId) setActiveProjectId(projectDbId);
     }
     setPresetPickerOpen(true);
   };
@@ -8248,7 +11423,7 @@ export default function DashboardPage() {
   };
 
   const handleProjectStatusChange = (epsOrProjectId: number, status: ProjectStatus) => {
-    const projectDbId = getProjectDbIdFromNode(epsOrProjectId);
+    const projectDbId = getProjectDbIdFromNode(epsOrProjectId) ?? epsOrProjectId;
     if (!projectDbId) {
       alert("This project node is missing a linked project. Please recreate or relink the project.");
       return;
@@ -9438,7 +12613,8 @@ export default function DashboardPage() {
   }, [activeProjectId, pipelineMeta, ensureUnderContractDetails]);
 
   const handleProjectSelect = (projectId: number) => {
-    setActiveProjectId(projectId);
+    const projectDbId = getProjectDbIdFromNode(projectId) ?? projectId;
+    setActiveProjectId(projectDbId);
     setMode("Activities");
   };
 
@@ -9494,8 +12670,284 @@ export default function DashboardPage() {
     return mapped ?? (selectedNode.projectId ?? null);
   }, [getProjectDbIdFromNode, selectedNode]);
 
+  useEffect(() => {
+    const acquisitionProjectId = activeProjectDbId ?? selectedProjectDbId;
+    if (!acquisitionProjectId) {
+      setAcquisitionForm({ purchasePrice: "", acquisitionDraw: "", earnestMoney: "", closeDate: "", note: "" });
+      setEditingAcquisitionId(null);
+      return;
+    }
+    const acquisition = projectAcquisitions[acquisitionProjectId] || null;
+    if (!acquisition) {
+      setAcquisitionForm({ purchasePrice: "", acquisitionDraw: "", earnestMoney: "", closeDate: "", note: "" });
+      setEditingAcquisitionId(null);
+      return;
+    }
+    setAcquisitionForm({
+      purchasePrice: acquisition.purchasePrice?.toString() ?? "",
+      acquisitionDraw: acquisition.acquisitionDraw?.toString() ?? "",
+      earnestMoney: acquisition.earnestMoney?.toString() ?? "",
+      closeDate: acquisition.closeDate || "",
+      note: acquisition.note || "",
+    });
+    setEditingAcquisitionId(acquisition.id);
+  }, [activeProjectDbId, projectAcquisitions, selectedProjectDbId]);
+
+  useEffect(() => {
+    setClosingCostForm({ side: "purchase", label: "", amount: "", paid: false, paidDate: "", note: "" });
+    setEditingClosingCostId(null);
+  }, [activeProjectDbId]);
+
+  useEffect(() => {
+    if (!activeProjectDbId) {
+      setCostOverrideDrafts({});
+      return;
+    }
+    const overrides = projectCostOverrides[activeProjectDbId] || [];
+    const next: Record<string, { amount: string; note: string }> = {};
+    costCategories.forEach((cat) => {
+      const match = overrides.find((o) => o.categoryId === cat.id);
+      next[cat.id] = {
+        amount: match ? String(match.amount) : "",
+        note: match?.note || "",
+      };
+    });
+    setCostOverrideDrafts(next);
+  }, [activeProjectDbId, costCategories, projectCostOverrides]);
+
+  useEffect(() => {
+    if (!activeProjectDbId) {
+      setActiveBreakdownPresetId(null);
+      return;
+    }
+    const defaultPreset = breakdownPresets.find((p) => p.isDefault) || breakdownPresets[0] || null;
+    const projectPref = projectBreakdownPrefs[activeProjectDbId];
+    setActiveBreakdownPresetId(projectPref?.presetId || defaultPreset?.id || null);
+  }, [activeProjectDbId, breakdownPresets, projectBreakdownPrefs]);
+
+  useEffect(() => {
+    if (!activeBreakdownPresetId) {
+      setBreakdownItemDrafts({});
+      return;
+    }
+    const items = breakdownPresetItems[activeBreakdownPresetId] || [];
+    const next: Record<string, { include: boolean; sortOrder: string }> = {};
+    items.forEach((item) => {
+      next[item.id] = { include: item.include, sortOrder: String(item.sortOrder ?? 0) };
+    });
+    setBreakdownItemDrafts(next);
+  }, [activeBreakdownPresetId, breakdownPresetItems]);
+
+  useEffect(() => {
+    if (!activeProjectDbId) {
+      setActiveKpiPresetId(null);
+      return;
+    }
+    const defaultPreset = kpiPresets.find((p) => p.isDefault) || kpiPresets[0] || null;
+    const projectPref = projectKpiPrefs[activeProjectDbId];
+    setActiveKpiPresetId(projectPref?.presetId || defaultPreset?.id || null);
+  }, [activeProjectDbId, kpiPresets, projectKpiPrefs]);
+
+  useEffect(() => {
+    if (!activeProjectDbId) {
+      setKpiOverrideDrafts({});
+      return;
+    }
+    const overrides = projectKpiOverrides[activeProjectDbId] || [];
+    const items = activeKpiPresetId ? (kpiPresetItems[activeKpiPresetId] || []) : [];
+    const next: Record<string, { value: string; note: string }> = {};
+    items.forEach((item) => {
+      const match = overrides.find((o) => o.itemId === item.id);
+      next[item.id] = {
+        value: match ? String(match.overrideValue) : "",
+        note: match?.note || "",
+      };
+    });
+    setKpiOverrideDrafts(next);
+  }, [activeKpiPresetId, activeProjectDbId, kpiPresetItems, projectKpiOverrides]);
+
   const selectedProjectActivities = (selectedProjectDbId && activities[selectedProjectDbId]) || [];
   const selectedProjectTransactions = (selectedProjectDbId && transactions[selectedProjectDbId]) || [];
+  const selectedProjectUtilities = (selectedProjectDbId && projectUtilities[selectedProjectDbId]) || [];
+  const selectedProjectDraws = (selectedProjectDbId && projectDraws[selectedProjectDbId]) || [];
+  const selectedProjectLoans = (selectedProjectDbId && projectLoans[selectedProjectDbId]) || [];
+  const selectedProjectTaxes = (selectedProjectDbId && projectPropertyTaxes[selectedProjectDbId]) || [];
+  const selectedProjectAcquisition = (selectedProjectDbId && projectAcquisitions[selectedProjectDbId]) || null;
+  const selectedProjectClosingCosts = (selectedProjectDbId && projectClosingCosts[selectedProjectDbId]) || [];
+  const selectedProjectDebtService = (selectedProjectDbId && projectDebtService[selectedProjectDbId]) || [];
+  const selectedProjectCostOverrides = (selectedProjectDbId && projectCostOverrides[selectedProjectDbId]) || [];
+  const ledgerIncomeTotal = selectedProjectTransactions.reduce((sum, t) => sum + (t.type === "Income" ? t.amount : 0), 0);
+  const ledgerOutcomeTotal = selectedProjectTransactions.reduce((sum, t) => sum + (t.type === "Outcome" ? t.amount : 0), 0);
+  const ledgerNetTotal = ledgerIncomeTotal - ledgerOutcomeTotal;
+  const utilitiesTotal = selectedProjectUtilities.reduce((sum, u) => sum + (u.amount || 0), 0);
+  const drawsTotal = selectedProjectDraws.reduce((sum, d) => sum + (d.amount || 0), 0);
+  const loansPaidTotal = selectedProjectLoans.reduce((sum, l) => sum + (l.payment || 0), 0);
+  const closingCostsPurchaseTotal = selectedProjectClosingCosts
+    .filter((c) => c.side === "purchase")
+    .reduce((sum, c) => sum + (c.amount || 0), 0);
+  const closingCostsSaleTotal = selectedProjectClosingCosts
+    .filter((c) => c.side === "sale")
+    .reduce((sum, c) => sum + (c.amount || 0), 0);
+  const taxesDueTotal = selectedProjectTaxes
+    .filter((t) => t.status !== "paid")
+    .reduce((sum, t) => sum + (t.amount || 0), 0);
+  const notificationThresholds = [30, 15, 7, 4, 2, 0];
+  const notifications = useMemo(() => {
+    const todayMs = getCentralTodayMs();
+    const items: NotificationItem[] = [];
+    const todayKey = toDateString(todayMs);
+    const dayDiff = (dateStr: string) => {
+      const target = toDateMs(dateStr);
+      if (!Number.isFinite(target)) return 9999;
+      return Math.round((target - toDateMs(todayKey)) / DAY_MS);
+    };
+    const levelForDays = (daysUntil: number): NotificationItem["level"] => {
+      if (daysUntil <= 2) return "urgent";
+      if (daysUntil <= 7) return "warning";
+      return "info";
+    };
+
+    rentRollEntries.forEach((entry) => {
+      const roll = paymentRollup[entry.id];
+      if (!roll || roll.balance <= 0) return;
+      const daysUntil = dayDiff(roll.dueDate);
+      if (!notificationThresholds.includes(daysUntil)) return;
+      const propertyName = rentRollPropertyMap[entry.propertyId]?.name || "Property";
+      const id = `rent-${entry.id}-${daysUntil}`;
+      items.push({
+        id,
+        title: `Rent due in ${daysUntil} day${daysUntil === 1 ? "" : "s"}`,
+        detail: `${propertyName} · ${entry.unit}${entry.tenant ? ` · ${entry.tenant}` : ""}`,
+        dueDate: roll.dueDate,
+        daysUntil,
+        level: levelForDays(daysUntil),
+        target: {
+          mode: "RentRoll",
+          rentPropertyId: entry.propertyId,
+          rentUnitId: entry.id,
+        },
+      });
+    });
+
+    Object.entries(projectUtilities).forEach(([projectIdStr, list]) => {
+      const projectId = Number(projectIdStr);
+      list.forEach((utility) => {
+        const daysUntil = dayDiff(utility.date);
+        if (!notificationThresholds.includes(daysUntil)) return;
+        const projName = epsProjectNameById(projectId) || `Project ${projectId}`;
+        const id = `utility-${utility.id}-${daysUntil}`;
+        items.push({
+          id,
+          title: `Utility due in ${daysUntil} day${daysUntil === 1 ? "" : "s"}`,
+          detail: `${projName} · ${utility.service}${utility.provider ? ` · ${utility.provider}` : ""}`,
+          dueDate: utility.date,
+          daysUntil,
+          level: levelForDays(daysUntil),
+          target: {
+            mode: "Activities",
+            projectId,
+            activityView: "utilities",
+          },
+        });
+      });
+    });
+
+    Object.entries(projectPropertyTaxes).forEach(([projectIdStr, list]) => {
+      const projectId = Number(projectIdStr);
+      list.forEach((tax) => {
+        if (tax.status === "paid") return;
+        const daysUntil = dayDiff(tax.dueDate);
+        if (!notificationThresholds.includes(daysUntil)) return;
+        const projName = epsProjectNameById(projectId) || `Project ${projectId}`;
+        const id = `tax-${tax.id}-${daysUntil}`;
+        items.push({
+          id,
+          title: `Property tax due in ${daysUntil} day${daysUntil === 1 ? "" : "s"}`,
+          detail: `${projName} · ${tax.taxYear}`,
+          dueDate: tax.dueDate,
+          daysUntil,
+          level: levelForDays(daysUntil),
+          target: {
+            mode: "Activities",
+            projectId,
+            activityView: "taxes",
+          },
+        });
+      });
+    });
+
+    return items
+      .filter((n) => !dismissedNotifications.has(n.id))
+      .sort((a, b) => toDateMs(b.dueDate) - toDateMs(a.dueDate));
+  }, [dismissedNotifications, epsProjectNameById, notificationThresholds, paymentRollup, projectPropertyTaxes, projectUtilities, rentRollEntries, rentRollPropertyMap]);
+  const handleNotificationReadAll = useCallback(() => {
+    setReadNotifications((prev) => {
+      const next = new Set(prev);
+      notifications.forEach((n) => next.add(n.id));
+      return next;
+    });
+    setToastItems([]);
+    setHiddenToastIds((prev) => {
+      const next = new Set(prev);
+      toastItems.forEach((t) => next.add(t.id));
+      return next;
+    });
+    Object.values(toastTimersRef.current).forEach((t) => clearTimeout(t));
+    toastTimersRef.current = {};
+  }, [notifications, toastItems]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (toastEnqueueTimerRef.current) {
+      clearTimeout(toastEnqueueTimerRef.current);
+      toastEnqueueTimerRef.current = null;
+    }
+    if (toastItems.length >= 3) return;
+    const existing = new Set(toastItems.map((t) => t.id));
+    const next = notifications.find(
+      (note) =>
+        !dismissedNotifications.has(note.id) &&
+        !readNotifications.has(note.id) &&
+        !hiddenToastIds.has(note.id) &&
+        !existing.has(note.id)
+    );
+    if (!next) return;
+    toastEnqueueTimerRef.current = window.setTimeout(() => {
+      setToastItems((prev) => {
+        if (prev.length >= 3) return prev;
+        if (prev.find((t) => t.id === next.id)) return prev;
+        return [...prev, next];
+      });
+      toastEnqueueTimerRef.current = null;
+    }, 220);
+  }, [dismissedNotifications, hiddenToastIds, notifications, readNotifications, toastItems]);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const nextIds = new Set(toastItems.map((n) => n.id));
+    Object.entries(toastTimersRef.current).forEach(([id, timer]) => {
+      if (!nextIds.has(id)) {
+        clearTimeout(timer);
+        delete toastTimersRef.current[id];
+      }
+    });
+    toastItems.forEach((note) => {
+      if (toastTimersRef.current[note.id]) return;
+      const timer = window.setTimeout(() => dismissToast(note.id), 8000);
+      toastTimersRef.current[note.id] = timer;
+    });
+  }, [dismissToast, toastItems]);
+  useEffect(() => {
+    return () => {
+      if (toastEnqueueTimerRef.current) {
+        clearTimeout(toastEnqueueTimerRef.current);
+      }
+    };
+  }, []);
+  useEffect(() => {
+    return () => {
+      Object.values(toastTimersRef.current).forEach((t) => clearTimeout(t));
+    };
+  }, []);
   const selectedProjectDetails = (selectedProjectDbId && projectDetails[selectedProjectDbId]) || [];
   const selectedCustomFormulas = (selectedProjectDbId && customFormulas[selectedProjectDbId]) || [];
 
@@ -9767,6 +13219,17 @@ export default function DashboardPage() {
           currentMode={mode}
           currentUser={currentUser}
           activeUsers={activeUsers}
+          notifications={notifications}
+          onNotificationClick={handleNotificationClick}
+          onNotificationDismiss={handleNotificationDismiss}
+          onNotificationRead={handleNotificationRead}
+          onNotificationUnread={handleNotificationUnread}
+          onNotificationReadAll={handleNotificationReadAll}
+          readNotificationIds={readNotifications}
+          toastItems={toastItems}
+          closingToastIds={closingToastIds}
+          onToastClick={handleToastClick}
+          onToastDismiss={handleNotificationDismiss}
           onLogout={handleLogout}
           onOpenCommit={openCommitModal}
           commitDraftCount={commitDraftCount}
@@ -10747,6 +14210,242 @@ export default function DashboardPage() {
   }
 
   // ---------------------------------------------------------------------------
+  // DEBT SERVICE VIEW
+  // ---------------------------------------------------------------------------
+  if (mode === "DebtService") {
+    const debtProjects = epsProjects
+      .map((p) => ({
+        id: String(getProjectDbIdFromNode(p.id) ?? p.projectId ?? p.id),
+        name: p.name,
+      }))
+      .filter((p, idx, arr) => arr.findIndex((o) => o.id === p.id) === idx);
+    const allDebtEntries = Object.values(projectDebtService).flat();
+    const filteredDebtEntries = debtServiceFilterProjectId === "all"
+      ? allDebtEntries
+      : allDebtEntries.filter((d) => String(d.projectId) === debtServiceFilterProjectId);
+    const totalDebtPayment = filteredDebtEntries.reduce((sum, d) => sum + (d.payment || 0), 0);
+    const filterLabel = debtServiceFilterProjectId === "all"
+      ? "All Projects"
+      : (epsProjectNameById(Number(debtServiceFilterProjectId)) || `Project ${debtServiceFilterProjectId}`);
+
+    return (
+      <div className="h-screen flex flex-col bg-slate-50 dark:bg-slate-900">
+        <TopBar
+          title="Debt Service"
+          projectName={filterLabel}
+          onModeChange={setMode}
+          currentMode={mode}
+          currentUser={currentUser}
+          activeUsers={activeUsers}
+          notifications={notifications}
+          onNotificationClick={handleNotificationClick}
+          onNotificationDismiss={handleNotificationDismiss}
+          onNotificationRead={handleNotificationRead}
+          onNotificationUnread={handleNotificationUnread}
+          onNotificationReadAll={handleNotificationReadAll}
+          readNotificationIds={readNotifications}
+          toastItems={toastItems}
+          closingToastIds={closingToastIds}
+          onToastClick={handleToastClick}
+          onToastDismiss={handleNotificationDismiss}
+          onLogout={handleLogout}
+          onOpenCommit={openCommitModal}
+          commitDraftCount={commitDraftCount}
+        />
+        <div className="flex-1 overflow-y-auto p-6">
+          <div className="max-w-6xl mx-auto space-y-6">
+            <div className="rounded-lg border border-slate-300 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-50">Monthly Debt Service</h2>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Track balances, rates, and maturities across projects.</p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <select
+                    value={debtServiceFilterProjectId}
+                    onChange={(e) => setDebtServiceFilterProjectId(e.target.value)}
+                    className="rounded-md border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-900"
+                  >
+                    <option value="all">All Projects</option>
+                    {debtProjects.map((p) => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </select>
+                  <div className="text-sm text-slate-600 dark:text-slate-300">
+                    Total Payment: <span className="font-semibold">{formatCurrency(totalDebtPayment)}</span>
+                  </div>
+                </div>
+              </div>
+              <div className="mt-4 grid grid-cols-1 md:grid-cols-4 lg:grid-cols-9 gap-2">
+                <select
+                  value={debtServiceForm.projectId}
+                  onChange={(e) => setDebtServiceForm((prev) => ({ ...prev, projectId: e.target.value }))}
+                  className="rounded-md border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-900"
+                >
+                  <option value="">Select Project</option>
+                  {debtProjects.map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+                <input
+                  value={debtServiceForm.bank}
+                  onChange={(e) => setDebtServiceForm((prev) => ({ ...prev, bank: e.target.value }))}
+                  placeholder="Bank"
+                  className="rounded-md border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-900"
+                />
+                <input
+                  type="number"
+                  value={debtServiceForm.balance}
+                  onChange={(e) => setDebtServiceForm((prev) => ({ ...prev, balance: e.target.value }))}
+                  placeholder="Balance"
+                  className="rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-right dark:border-slate-700 dark:bg-slate-900"
+                />
+                <input
+                  type="number"
+                  value={debtServiceForm.payment}
+                  onChange={(e) => setDebtServiceForm((prev) => ({ ...prev, payment: e.target.value }))}
+                  placeholder="Payment"
+                  className="rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-right dark:border-slate-700 dark:bg-slate-900"
+                />
+                <input
+                  type="number"
+                  value={debtServiceForm.interestRate}
+                  onChange={(e) => setDebtServiceForm((prev) => ({ ...prev, interestRate: e.target.value }))}
+                  placeholder="Rate %"
+                  className="rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-right dark:border-slate-700 dark:bg-slate-900"
+                />
+                <select
+                  value={debtServiceForm.rateType}
+                  onChange={(e) => setDebtServiceForm((prev) => ({ ...prev, rateType: e.target.value as ProjectDebtService["rateType"] }))}
+                  className="rounded-md border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-900"
+                >
+                  <option value="fixed">Fixed</option>
+                  <option value="variable">Variable</option>
+                </select>
+                <input
+                  type="date"
+                  value={debtServiceForm.rateAdjustDate}
+                  onChange={(e) => setDebtServiceForm((prev) => ({ ...prev, rateAdjustDate: e.target.value }))}
+                  className="rounded-md border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-900"
+                />
+                <input
+                  type="date"
+                  value={debtServiceForm.maturityDate}
+                  onChange={(e) => setDebtServiceForm((prev) => ({ ...prev, maturityDate: e.target.value }))}
+                  className="rounded-md border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-900"
+                />
+                <input
+                  value={debtServiceForm.note}
+                  onChange={(e) => setDebtServiceForm((prev) => ({ ...prev, note: e.target.value }))}
+                  placeholder="Note"
+                  className="rounded-md border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-900"
+                />
+              </div>
+              <div className="mt-3 flex items-center gap-2">
+                <button
+                  onClick={handleSaveDebtService}
+                  className="px-3 py-1.5 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700"
+                >
+                  {editingDebtServiceId ? "Update Debt" : "Add Debt"}
+                </button>
+                {editingDebtServiceId && (
+                  <button
+                    onClick={resetDebtServiceForm}
+                    className="px-3 py-1.5 text-sm rounded-md border border-slate-300 text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                  >
+                    Cancel
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-slate-300 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900 overflow-hidden">
+              <div className="p-4 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-50">Debt Schedule</h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Click a row to open the project draws.</p>
+                </div>
+                <span className="text-xs text-slate-500 dark:text-slate-400">{filteredDebtEntries.length} entries</span>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-slate-50 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 uppercase text-[11px]">
+                    <tr>
+                      <th className="px-4 py-2 text-left">Project</th>
+                      <th className="px-4 py-2 text-left">Bank</th>
+                      <th className="px-4 py-2 text-right">Balance</th>
+                      <th className="px-4 py-2 text-right">Payment</th>
+                      <th className="px-4 py-2 text-right">Rate</th>
+                      <th className="px-4 py-2 text-left">Type</th>
+                      <th className="px-4 py-2 text-left">Adjust Date</th>
+                      <th className="px-4 py-2 text-left">Maturity</th>
+                      <th className="px-4 py-2 text-left">Note</th>
+                      <th className="px-4 py-2 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredDebtEntries.length === 0 && (
+                      <tr>
+                        <td colSpan={10} className="px-4 py-6 text-center text-slate-500 dark:text-slate-400">
+                          No debt service entries yet.
+                        </td>
+                      </tr>
+                    )}
+                    {filteredDebtEntries
+                      .slice()
+                      .sort((a, b) => (b.maturityDate || "").localeCompare(a.maturityDate || ""))
+                      .map((entry, idx) => (
+                        <tr
+                          key={entry.id}
+                          onClick={() => handleOpenDebtDraws(entry.projectId)}
+                          className={`border-t border-slate-200 dark:border-slate-800 cursor-pointer ${idx % 2 === 0 ? "bg-white dark:bg-slate-900" : "bg-slate-50 dark:bg-slate-800"} hover:bg-slate-100 dark:hover:bg-slate-800/80`}
+                        >
+                          <td className="px-4 py-2 font-medium text-slate-800 dark:text-slate-100">
+                            {epsProjectNameById(entry.projectId) || `Project ${entry.projectId}`}
+                          </td>
+                          <td className="px-4 py-2">{entry.bank}</td>
+                          <td className="px-4 py-2 text-right">{formatCurrency(entry.balance)}</td>
+                          <td className="px-4 py-2 text-right">{formatCurrency(entry.payment)}</td>
+                          <td className="px-4 py-2 text-right">{entry.interestRate.toFixed(2)}%</td>
+                          <td className="px-4 py-2">{entry.rateType}</td>
+                          <td className="px-4 py-2">{entry.rateAdjustDate || "-"}</td>
+                          <td className="px-4 py-2">{entry.maturityDate || "-"}</td>
+                          <td className="px-4 py-2 text-slate-500 dark:text-slate-400">{entry.note || "-"}</td>
+                          <td className="px-4 py-2 text-right">
+                            <div className="inline-flex gap-2">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleEditDebtService(entry);
+                                }}
+                                className="px-2 py-1 text-xs rounded bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/40 dark:text-blue-200"
+                              >
+                                Edit
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeleteDebtService(entry);
+                                }}
+                                className="px-2 py-1 text-xs rounded bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/40 dark:text-red-300"
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ---------------------------------------------------------------------------
   // ACCOUNT VIEW
   // ---------------------------------------------------------------------------
   if (mode === "Account") {
@@ -10768,6 +14467,17 @@ export default function DashboardPage() {
           currentMode={mode}
           currentUser={currentUser}
           activeUsers={activeUsers}
+          notifications={notifications}
+          onNotificationClick={handleNotificationClick}
+          onNotificationDismiss={handleNotificationDismiss}
+          onNotificationRead={handleNotificationRead}
+          onNotificationUnread={handleNotificationUnread}
+          onNotificationReadAll={handleNotificationReadAll}
+          readNotificationIds={readNotifications}
+          toastItems={toastItems}
+          closingToastIds={closingToastIds}
+          onToastClick={handleToastClick}
+          onToastDismiss={handleNotificationDismiss}
           onLogout={handleLogout}
           onOpenCommit={openCommitModal}
           commitDraftCount={commitDraftCount}
@@ -10873,6 +14583,17 @@ export default function DashboardPage() {
           currentMode={mode}
           currentUser={currentUser}
           activeUsers={activeUsers}
+          notifications={notifications}
+          onNotificationClick={handleNotificationClick}
+          onNotificationDismiss={handleNotificationDismiss}
+          onNotificationRead={handleNotificationRead}
+          onNotificationUnread={handleNotificationUnread}
+          onNotificationReadAll={handleNotificationReadAll}
+          readNotificationIds={readNotifications}
+          toastItems={toastItems}
+          closingToastIds={closingToastIds}
+          onToastClick={handleToastClick}
+          onToastDismiss={handleNotificationDismiss}
           onLogout={handleLogout}
           onOpenCommit={openCommitModal}
           commitDraftCount={commitDraftCount}
@@ -11118,6 +14839,17 @@ export default function DashboardPage() {
           currentMode={mode}
           currentUser={currentUser}
           activeUsers={activeUsers}
+          notifications={notifications}
+          onNotificationClick={handleNotificationClick}
+          onNotificationDismiss={handleNotificationDismiss}
+          onNotificationRead={handleNotificationRead}
+          onNotificationUnread={handleNotificationUnread}
+          onNotificationReadAll={handleNotificationReadAll}
+          readNotificationIds={readNotifications}
+          toastItems={toastItems}
+          closingToastIds={closingToastIds}
+          onToastClick={handleToastClick}
+          onToastDismiss={handleNotificationDismiss}
           onLogout={handleLogout}
           onOpenCommit={openCommitModal}
           commitDraftCount={commitDraftCount}
@@ -11235,6 +14967,17 @@ export default function DashboardPage() {
           currentMode={mode}
           currentUser={currentUser}
           activeUsers={activeUsers}
+          notifications={notifications}
+          onNotificationClick={handleNotificationClick}
+          onNotificationDismiss={handleNotificationDismiss}
+          onNotificationRead={handleNotificationRead}
+          onNotificationUnread={handleNotificationUnread}
+          onNotificationReadAll={handleNotificationReadAll}
+          readNotificationIds={readNotifications}
+          toastItems={toastItems}
+          closingToastIds={closingToastIds}
+          onToastClick={handleToastClick}
+          onToastDismiss={handleNotificationDismiss}
           onLogout={handleLogout}
         />
         <div className="flex-1 overflow-y-auto p-6 space-y-4">
@@ -11433,6 +15176,17 @@ export default function DashboardPage() {
           currentMode={mode}
           currentUser={currentUser}
           activeUsers={activeUsers}
+          notifications={notifications}
+          onNotificationClick={handleNotificationClick}
+          onNotificationDismiss={handleNotificationDismiss}
+          onNotificationRead={handleNotificationRead}
+          onNotificationUnread={handleNotificationUnread}
+          onNotificationReadAll={handleNotificationReadAll}
+          readNotificationIds={readNotifications}
+          toastItems={toastItems}
+          closingToastIds={closingToastIds}
+          onToastClick={handleToastClick}
+          onToastDismiss={handleNotificationDismiss}
           onLogout={handleLogout}
         />
 
@@ -11738,6 +15492,17 @@ export default function DashboardPage() {
           currentMode={mode}
           currentUser={currentUser}
           activeUsers={activeUsers}
+          notifications={notifications}
+          onNotificationClick={handleNotificationClick}
+          onNotificationDismiss={handleNotificationDismiss}
+          onNotificationRead={handleNotificationRead}
+          onNotificationUnread={handleNotificationUnread}
+          onNotificationReadAll={handleNotificationReadAll}
+          readNotificationIds={readNotifications}
+          toastItems={toastItems}
+          closingToastIds={closingToastIds}
+          onToastClick={handleToastClick}
+          onToastDismiss={handleNotificationDismiss}
           onLogout={handleLogout}
           onOpenCommit={openCommitModal}
           commitDraftCount={commitDraftCount}
@@ -11748,9 +15513,11 @@ export default function DashboardPage() {
           onCreateFormula={handleCreateFormula}
           onAddPresetToProject={openPresetPicker}
           onManageLedgerCategories={() => setLedgerCategoryDialogOpen(true)}
+          onManageAccounts={() => setAccountsDialogOpen(true)}
           taxRateCount={taxRates.length}
           presetCount={formulaPresets.length}
           ledgerCategoryCount={ledgerCategories.length}
+          accountCount={ledgerAccounts.length}
           hasActiveProject={!!resolveActiveProjectId()}
         />
 
@@ -11901,6 +15668,14 @@ export default function DashboardPage() {
         onApply={handleApplyPresetToProject}
       />
 
+      <LedgerAccountsDialog
+        open={accountsDialogOpen}
+        onClose={() => setAccountsDialogOpen(false)}
+        accounts={ledgerAccounts}
+        onSave={handleSaveLedgerAccount}
+        onDelete={handleDeleteLedgerAccount}
+      />
+
       {paycheckEditModal.open && paycheckEditModal.paycheck && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setPaycheckEditModal({ open: false, paycheck: null, amount: "", checkNumber: "" })}>
           <div className="bg-white dark:bg-slate-900 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 w-[380px] p-5" onClick={(e) => e.stopPropagation()}>
@@ -11954,6 +15729,17 @@ export default function DashboardPage() {
           currentMode={mode}
           currentUser={currentUser}
           activeUsers={activeUsers}
+          notifications={notifications}
+          onNotificationClick={handleNotificationClick}
+          onNotificationDismiss={handleNotificationDismiss}
+          onNotificationRead={handleNotificationRead}
+          onNotificationUnread={handleNotificationUnread}
+          onNotificationReadAll={handleNotificationReadAll}
+          readNotificationIds={readNotifications}
+          toastItems={toastItems}
+          closingToastIds={closingToastIds}
+          onToastClick={handleToastClick}
+          onToastDismiss={handleNotificationDismiss}
           onLogout={handleLogout}
           onOpenCommit={openCommitModal}
           commitDraftCount={commitDraftCount}
@@ -12244,11 +16030,18 @@ export default function DashboardPage() {
     const compareWbs = (a: string, b: string) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
     const projectActivities = [...projectActivitiesRaw].sort((a, b) => compareWbs(a.wbs, b.wbs));
     const projectTransactions = transactions[projectKey] || [];
+    const projectUtilitiesList = projectUtilities[projectKey] || [];
+    const projectLoanEntries = projectLoans[projectKey] || [];
+    const projectDrawsList = projectDraws[projectKey] || [];
+    const projectTaxesList = projectPropertyTaxes[projectKey] || [];
+    const projectCostOverridesList = projectCostOverrides[projectKey] || [];
+    const projectAcquisition = projectAcquisitions[projectKey] || null;
     const currentProjectDetails = projectDetails[projectKey] || [];
     const currentCustomFormulas = customFormulas[projectKey] || [];
     const projectMeta = pipelineMeta[projectKey] || { status: "under_contract", seller: { name: "", phone: "", email: "" }, selectedEmailOptionIds: [] };
 
-    const { totalActualCost } = calculateProjectStats(projectActivities, projectTransactions);
+    const activityStats = calculateProjectStats(projectActivities, projectTransactions);
+    const { totalActualCost } = activityStats;
     const { totalBudget, totalActualCost: totalActualCostFin, totalRevenue, profit } = calculateFinancialKPIs(projectActivities, projectTransactions);
     const todayWeekStart = getWeekStart(getCentralTodayMs());
     const todayWeekEnd = toDateString(toDateMs(todayWeekStart) + 6 * DAY_MS);
@@ -12256,6 +16049,207 @@ export default function DashboardPage() {
     const draftDuration = newActivityDraft
       ? Math.max(1, Math.round((toDateMs(newActivityDraft.finish) - toDateMs(newActivityDraft.start)) / DAY_MS) + 1)
       : null;
+    const costBreakdown = (() => {
+      const baseMap = new Map<string, number>();
+      projectTransactions
+        .filter((t) => t.type === "Outcome")
+        .forEach((t) => {
+          const label = (t.category || "Uncategorized").trim();
+          const key = label.toLowerCase();
+          baseMap.set(key, (baseMap.get(key) || 0) + toNumber(t.amount));
+        });
+      const utilitiesTotalLocal = projectUtilitiesList.reduce((sum, u) => sum + (u.amount || 0), 0);
+      if (utilitiesTotalLocal) {
+        const key = "utilities";
+        baseMap.set(key, (baseMap.get(key) || 0) + utilitiesTotalLocal);
+      }
+      const loanInterestTotal = projectLoanEntries.reduce((sum, l) => sum + (l.interest || 0), 0);
+      if (loanInterestTotal) {
+        const key = "interest";
+        baseMap.set(key, (baseMap.get(key) || 0) + loanInterestTotal);
+      }
+      const categoryMap = new Map(costCategories.map((c) => [c.id, c]));
+      const activePresetItems = activeBreakdownPresetId ? (breakdownPresetItems[activeBreakdownPresetId] || []) : [];
+      const orderedCategories = activePresetItems.length
+        ? activePresetItems
+            .filter((item) => item.include)
+            .sort((a, b) => a.sortOrder - b.sortOrder)
+            .map((item) => categoryMap.get(item.categoryId))
+            .filter((c): c is CostCategory => Boolean(c))
+        : costCategories;
+      const categoryRows = orderedCategories.map((cat) => {
+        const keyByCode = cat.code ? cat.code.toLowerCase() : null;
+        const keyByName = cat.name.toLowerCase();
+        const base = (keyByCode && baseMap.get(keyByCode)) || baseMap.get(keyByName) || 0;
+        const override = (projectCostOverridesList.find((o) => o.categoryId === cat.id)?.amount) || 0;
+        return {
+          id: cat.id,
+          label: cat.name,
+          base,
+          override,
+          total: base + override,
+        };
+      });
+      const knownKeys = new Set(
+        orderedCategories.flatMap((c) => {
+          const keys = [c.name.toLowerCase()];
+          if (c.code) keys.push(c.code.toLowerCase());
+          return keys;
+        })
+      );
+      let otherTotal = 0;
+      baseMap.forEach((amount, key) => {
+        if (!knownKeys.has(key)) {
+          otherTotal += amount;
+        }
+      });
+      const rows = otherTotal
+        ? [
+            ...categoryRows,
+            { id: "other", label: "Other (unmapped)", base: otherTotal, override: 0, total: otherTotal },
+          ]
+        : categoryRows;
+      return rows.sort((a, b) => b.total - a.total);
+    })();
+
+    const transactionCategoryTotals = (() => {
+      const map: Record<string, { income: number; outcome: number }> = {};
+      projectTransactions.forEach((t) => {
+        const key = (t.category || "Uncategorized").trim();
+        if (!map[key]) map[key] = { income: 0, outcome: 0 };
+        if (t.type === "Income") {
+          map[key].income += toNumber(t.amount);
+        } else {
+          map[key].outcome += toNumber(t.amount);
+        }
+      });
+      return map;
+    })();
+    const transactionAccountTotals = (() => {
+      const map: Record<string, { income: number; outcome: number }> = {};
+      projectTransactions.forEach((t) => {
+        const name =
+          (t.accountId && ledgerAccounts.find((a) => String(a.id) === t.accountId)?.name) ||
+          t.accountName ||
+          "";
+        const key = name.trim() || "Unassigned";
+        if (!map[key]) map[key] = { income: 0, outcome: 0 };
+        if (t.type === "Income") {
+          map[key].income += toNumber(t.amount);
+        } else {
+          map[key].outcome += toNumber(t.amount);
+        }
+      });
+      return map;
+    })();
+    const accountBreakdownRows = Object.entries(transactionAccountTotals)
+      .map(([name, totals]) => ({
+        name,
+        income: totals.income,
+        outcome: totals.outcome,
+        net: totals.income - totals.outcome,
+      }))
+      .sort((a, b) => (b.outcome + b.income) - (a.outcome + a.income));
+    const activityTransactionTotals = (() => {
+      const map: Record<string, { income: number; outcome: number; count: number }> = {};
+      projectActivities.forEach((activity) => {
+        map[activity.id] = { income: 0, outcome: 0, count: 0 };
+      });
+      projectTransactions.forEach((t) => {
+        if (!t.activityId) return;
+        if (!map[t.activityId]) {
+          map[t.activityId] = { income: 0, outcome: 0, count: 0 };
+        }
+        if (t.type === "Income") {
+          map[t.activityId].income += toNumber(t.amount);
+        } else {
+          map[t.activityId].outcome += toNumber(t.amount);
+        }
+        map[t.activityId].count += 1;
+      });
+      return map;
+    })();
+
+    const kpiVariables: Record<string, number> = {
+      "Ledger Net": ledgerNetTotal,
+      "Ledger Income": ledgerIncomeTotal,
+      "Ledger Outcome": ledgerOutcomeTotal,
+      "Activities Count": projectActivities.length,
+      "Activities Progress": activityStats.overallProgress,
+      "Activities Projected Labor": activityStats.projectedLabor,
+      "Activities Projected Cost": activityStats.projectedCost,
+      "Activities Actual Labor": activityStats.actualLaborCost,
+      "Activities Actual Material": activityStats.actualMaterialCost,
+      "Activities Actual Total": activityStats.totalActualCost,
+      "Utilities Total": projectUtilitiesList.reduce((sum, u) => sum + (u.amount || 0), 0),
+      "Draws Total": projectDrawsList.reduce((sum, d) => sum + (d.amount || 0), 0),
+      "Loans Paid": projectLoanEntries.reduce((sum, l) => sum + (l.payment || 0), 0),
+      "Loan Interest": projectLoanEntries.reduce((sum, l) => sum + (l.interest || 0), 0),
+      "Taxes Due": projectTaxesList.filter((t) => t.status !== "paid").reduce((sum, t) => sum + (t.amount || 0), 0),
+      "Closing Costs Purchase": closingCostsPurchaseTotal,
+      "Closing Costs Sale": closingCostsSaleTotal,
+      "Acquisition Draw": projectAcquisition?.acquisitionDraw ?? 0,
+      "Purchase Price": projectAcquisition?.purchasePrice ?? 0,
+      "Earnest Money": projectAcquisition?.earnestMoney ?? 0,
+    };
+    Object.entries(transactionCategoryTotals).forEach(([category, totals]) => {
+      kpiVariables[`Category Income: ${category}`] = totals.income;
+      kpiVariables[`Category Outcome: ${category}`] = totals.outcome;
+    });
+    Object.entries(transactionAccountTotals).forEach(([account, totals]) => {
+      kpiVariables[`Account Income: ${account}`] = totals.income;
+      kpiVariables[`Account Outcome: ${account}`] = totals.outcome;
+    });
+    projectActivities.forEach((activity) => {
+      const label = `${activity.wbs} - ${activity.name}`;
+      const totals = activityTransactionTotals[activity.id] || { income: 0, outcome: 0, count: 0 };
+      kpiVariables[`Activity Income: ${label}`] = totals.income;
+      kpiVariables[`Activity Outcome: ${label}`] = totals.outcome;
+      kpiVariables[`Activity Net: ${label}`] = totals.income - totals.outcome;
+      kpiVariables[`Activity Transactions Count: ${label}`] = totals.count;
+      kpiVariables[`Activity Projected Labor: ${label}`] = activity.projectedLabor ?? 0;
+      kpiVariables[`Activity Projected Cost: ${label}`] = activity.projectedCost ?? 0;
+      kpiVariables[`Activity Budget: ${label}`] = activity.budget ?? 0;
+      kpiVariables[`Activity Revenue: ${label}`] = activity.revenue ?? 0;
+      kpiVariables[`Activity Progress: ${label}`] = activity.pct ?? 0;
+    });
+    const kpiItems = activeKpiPresetId ? (kpiPresetItems[activeKpiPresetId] || []).filter((i) => i.enabled) : [];
+    const kpiOverridesForProject = projectKpiOverrides[projectKey] || [];
+    const formatKpiValue = (value: number, type: KpiPresetItem["resultType"]) => {
+      if (type === "percentage") return `${value.toFixed(2)}%`;
+      if (type === "number") return value.toFixed(2);
+      return formatCurrency(value);
+    };
+    const getKpiScaleColor = (value: number, item: KpiPresetItem) => {
+      const minRaw = item.scaleMin;
+      const maxRaw = item.scaleMax;
+      if (minRaw === null || minRaw === undefined || maxRaw === null || maxRaw === undefined) return null;
+      const min = Number(minRaw);
+      const max = Number(maxRaw);
+      if (!Number.isFinite(min) || !Number.isFinite(max) || min === max) return null;
+      let ratio = (value - min) / (max - min);
+      ratio = Math.max(0, Math.min(1, ratio));
+      if (item.scaleInvert) ratio = 1 - ratio;
+      const mix = (a: { r: number; g: number; b: number }, b: { r: number; g: number; b: number }, t: number) => ({
+        r: Math.round(a.r + (b.r - a.r) * t),
+        g: Math.round(a.g + (b.g - a.g) * t),
+        b: Math.round(a.b + (b.b - a.b) * t),
+      });
+      const low = { r: 239, g: 68, b: 68 };
+      const mid = { r: 245, g: 158, b: 11 };
+      const high = { r: 34, g: 197, b: 94 };
+      const color = ratio <= 0.5
+        ? mix(low, mid, ratio / 0.5)
+        : mix(mid, high, (ratio - 0.5) / 0.5);
+      const { r, g, b } = color;
+      return `rgb(${r}, ${g}, ${b})`;
+    };
+    const kpiAvailableVariables = Array.from(
+      new Set([
+        ...getAvailableVariables(currentProjectDetails, currentCustomFormulas, taxRates).map((v) => v.name),
+        ...Object.keys(kpiVariables),
+      ])
+    ).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
 
     const handleGanttCreateRange = (start: string, finish: string) => {
       setNewActivityDraft({ start, finish });
@@ -12318,6 +16312,17 @@ export default function DashboardPage() {
           onToggleDetailsPanel={() => setIsDetailsPanelVisible(prev => !prev)}
           currentUser={currentUser}
           activeUsers={activeUsers}
+          notifications={notifications}
+          onNotificationClick={handleNotificationClick}
+          onNotificationDismiss={handleNotificationDismiss}
+          onNotificationRead={handleNotificationRead}
+          onNotificationUnread={handleNotificationUnread}
+          onNotificationReadAll={handleNotificationReadAll}
+          readNotificationIds={readNotifications}
+          toastItems={toastItems}
+          closingToastIds={closingToastIds}
+          onToastClick={handleToastClick}
+          onToastDismiss={handleNotificationDismiss}
           onLogout={handleLogout}
           onOpenCommit={openCommitModal}
           commitDraftCount={commitDraftCount}
@@ -12403,6 +16408,14 @@ export default function DashboardPage() {
           onDelete={handleDeleteLedgerCategory}
         />
 
+        <LedgerAccountsDialog
+          open={accountsDialogOpen}
+          onClose={() => setAccountsDialogOpen(false)}
+          accounts={ledgerAccounts}
+          onSave={handleSaveLedgerAccount}
+          onDelete={handleDeleteLedgerAccount}
+        />
+
         <AcquisitionConfirmModal
           open={acquireConfirmOpen}
           onConfirm={confirmAcquire}
@@ -12423,55 +16436,67 @@ export default function DashboardPage() {
           onToggleDetailsPanel={() => setIsDetailsPanelVisible(prev => !prev)}
           currentUser={currentUser}
           activeUsers={activeUsers}
+          notifications={notifications}
+          onNotificationClick={handleNotificationClick}
+          onNotificationDismiss={handleNotificationDismiss}
+          onNotificationRead={handleNotificationRead}
+          onNotificationUnread={handleNotificationUnread}
+          onNotificationReadAll={handleNotificationReadAll}
+          readNotificationIds={readNotifications}
+          toastItems={toastItems}
+          closingToastIds={closingToastIds}
+          onToastClick={handleToastClick}
+          onToastDismiss={handleNotificationDismiss}
           onLogout={handleLogout}
           onOpenCommit={openCommitModal}
           commitDraftCount={commitDraftCount}
         />
-        <ActionRibbon
-          onOpenTaxRates={() => setTaxRateDialogOpen(true)}
-          onManagePresets={() => setFormulaPresetDialogOpen(true)}
-          onCreateFormula={handleCreateFormula}
-          onAddPresetToProject={openPresetPicker}
-          onManageLedgerCategories={() => setLedgerCategoryDialogOpen(true)}
-          taxRateCount={taxRates.length}
-          presetCount={formulaPresets.length}
-          ledgerCategoryCount={ledgerCategories.length}
-          hasActiveProject={!!resolveActiveProjectId()}
-        />
-        {activityView !== "gantt" && (
-          <div className="px-4 py-2 bg-slate-100 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between text-sm">
-            <div className="flex items-center gap-3">
-              <span className="px-2 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200">
-                Acquired
-              </span>
-              <span className="text-slate-600 dark:text-slate-300">Project is acquired. You can revert to Not Acquired if needed.</span>
-            </div>
-            <button
-              onClick={() => handleProjectStatusChange(activeProject.id, "under_contract")}
-              className="px-3 py-1.5 text-xs rounded border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700"
-            >
-              Mark Not Acquired
-            </button>
-          </div>
-        )}
+          <ActionRibbon
+            onOpenTaxRates={() => setTaxRateDialogOpen(true)}
+            onManagePresets={() => setFormulaPresetDialogOpen(true)}
+            onCreateFormula={handleCreateFormula}
+            onAddPresetToProject={openPresetPicker}
+            onManageLedgerCategories={() => setLedgerCategoryDialogOpen(true)}
+            onManageAccounts={() => setAccountsDialogOpen(true)}
+            taxRateCount={taxRates.length}
+            presetCount={formulaPresets.length}
+            ledgerCategoryCount={ledgerCategories.length}
+            accountCount={ledgerAccounts.length}
+            hasActiveProject={!!resolveActiveProjectId()}
+          />
+        {/* Acquisition status ribbon removed per request */}
 
-        <div className="flex-1 flex overflow-hidden">
-          <aside className="w-80 border-r border-slate-300 bg-white dark:border-slate-700 dark:bg-slate-950 flex flex-col flex-shrink-0 overflow-y-auto">
+        <div className="flex-1 flex overflow-hidden relative">
+          <aside
+            className={`flex flex-col flex-shrink-0 overflow-hidden transition-[width,opacity] duration-300 ${
+              isProjectExplorerVisible
+                ? "w-80 opacity-100 border-r border-slate-300 bg-white dark:border-slate-700 dark:bg-slate-950"
+                : "w-0 opacity-0 pointer-events-none"
+            }`}
+          >
             <div className="border-b border-slate-300 bg-gradient-to-r from-slate-100 to-slate-50 px-3 py-2 dark:border-slate-700 dark:from-slate-800 dark:to-slate-900">
               <div className="flex items-center justify-between">
                 <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200">
                   {activityView === "gantt" ? "Activity Hierarchy" : "Project Explorer"}
                 </h3>
-                <button
-                  onClick={() => setMode("EPS")}
-                  className="text-xs text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
-                >
-                  Back to EPS
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setIsProjectExplorerVisible(false)}
+                    className="text-xs text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+                  >
+                    Hide
+                  </button>
+                  <button
+                    onClick={() => setMode("EPS")}
+                    className="text-xs text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+                  >
+                    Back to EPS
+                  </button>
+                </div>
               </div>
             </div>
             {activityView === "gantt" ? (
-              <div className="p-3 space-y-1">
+              <div className="p-3 space-y-1 overflow-y-auto">
                 <div className="text-xs text-slate-500 dark:text-slate-400 mb-2">
                   {activeProject.name}
                 </div>
@@ -12495,7 +16520,7 @@ export default function DashboardPage() {
                   })}
               </div>
             ) : (
-              <div className="p-2 space-y-1">
+              <div className="p-2 space-y-1 overflow-y-auto">
                 <p className="text-xs text-slate-500 dark:text-slate-400 font-medium p-1">
                   {findNode(epsNodes, activeProject.parentId!)?.name || "Enterprise"} /
                   {activeProject.name}
@@ -12515,11 +16540,11 @@ export default function DashboardPage() {
             )}
 
             {activityView !== "gantt" && (
-              <div className="border-t border-slate-200 dark:border-slate-700 p-3">
+              <div className="border-t border-slate-200 dark:border-slate-700 p-3 flex flex-col flex-1 min-h-0">
                 <h4 className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-2 flex items-center gap-1">
                   <IconFunction /> Custom Formulas
                 </h4>
-                <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                <div className="space-y-2 flex-1 overflow-y-auto pr-1">
                   {currentCustomFormulas.length === 0 && (
                     <div className="text-xs text-slate-500 dark:text-slate-400">
                       No formulas yet. Create one or add a preset.
@@ -12561,7 +16586,7 @@ export default function DashboardPage() {
                     );
                   })}
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2 pt-2 border-t border-slate-200 dark:border-slate-700">
                   <button
                     onClick={handleCreateFormula}
                     className="w-full text-xs flex items-center justify-center gap-1 p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded border border-blue-200 dark:border-blue-700"
@@ -12579,10 +16604,27 @@ export default function DashboardPage() {
             )}
           </aside>
 
+          <button
+            onClick={() => setIsProjectExplorerVisible((prev) => !prev)}
+            aria-label={isProjectExplorerVisible ? "Hide project explorer" : "Show project explorer"}
+            style={{ left: isProjectExplorerVisible ? "20rem" : "0" }}
+            className="absolute top-1/2 -translate-y-1/2 z-20 rounded-r-md border border-slate-300 bg-white/90 px-1.5 py-2 text-slate-600 shadow-sm transition-[left,background] duration-300 hover:bg-white dark:border-slate-700 dark:bg-slate-900/90 dark:text-slate-300"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              {isProjectExplorerVisible ? <path d="M15 18l-6-6 6-6" /> : <path d="M9 6l6 6-6 6" />}
+            </svg>
+          </button>
+
           <main className={`flex-1 flex flex-col overflow-hidden transition-[padding] duration-300 ${isDetailsPanelVisible ? 'md:pr-80' : 'pr-0'}`}>
-        <div className="flex-1 overflow-hidden p-4 flex flex-col gap-4">
+        <div className="flex-1 overflow-hidden p-4 flex flex-col gap-4 min-h-0">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="inline-flex rounded-full border border-slate-300 bg-white p-1 text-sm shadow-sm dark:border-slate-700 dark:bg-slate-900">
+                <button
+                  onClick={() => setActivityView("overview")}
+                  className={`px-3 py-1.5 rounded-full transition-colors ${activityView === "overview" ? "bg-blue-600 text-white shadow" : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"}`}
+                >
+                  Project Overview
+                </button>
                 <button
                   onClick={() => setActivityView("details")}
                   className={`px-3 py-1.5 rounded-full transition-colors ${activityView === "details" ? "bg-blue-600 text-white shadow" : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"}`}
@@ -12601,21 +16643,978 @@ export default function DashboardPage() {
                 >
                   Project Ledger
                 </button>
+                <button
+                  onClick={() => setActivityView("utilities")}
+                  className={`px-3 py-1.5 rounded-full transition-colors ${activityView === "utilities" ? "bg-blue-600 text-white shadow" : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"}`}
+                >
+                  Utilities
+                </button>
+                <button
+                  onClick={() => setActivityView("draws")}
+                  className={`px-3 py-1.5 rounded-full transition-colors ${activityView === "draws" ? "bg-blue-600 text-white shadow" : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"}`}
+                >
+                  Draws
+                </button>
+                <button
+                  onClick={() => setActivityView("loans")}
+                  className={`px-3 py-1.5 rounded-full transition-colors ${activityView === "loans" ? "bg-blue-600 text-white shadow" : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"}`}
+                >
+                  Loans
+                </button>
+                <button
+                  onClick={() => setActivityView("taxes")}
+                  className={`px-3 py-1.5 rounded-full transition-colors ${activityView === "taxes" ? "bg-blue-600 text-white shadow" : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"}`}
+                >
+                  Property Taxes
+                </button>
               </div>
               <div className="flex items-center gap-3 text-xs text-slate-600 dark:text-slate-300">
+                {!isProjectExplorerVisible && (
+                  <button
+                    onClick={() => setIsProjectExplorerVisible(true)}
+                    className="px-2 py-1 rounded-md border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+                  >
+                    Show Project Explorer
+                  </button>
+                )}
                 <span className="px-2 py-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">Week: {todayWeekStart} to {todayWeekEnd}</span>
                 <span className="px-2 py-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">Month: {todayMonthLabel}</span>
               </div>
             </div>
 
-            <div className="flex flex-col gap-4 h-full">
+            <div className="flex-1 flex flex-col gap-4 min-h-0 overflow-y-auto pr-1">
+              {activityView === "overview" && (
+                <div className="flex flex-col gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3">
+                    <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                      <div className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Ledger Net</div>
+                      <div className={`mt-1 text-lg font-semibold ${ledgerNetTotal >= 0 ? "text-emerald-700 dark:text-emerald-300" : "text-red-600 dark:text-red-400"}`}>
+                        {formatCurrency(ledgerNetTotal)}
+                      </div>
+                      <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                        Income {formatCurrency(ledgerIncomeTotal)} / Outcome {formatCurrency(ledgerOutcomeTotal)}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                      <div className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Utilities</div>
+                      <div className="mt-1 text-lg font-semibold text-slate-800 dark:text-slate-100">{formatCurrency(utilitiesTotal)}</div>
+                      <div className="text-[11px] text-slate-500 dark:text-slate-400">{selectedProjectUtilities.length} entries</div>
+                    </div>
+                    <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                      <div className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Draws</div>
+                      <div className="mt-1 text-lg font-semibold text-slate-800 dark:text-slate-100">{formatCurrency(drawsTotal)}</div>
+                      <div className="text-[11px] text-slate-500 dark:text-slate-400">{selectedProjectDraws.length} entries</div>
+                    </div>
+                    <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                      <div className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Loan Paid</div>
+                      <div className="mt-1 text-lg font-semibold text-slate-800 dark:text-slate-100">{formatCurrency(loansPaidTotal)}</div>
+                      <div className="text-[11px] text-slate-500 dark:text-slate-400">{selectedProjectLoans.length} entries</div>
+                    </div>
+                    <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                      <div className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Taxes Due</div>
+                      <div className="mt-1 text-lg font-semibold text-slate-800 dark:text-slate-100">{formatCurrency(taxesDueTotal)}</div>
+                      <div className="text-[11px] text-slate-500 dark:text-slate-400">{selectedProjectTaxes.length} entries</div>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div className="rounded-lg border border-slate-300 bg-white dark:border-slate-800 dark:bg-slate-900 shadow-md p-4 flex flex-col gap-3 self-start h-fit">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-200">Acquisition</h3>
+                      <span className="text-xs text-slate-500 dark:text-slate-400">
+                        {selectedProjectAcquisition ? "Saved" : "Not set"}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <input
+                        type="number"
+                        value={acquisitionForm.purchasePrice}
+                        onChange={(e) => setAcquisitionForm((prev) => ({ ...prev, purchasePrice: e.target.value }))}
+                        placeholder="Purchase Price"
+                        className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-right dark:border-slate-700 dark:bg-slate-900"
+                      />
+                      <input
+                        type="number"
+                        value={acquisitionForm.acquisitionDraw}
+                        onChange={(e) => setAcquisitionForm((prev) => ({ ...prev, acquisitionDraw: e.target.value }))}
+                        placeholder="Acquisition Draw"
+                        className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-right dark:border-slate-700 dark:bg-slate-900"
+                      />
+                      <input
+                        type="number"
+                        value={acquisitionForm.earnestMoney}
+                        onChange={(e) => setAcquisitionForm((prev) => ({ ...prev, earnestMoney: e.target.value }))}
+                        placeholder="Earnest Money"
+                        className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-right dark:border-slate-700 dark:bg-slate-900"
+                      />
+                      <input
+                        type="date"
+                        value={acquisitionForm.closeDate}
+                        onChange={(e) => setAcquisitionForm((prev) => ({ ...prev, closeDate: e.target.value }))}
+                        className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-900"
+                      />
+                    </div>
+                    <input
+                      type="text"
+                      value={acquisitionForm.note}
+                      onChange={(e) => setAcquisitionForm((prev) => ({ ...prev, note: e.target.value }))}
+                      placeholder="Notes"
+                      className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-900"
+                    />
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={handleSaveAcquisition}
+                        className="px-3 py-1.5 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700"
+                      >
+                        {editingAcquisitionId ? "Update Acquisition" : "Save Acquisition"}
+                      </button>
+                      {editingAcquisitionId && (
+                        <button
+                          onClick={resetAcquisitionForm}
+                          className="px-3 py-1.5 text-sm rounded-md border border-slate-300 text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                        >
+                          Reset
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg border border-slate-300 bg-white dark:border-slate-800 dark:bg-slate-900 shadow-md p-4 flex flex-col gap-3">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-200">Closing Costs</h3>
+                      <div className="text-xs text-slate-500 dark:text-slate-400">
+                        Purchase {formatCurrency(closingCostsPurchaseTotal)} | Sale {formatCurrency(closingCostsSaleTotal)}
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="rounded-md border border-slate-200 dark:border-slate-700 p-3">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Purchase</div>
+                          <button
+                            onClick={() => handleSeedClosingCosts("purchase")}
+                            className="text-[11px] px-2 py-1 rounded border border-slate-200 text-slate-500 hover:text-slate-700 dark:border-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+                          >
+                            Load Defaults
+                          </button>
+                        </div>
+                        <div className="space-y-2">
+                          {selectedProjectClosingCosts.filter((c) => c.side === "purchase").length === 0 && (
+                            <div className="text-xs text-slate-500 dark:text-slate-400">No purchase costs yet.</div>
+                          )}
+                          {selectedProjectClosingCosts
+                            .filter((c) => c.side === "purchase")
+                            .map((cost) => (
+                              <div key={cost.id} className="flex items-center gap-2">
+                                <input
+                                  type="checkbox"
+                                  checked={cost.paid}
+                                  onChange={() => handleToggleClosingCostPaid(cost)}
+                                  className="h-4 w-4 rounded border-slate-300 text-blue-600"
+                                />
+                                <div className={`flex-1 text-sm ${cost.paid ? "text-slate-400 line-through" : "text-slate-700 dark:text-slate-200"}`}>
+                                  {cost.label}
+                                </div>
+                                <div className="text-sm text-slate-700 dark:text-slate-200">{formatCurrency(cost.amount)}</div>
+                                <div className="flex gap-1">
+                                  <button
+                                    onClick={() => handleEditClosingCost(cost)}
+                                    className="px-2 py-1 text-[11px] rounded bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/40 dark:text-blue-200"
+                                  >
+                                    Edit
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteClosingCost(cost.id)}
+                                    className="px-2 py-1 text-[11px] rounded bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/40 dark:text-red-300"
+                                  >
+                                    Delete
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                        </div>
+                      </div>
+
+                      <div className="rounded-md border border-slate-200 dark:border-slate-700 p-3">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Sale</div>
+                          <button
+                            onClick={() => handleSeedClosingCosts("sale")}
+                            className="text-[11px] px-2 py-1 rounded border border-slate-200 text-slate-500 hover:text-slate-700 dark:border-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+                          >
+                            Load Defaults
+                          </button>
+                        </div>
+                        <div className="space-y-2">
+                          {selectedProjectClosingCosts.filter((c) => c.side === "sale").length === 0 && (
+                            <div className="text-xs text-slate-500 dark:text-slate-400">No sale costs yet.</div>
+                          )}
+                          {selectedProjectClosingCosts
+                            .filter((c) => c.side === "sale")
+                            .map((cost) => (
+                              <div key={cost.id} className="flex items-center gap-2">
+                                <input
+                                  type="checkbox"
+                                  checked={cost.paid}
+                                  onChange={() => handleToggleClosingCostPaid(cost)}
+                                  className="h-4 w-4 rounded border-slate-300 text-blue-600"
+                                />
+                                <div className={`flex-1 text-sm ${cost.paid ? "text-slate-400 line-through" : "text-slate-700 dark:text-slate-200"}`}>
+                                  {cost.label}
+                                </div>
+                                <div className="text-sm text-slate-700 dark:text-slate-200">{formatCurrency(cost.amount)}</div>
+                                <div className="flex gap-1">
+                                  <button
+                                    onClick={() => handleEditClosingCost(cost)}
+                                    className="px-2 py-1 text-[11px] rounded bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/40 dark:text-blue-200"
+                                  >
+                                    Edit
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteClosingCost(cost.id)}
+                                    className="px-2 py-1 text-[11px] rounded bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/40 dark:text-red-300"
+                                  >
+                                    Delete
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="border-t border-slate-200 dark:border-slate-700 pt-3">
+                      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-2">
+                        Add / Edit Closing Cost
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-6 gap-2">
+                        <select
+                          value={closingCostForm.side}
+                          onChange={(e) => setClosingCostForm((prev) => ({ ...prev, side: e.target.value as ProjectClosingCost["side"] }))}
+                          className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-900"
+                        >
+                          <option value="purchase">Purchase</option>
+                          <option value="sale">Sale</option>
+                        </select>
+                        <input
+                          type="text"
+                          value={closingCostForm.label}
+                          onChange={(e) => setClosingCostForm((prev) => ({ ...prev, label: e.target.value }))}
+                          placeholder="Label"
+                          className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-900 md:col-span-2"
+                        />
+                        <input
+                          type="number"
+                          value={closingCostForm.amount}
+                          onChange={(e) => setClosingCostForm((prev) => ({ ...prev, amount: e.target.value }))}
+                          placeholder="Amount"
+                          className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-right dark:border-slate-700 dark:bg-slate-900"
+                        />
+                        <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+                          <input
+                            type="checkbox"
+                            checked={closingCostForm.paid}
+                            onChange={(e) => setClosingCostForm((prev) => ({ ...prev, paid: e.target.checked }))}
+                            className="h-4 w-4 rounded border-slate-300 text-blue-600"
+                          />
+                          Paid
+                        </label>
+                        <input
+                          type="date"
+                          value={closingCostForm.paidDate}
+                          onChange={(e) => setClosingCostForm((prev) => ({ ...prev, paidDate: e.target.value }))}
+                          disabled={!closingCostForm.paid}
+                          className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-900"
+                        />
+                        <input
+                          type="text"
+                          value={closingCostForm.note}
+                          onChange={(e) => setClosingCostForm((prev) => ({ ...prev, note: e.target.value }))}
+                          placeholder="Note"
+                          className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-900 md:col-span-2"
+                        />
+                      </div>
+                      <div className="flex items-center gap-2 mt-2">
+                        <button
+                          onClick={handleSaveClosingCost}
+                          className="px-3 py-1.5 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700"
+                        >
+                          {editingClosingCostId ? "Update Item" : "Add Item"}
+                        </button>
+                        {editingClosingCostId && (
+                          <button
+                            onClick={resetClosingCostForm}
+                            className="px-3 py-1.5 text-sm rounded-md border border-slate-300 text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                          >
+                            Cancel
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg border border-slate-300 bg-white dark:border-slate-800 dark:bg-slate-900 shadow-md p-4 flex flex-col gap-3 lg:col-span-2">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-200">Cost Breakdown</h3>
+                      <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                        <span>Global categories</span>
+                        <select
+                          value={activeBreakdownPresetId || ""}
+                          onChange={(e) => handleSaveBreakdownPref(e.target.value)}
+                          className="rounded border border-slate-300 bg-white px-2 py-1 text-xs dark:border-slate-700 dark:bg-slate-900"
+                        >
+                          <option value="">Select preset</option>
+                          {breakdownPresets.map((p) => (
+                            <option key={p.id} value={p.id}>{p.name}</option>
+                          ))}
+                        </select>
+                        <button
+                          onClick={() => setShowCostCategoryManager((prev) => !prev)}
+                          className="px-2 py-1 rounded border border-slate-200 text-slate-500 hover:text-slate-700 dark:border-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+                        >
+                          {showCostCategoryManager ? "Hide Manager" : "Manage Categories"}
+                        </button>
+                        {currentUser?.role === "admin" && (
+                          <button
+                            onClick={() => setShowBreakdownPresetManager((prev) => !prev)}
+                            className="px-2 py-1 rounded border border-slate-200 text-slate-500 hover:text-slate-700 dark:border-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+                          >
+                            {showBreakdownPresetManager ? "Hide Presets" : "Manage Presets"}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    {costBreakdown.length === 0 ? (
+                      <div className="text-sm text-slate-500 dark:text-slate-400">No costs recorded yet.</div>
+                    ) : (
+                      <div className="overflow-x-auto max-h-80 overflow-y-auto">
+                        <table className="min-w-full text-sm">
+                          <thead className="text-xs uppercase text-slate-500 dark:text-slate-400">
+                            <tr>
+                              <th className="px-2 py-1 text-left">Category</th>
+                              <th className="px-2 py-1 text-right">Base</th>
+                              <th className="px-2 py-1 text-right">Total</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {costBreakdown.map((row, idx) => (
+                              <tr key={`${row.label}-${idx}`} className={idx % 2 === 0 ? "bg-slate-50/60 dark:bg-slate-800/40" : ""}>
+                                <td className="px-2 py-1 text-slate-700 dark:text-slate-200">{row.label}</td>
+                                <td className="px-2 py-1 text-right text-slate-700 dark:text-slate-200">
+                                  {formatCurrency(row.base)}
+                                </td>
+                                <td className="px-2 py-1 text-right text-slate-700 dark:text-slate-200">
+                                  {formatCurrency(row.total)}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                    {showCostCategoryManager && (
+                      <div className="border-t border-slate-200 dark:border-slate-700 pt-3">
+                        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-2">
+                          Cost Categories (Global)
+                        </div>
+                        <div className="flex flex-wrap gap-2 mb-3">
+                          <input
+                            type="text"
+                            value={costCategoryForm.name}
+                            onChange={(e) => setCostCategoryForm((prev) => ({ ...prev, name: e.target.value }))}
+                            placeholder="Category name"
+                            className="flex-1 min-w-[180px] rounded-md border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-900"
+                          />
+                          <input
+                            type="text"
+                            value={costCategoryForm.code}
+                            onChange={(e) => setCostCategoryForm((prev) => ({ ...prev, code: e.target.value }))}
+                            placeholder="Code (optional)"
+                            className="w-40 rounded-md border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-900"
+                          />
+                          <button
+                            onClick={handleSaveCostCategory}
+                            className="px-3 py-1.5 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700"
+                          >
+                            {editingCostCategoryId ? "Update" : "Add"}
+                          </button>
+                          {editingCostCategoryId && (
+                            <button
+                              onClick={resetCostCategoryForm}
+                              className="px-3 py-1.5 text-sm rounded-md border border-slate-300 text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                            >
+                              Cancel
+                            </button>
+                          )}
+                        </div>
+                        <div className="space-y-2">
+                          {costCategories.length === 0 && (
+                            <div className="text-sm text-slate-500 dark:text-slate-400">No cost categories yet.</div>
+                          )}
+                          {costCategories.map((cat) => (
+                            <div key={cat.id} className="flex items-center justify-between rounded border border-slate-200 dark:border-slate-700 px-2 py-1">
+                              <div className="text-sm text-slate-700 dark:text-slate-200">
+                                {cat.name}
+                                {cat.code ? <span className="ml-2 text-[11px] text-slate-400">{cat.code}</span> : null}
+                              </div>
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={() => handleEditCostCategory(cat)}
+                                  className="px-2 py-1 text-[11px] rounded bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/40 dark:text-blue-200"
+                                >
+                                  Edit
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteCostCategory(cat.id)}
+                                  className="px-2 py-1 text-[11px] rounded bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/40 dark:text-red-300"
+                                >
+                                  Delete
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {showBreakdownPresetManager && currentUser?.role === "admin" && (
+                      <div className="border-t border-slate-200 dark:border-slate-700 pt-3">
+                        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-2">
+                          Breakdown Presets (Global)
+                        </div>
+                        <div className="flex flex-wrap gap-2 mb-3">
+                          <input
+                            type="text"
+                            value={breakdownPresetForm.name}
+                            onChange={(e) => setBreakdownPresetForm((prev) => ({ ...prev, name: e.target.value }))}
+                            placeholder="Preset name"
+                            className="flex-1 min-w-[180px] rounded-md border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-900"
+                          />
+                          <input
+                            type="text"
+                            value={breakdownPresetForm.description}
+                            onChange={(e) => setBreakdownPresetForm((prev) => ({ ...prev, description: e.target.value }))}
+                            placeholder="Description"
+                            className="flex-1 min-w-[180px] rounded-md border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-900"
+                          />
+                          <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+                            <input
+                              type="checkbox"
+                              checked={breakdownPresetForm.isDefault}
+                              onChange={(e) => setBreakdownPresetForm((prev) => ({ ...prev, isDefault: e.target.checked }))}
+                              className="h-4 w-4 rounded border-slate-300 text-blue-600"
+                            />
+                            Default
+                          </label>
+                          <button
+                            onClick={handleSaveBreakdownPreset}
+                            className="px-3 py-1.5 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700"
+                          >
+                            {editingBreakdownPresetId ? "Update" : "Add"}
+                          </button>
+                          {editingBreakdownPresetId && (
+                            <button
+                              onClick={resetBreakdownPresetForm}
+                              className="px-3 py-1.5 text-sm rounded-md border border-slate-300 text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                            >
+                              Cancel
+                            </button>
+                          )}
+                        </div>
+                        <div className="space-y-2">
+                          {breakdownPresets.length === 0 && (
+                            <div className="text-sm text-slate-500 dark:text-slate-400">No presets yet.</div>
+                          )}
+                          {breakdownPresets.map((preset) => (
+                            <div key={preset.id} className="rounded border border-slate-200 dark:border-slate-700 p-2">
+                              <div className="flex items-center justify-between">
+                                <div className="text-sm text-slate-700 dark:text-slate-200">
+                                  {preset.name}
+                                  {preset.isDefault && <span className="ml-2 text-[11px] text-blue-500">Default</span>}
+                                </div>
+                                <div className="flex gap-2">
+                                  <button
+                                    onClick={() => handleEditBreakdownPreset(preset)}
+                                    className="px-2 py-1 text-[11px] rounded bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/40 dark:text-blue-200"
+                                  >
+                                    Edit
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteBreakdownPreset(preset.id)}
+                                    className="px-2 py-1 text-[11px] rounded bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/40 dark:text-red-300"
+                                  >
+                                    Delete
+                                  </button>
+                                </div>
+                              </div>
+                              <div className="mt-2 flex items-center gap-2">
+                                <button
+                                  onClick={() => handleSaveBreakdownItems(preset.id)}
+                                  className="px-2 py-1 text-[11px] rounded border border-slate-200 text-slate-500 hover:text-slate-700 dark:border-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+                                >
+                                  Save Items
+                                </button>
+                                <button
+                                  onClick={() => handleSyncBreakdownItems(preset.id)}
+                                  className="px-2 py-1 text-[11px] rounded border border-slate-200 text-slate-500 hover:text-slate-700 dark:border-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+                                >
+                                  Sync Categories
+                                </button>
+                              </div>
+                              <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-2">
+                                {(breakdownPresetItems[preset.id] || []).map((item) => {
+                                  const cat = costCategories.find((c) => c.id === item.categoryId);
+                                  if (!cat) return null;
+                                  const draft = breakdownItemDrafts[item.id] || { include: item.include, sortOrder: String(item.sortOrder ?? 0) };
+                                  return (
+                                    <div key={item.id} className="flex items-center gap-2 text-xs">
+                                      <input
+                                        type="checkbox"
+                                        checked={draft.include}
+                                        onChange={(e) =>
+                                          setBreakdownItemDrafts((prev) => ({
+                                            ...prev,
+                                            [item.id]: { include: e.target.checked, sortOrder: draft.sortOrder },
+                                          }))
+                                        }
+                                        className="h-4 w-4 rounded border-slate-300 text-blue-600"
+                                      />
+                                      <span className="flex-1 text-slate-600 dark:text-slate-300">{cat.name}</span>
+                                      <input
+                                        type="number"
+                                        value={draft.sortOrder}
+                                        onChange={(e) =>
+                                          setBreakdownItemDrafts((prev) => ({
+                                            ...prev,
+                                            [item.id]: { include: draft.include, sortOrder: e.target.value },
+                                          }))
+                                        }
+                                        className="w-16 rounded border border-slate-300 bg-white px-2 py-1 text-xs text-right dark:border-slate-700 dark:bg-slate-900"
+                                      />
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="rounded-lg border border-slate-300 bg-white dark:border-slate-800 dark:bg-slate-900 shadow-md p-4 flex flex-col gap-3">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-200">Account Breakdown</h3>
+                      <span className="text-xs text-slate-500 dark:text-slate-400">{accountBreakdownRows.length} accounts</span>
+                    </div>
+                    {accountBreakdownRows.length === 0 ? (
+                      <div className="text-sm text-slate-500 dark:text-slate-400">No account data yet.</div>
+                    ) : (
+                      <div className="overflow-x-auto max-h-64 overflow-y-auto">
+                        <table className="min-w-full text-sm">
+                          <thead className="text-xs uppercase text-slate-500 dark:text-slate-400">
+                            <tr>
+                              <th className="px-2 py-1 text-left">Account</th>
+                              <th className="px-2 py-1 text-right">Income</th>
+                              <th className="px-2 py-1 text-right">Outcome</th>
+                              <th className="px-2 py-1 text-right">Net</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {accountBreakdownRows.map((row, idx) => (
+                              <tr key={`${row.name}-${idx}`} className={idx % 2 === 0 ? "bg-slate-50/60 dark:bg-slate-800/40" : ""}>
+                                <td className="px-2 py-1 text-slate-700 dark:text-slate-200">{row.name}</td>
+                                <td className="px-2 py-1 text-right text-green-600 dark:text-green-400">
+                                  {formatCurrency(row.income)}
+                                </td>
+                                <td className="px-2 py-1 text-right text-red-500 dark:text-red-400">
+                                  {formatCurrency(row.outcome)}
+                                </td>
+                                <td className="px-2 py-1 text-right text-slate-700 dark:text-slate-200">
+                                  {formatCurrency(row.net)}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="rounded-lg border border-slate-300 bg-white dark:border-slate-800 dark:bg-slate-900 shadow-md p-4 flex flex-col gap-3 lg:col-span-2">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-200">KPI Cards</h3>
+                      <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                        <select
+                          value={activeKpiPresetId || ""}
+                          onChange={(e) => handleSaveKpiPref(e.target.value)}
+                          className="rounded border border-slate-300 bg-white px-2 py-1 text-xs dark:border-slate-700 dark:bg-slate-900"
+                        >
+                          <option value="">Select preset</option>
+                          {kpiPresets.map((p) => (
+                            <option key={p.id} value={p.id}>{p.name}</option>
+                          ))}
+                        </select>
+                        {currentUser?.role === "admin" && (
+                          <button
+                            onClick={() => setShowKpiPresetManager((prev) => !prev)}
+                            className="px-2 py-1 rounded border border-slate-200 text-slate-500 hover:text-slate-700 dark:border-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+                          >
+                            {showKpiPresetManager ? "Hide Presets" : "Manage Presets"}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    {kpiItems.length === 0 ? (
+                      <div className="text-sm text-slate-500 dark:text-slate-400">No KPI items yet.</div>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3">
+                        {kpiItems.map((item) => {
+                          const result = evaluateFormula(item.formula, currentProjectDetails, currentCustomFormulas, kpiVariables);
+                          const display = result.error ? "Error" : formatKpiValue(result.value, item.resultType);
+                          const scaleColor = !result.error ? getKpiScaleColor(result.value, item) : null;
+                          return (
+                            <div key={item.id} className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                              <div className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                                {item.name}
+                              </div>
+                              <div
+                                className={`mt-1 text-lg font-semibold ${result.error ? "text-red-500" : "text-slate-800 dark:text-slate-100"}`}
+                                style={scaleColor ? { color: scaleColor } : undefined}
+                              >
+                                {display}
+                              </div>
+                              {scaleColor && (
+                                <div className="mt-2 h-1 w-full rounded-full" style={{ backgroundColor: scaleColor, opacity: 0.8 }} />
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                    {showKpiPresetManager && currentUser?.role === "admin" && (
+                      <div className="border-t border-slate-200 dark:border-slate-700 pt-3">
+                        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-2">
+                          KPI Presets (Global)
+                        </div>
+                        <div className="flex flex-wrap gap-2 mb-3">
+                          <input
+                            type="text"
+                            value={kpiPresetForm.name}
+                            onChange={(e) => setKpiPresetForm((prev) => ({ ...prev, name: e.target.value }))}
+                            placeholder="Preset name"
+                            className="flex-1 min-w-[180px] rounded-md border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-900"
+                          />
+                          <input
+                            type="text"
+                            value={kpiPresetForm.description}
+                            onChange={(e) => setKpiPresetForm((prev) => ({ ...prev, description: e.target.value }))}
+                            placeholder="Description"
+                            className="flex-1 min-w-[180px] rounded-md border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-900"
+                          />
+                          <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+                            <input
+                              type="checkbox"
+                              checked={kpiPresetForm.isDefault}
+                              onChange={(e) => setKpiPresetForm((prev) => ({ ...prev, isDefault: e.target.checked }))}
+                              className="h-4 w-4 rounded border-slate-300 text-blue-600"
+                            />
+                            Default
+                          </label>
+                          <button
+                            onClick={handleSaveKpiPreset}
+                            className="px-3 py-1.5 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700"
+                          >
+                            {editingKpiPresetId ? "Update" : "Add"}
+                          </button>
+                          {editingKpiPresetId && (
+                            <button
+                              onClick={resetKpiPresetForm}
+                              className="px-3 py-1.5 text-sm rounded-md border border-slate-300 text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                            >
+                              Cancel
+                            </button>
+                          )}
+                        </div>
+                        <div className="mt-4 rounded border border-slate-200 dark:border-slate-700 p-3">
+                          <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-2">
+                            KPI Items
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-6 gap-2">
+                            <select
+                              value={kpiItemForm.presetId || activeKpiPresetId || kpiPresets[0]?.id || ""}
+                              onChange={(e) => setKpiItemForm((prev) => ({ ...prev, presetId: e.target.value }))}
+                              className="rounded-md border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-900 md:col-span-1"
+                            >
+                              <option value="">Select preset</option>
+                              {kpiPresets.map((p) => (
+                                <option key={p.id} value={p.id}>{p.name}</option>
+                              ))}
+                            </select>
+                            <input
+                              type="text"
+                              value={kpiItemForm.name}
+                              onChange={(e) => setKpiItemForm((prev) => ({ ...prev, name: e.target.value }))}
+                              placeholder="KPI name"
+                              className="rounded-md border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-900 md:col-span-2"
+                            />
+                            <input
+                              type="text"
+                              value={kpiItemForm.formula}
+                              onChange={(e) => setKpiItemForm((prev) => ({ ...prev, formula: e.target.value }))}
+                              onSelect={(e) => {
+                                const target = e.currentTarget;
+                                kpiFormulaSelectionRef.current = {
+                                  start: target.selectionStart ?? 0,
+                                  end: target.selectionEnd ?? 0,
+                                };
+                              }}
+                              onClick={(e) => {
+                                const target = e.currentTarget;
+                                kpiFormulaSelectionRef.current = {
+                                  start: target.selectionStart ?? 0,
+                                  end: target.selectionEnd ?? 0,
+                                };
+                              }}
+                              onKeyUp={(e) => {
+                                const target = e.currentTarget;
+                                kpiFormulaSelectionRef.current = {
+                                  start: target.selectionStart ?? 0,
+                                  end: target.selectionEnd ?? 0,
+                                };
+                              }}
+                              ref={kpiFormulaRef}
+                              placeholder="Formula (use {Variable})"
+                              className="rounded-md border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-900 md:col-span-2"
+                            />
+                            <select
+                              value={kpiItemForm.resultType}
+                              onChange={(e) => setKpiItemForm((prev) => ({ ...prev, resultType: e.target.value as KpiPresetItem["resultType"] }))}
+                              className="rounded-md border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-900"
+                            >
+                              <option value="currency">Currency</option>
+                              <option value="percentage">Percentage</option>
+                              <option value="number">Number</option>
+                            </select>
+                            <input
+                              type="number"
+                              value={kpiItemForm.scaleMin}
+                              onChange={(e) => setKpiItemForm((prev) => ({ ...prev, scaleMin: e.target.value }))}
+                              placeholder="Min"
+                              className="rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-right dark:border-slate-700 dark:bg-slate-900"
+                            />
+                            <input
+                              type="number"
+                              value={kpiItemForm.scaleMax}
+                              onChange={(e) => setKpiItemForm((prev) => ({ ...prev, scaleMax: e.target.value }))}
+                              placeholder="Max"
+                              className="rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-right dark:border-slate-700 dark:bg-slate-900"
+                            />
+                            <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+                              <input
+                                type="checkbox"
+                                checked={kpiItemForm.scaleInvert}
+                                onChange={(e) => setKpiItemForm((prev) => ({ ...prev, scaleInvert: e.target.checked }))}
+                                className="h-4 w-4 rounded border-slate-300 text-blue-600"
+                              />
+                              Invert
+                            </label>
+                            <input
+                              type="number"
+                              value={kpiItemForm.sortOrder}
+                              onChange={(e) => setKpiItemForm((prev) => ({ ...prev, sortOrder: e.target.value }))}
+                              placeholder="Order"
+                              className="rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-right dark:border-slate-700 dark:bg-slate-900"
+                            />
+                            <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+                              <input
+                                type="checkbox"
+                                checked={kpiItemForm.enabled}
+                                onChange={(e) => setKpiItemForm((prev) => ({ ...prev, enabled: e.target.checked }))}
+                                className="h-4 w-4 rounded border-slate-300 text-blue-600"
+                              />
+                              Enabled
+                            </label>
+                            <button
+                              onClick={handleSaveKpiItem}
+                              className="px-3 py-1.5 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700"
+                            >
+                              {editingKpiItemId ? "Update Item" : "Add Item"}
+                            </button>
+                            {editingKpiItemId && (
+                              <button
+                                onClick={resetKpiItemForm}
+                                className="px-3 py-1.5 text-sm rounded-md border border-slate-300 text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                              >
+                                Cancel
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          {kpiPresets.length === 0 && (
+                            <div className="text-sm text-slate-500 dark:text-slate-400">No KPI presets yet.</div>
+                          )}
+                          {kpiPresets.map((preset) => (
+                            <div key={preset.id} className="rounded border border-slate-200 dark:border-slate-700 p-2">
+                              <div className="flex items-center justify-between">
+                                <div className="text-sm text-slate-700 dark:text-slate-200">
+                                  {preset.name}
+                                  {preset.isDefault && <span className="ml-2 text-[11px] text-blue-500">Default</span>}
+                                </div>
+                                <div className="flex gap-2">
+                                  <button
+                                    onClick={() => handleEditKpiPreset(preset)}
+                                    className="px-2 py-1 text-[11px] rounded bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/40 dark:text-blue-200"
+                                  >
+                                    Edit
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteKpiPreset(preset.id)}
+                                    className="px-2 py-1 text-[11px] rounded bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/40 dark:text-red-300"
+                                  >
+                                    Delete
+                                  </button>
+                                </div>
+                              </div>
+                              <div className="mt-2 space-y-2">
+                                {(kpiPresetItems[preset.id] || []).map((item) => (
+                                  <div key={item.id} className="flex items-center justify-between rounded border border-slate-200 dark:border-slate-700 px-2 py-1 text-xs">
+                                    <div>
+                                      <div className="text-slate-700 dark:text-slate-200">{item.name}</div>
+                                    </div>
+                                    <div className="flex gap-2">
+                                      <button
+                                        onClick={() => handleEditKpiItem(item)}
+                                        className="px-2 py-1 text-[11px] rounded bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/40 dark:text-blue-200"
+                                      >
+                                        Edit
+                                      </button>
+                                      <button
+                                        onClick={() => handleDeleteKpiItem(item.id)}
+                                        className="px-2 py-1 text-[11px] rounded bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/40 dark:text-red-300"
+                                      >
+                                        Delete
+                                      </button>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="mt-4 rounded border border-slate-200 dark:border-slate-700 p-3">
+                          <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-2">
+                            Available Variables
+                          </div>
+                          <div className="text-[11px] text-slate-500 dark:text-slate-400 mb-2">
+                            Use `{`Variable`}` in formulas. Includes project details, custom formulas, tax rates, activity metrics, and category totals.
+                          </div>
+                          <div className="max-h-48 overflow-y-auto flex flex-wrap gap-2">
+                            {kpiAvailableVariables.map((name) => (
+                              <span
+                                key={name}
+                                onClick={() => handleInsertKpiVariable(name)}
+                                className="px-2 py-1 rounded-full border border-slate-200 text-slate-600 dark:border-slate-700 dark:text-slate-300 text-[11px]"
+                                title={`{${name}}`}
+                              >
+                                {`{${name}}`}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="rounded-lg border border-slate-300 bg-white dark:border-slate-800 dark:bg-slate-900 shadow-md p-4 flex flex-col gap-3">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-200">Project Ledger</h3>
+                      <span className="text-xs text-slate-500 dark:text-slate-400">{projectTransactions.length} txns</span>
+                    </div>
+                    <p className="text-sm text-slate-600 dark:text-slate-400">Track income and expenses by category and activity.</p>
+                    <div className="mt-auto flex items-center gap-2">
+                      <button
+                        onClick={() => setActivityView("ledger")}
+                        className="px-3 py-1.5 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700"
+                      >
+                        Open Ledger
+                      </button>
+                      <span className="text-xs text-slate-500 dark:text-slate-400">{ledgerCategories.length} categories</span>
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg border border-slate-300 bg-white dark:border-slate-800 dark:bg-slate-900 shadow-md p-4 flex flex-col gap-3">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-200">Utilities</h3>
+                      <span className="text-xs text-slate-500 dark:text-slate-400">{selectedProjectUtilities.length} entries</span>
+                    </div>
+                    <p className="text-sm text-slate-600 dark:text-slate-400">Log utility bills and recurring services per project.</p>
+                    <div className="mt-auto">
+                      <button
+                        onClick={() => setActivityView("utilities")}
+                        className="px-3 py-1.5 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700"
+                      >
+                        Open Utilities
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg border border-slate-300 bg-white dark:border-slate-800 dark:bg-slate-900 shadow-md p-4 flex flex-col gap-3">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-200">Draws</h3>
+                      <span className="text-xs text-slate-500 dark:text-slate-400">{selectedProjectDraws.length} entries</span>
+                    </div>
+                    <p className="text-sm text-slate-600 dark:text-slate-400">Track lender draws and usage against the loan.</p>
+                    <div className="mt-auto">
+                      <button
+                        onClick={() => setActivityView("draws")}
+                        className="px-3 py-1.5 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700"
+                      >
+                        Open Draws
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg border border-slate-300 bg-white dark:border-slate-800 dark:bg-slate-900 shadow-md p-4 flex flex-col gap-3">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-200">Loans</h3>
+                      <span className="text-xs text-slate-500 dark:text-slate-400">{selectedProjectLoans.length} entries</span>
+                    </div>
+                    <p className="text-sm text-slate-600 dark:text-slate-400">Model loan balances, payments, and interest schedule.</p>
+                    <div className="mt-auto">
+                      <button
+                        onClick={() => setActivityView("loans")}
+                        className="px-3 py-1.5 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700"
+                      >
+                        Open Loans
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg border border-slate-300 bg-white dark:border-slate-800 dark:bg-slate-900 shadow-md p-4 flex flex-col gap-3">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-200">Property Taxes</h3>
+                      <span className="text-xs text-slate-500 dark:text-slate-400">{selectedProjectTaxes.length} entries</span>
+                    </div>
+                    <p className="text-sm text-slate-600 dark:text-slate-400">Track annual tax bills and payments by parcel.</p>
+                    <div className="mt-auto">
+                      <button
+                        onClick={() => setActivityView("taxes")}
+                        className="px-3 py-1.5 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700"
+                      >
+                        Open Property Taxes
+                      </button>
+                    </div>
+                  </div>
+                  </div>
+                </div>
+              )}
+
               {activityView === "ledger" && (
-                <div className="rounded-lg border border-slate-300 bg-white dark:border-slate-800 dark:bg-slate-900 shadow-md flex flex-col h-full overflow-hidden">
+                <div className="rounded-lg border border-slate-300 bg-white dark:border-slate-800 dark:bg-slate-900 shadow-md flex flex-col flex-1 min-h-0 overflow-hidden">
                   <ProjectLedger
                     projectId={activeProjectDbId ?? activeProject.id}
                     activities={projectActivities}
                     transactions={projectTransactions}
                     categories={ledgerCategories}
+                    accounts={ledgerAccounts}
                     onAddTransaction={(t) => handleAddTransaction(t, activeProjectDbId ?? undefined)}
                     onUpdateTransaction={(t) => handleUpdateTransaction(t, activeProjectDbId ?? undefined)}
                     onDeleteTransaction={(id) => handleDeleteTransaction(id, activeProjectDbId ?? undefined)}
@@ -12624,8 +17623,487 @@ export default function DashboardPage() {
                     draftActivityId={quickLedgerActivityId}
                     setDraftActivityId={setQuickLedgerActivityId}
                     displayMode="inline"
-                    containerClassName="flex flex-col h-full"
+                    containerClassName="flex flex-col flex-1 min-h-0"
                   />
+                </div>
+              )}
+
+              {activityView === "utilities" && (
+                <div className="rounded-lg border border-slate-300 bg-white dark:border-slate-800 dark:bg-slate-900 shadow-md flex flex-col h-full overflow-hidden">
+                  <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-slate-700">
+                    <div>
+                      <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-200">Utilities</h3>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">Track utility bills and recurring services for this project.</p>
+                    </div>
+                    <div className="text-sm text-slate-600 dark:text-slate-300">
+                      Total: <span className="font-semibold">{formatCurrency(selectedProjectUtilities.reduce((sum, u) => sum + (u.amount || 0), 0))}</span>
+                    </div>
+                  </div>
+                  <div className="p-4 border-b border-slate-200 dark:border-slate-700">
+                    <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
+                      <input
+                        type="date"
+                        value={utilityForm.date}
+                        onChange={(e) => setUtilityForm((prev) => ({ ...prev, date: e.target.value }))}
+                        className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-900"
+                      />
+                      <input
+                        type="text"
+                        value={utilityForm.service}
+                        onChange={(e) => setUtilityForm((prev) => ({ ...prev, service: e.target.value }))}
+                        placeholder="Service (Water, Electric)"
+                        className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-900"
+                      />
+                      <input
+                        type="text"
+                        value={utilityForm.provider}
+                        onChange={(e) => setUtilityForm((prev) => ({ ...prev, provider: e.target.value }))}
+                        placeholder="Provider"
+                        className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-900"
+                      />
+                      <input
+                        type="number"
+                        value={utilityForm.amount}
+                        onChange={(e) => setUtilityForm((prev) => ({ ...prev, amount: e.target.value }))}
+                        placeholder="Amount"
+                        className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-right dark:border-slate-700 dark:bg-slate-900"
+                      />
+                      <input
+                        type="text"
+                        value={utilityForm.note}
+                        onChange={(e) => setUtilityForm((prev) => ({ ...prev, note: e.target.value }))}
+                        placeholder="Note"
+                        className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-900 md:col-span-2"
+                      />
+                    </div>
+                    <div className="flex items-center gap-2 mt-3">
+                      <button
+                        onClick={handleSaveUtility}
+                        className="px-3 py-1.5 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700"
+                      >
+                        {editingUtilityId ? "Update Utility" : "Add Utility"}
+                      </button>
+                      {editingUtilityId && (
+                        <button
+                          onClick={resetUtilityForm}
+                          className="px-3 py-1.5 text-sm rounded-md border border-slate-300 text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                        >
+                          Cancel
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex-1 overflow-y-auto">
+                    {selectedProjectUtilities.length === 0 ? (
+                      <div className="p-6 text-sm text-slate-500 dark:text-slate-400">No utilities recorded yet.</div>
+                    ) : (
+                      <table className="min-w-full text-sm">
+                        <thead className="sticky top-0 bg-slate-100 dark:bg-slate-800 text-xs uppercase text-slate-500 dark:text-slate-400">
+                          <tr>
+                            <th className="px-4 py-2 text-left">Date</th>
+                            <th className="px-4 py-2 text-left">Service</th>
+                            <th className="px-4 py-2 text-left">Provider</th>
+                            <th className="px-4 py-2 text-right">Amount</th>
+                            <th className="px-4 py-2 text-left">Note</th>
+                            <th className="px-4 py-2 text-right">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {selectedProjectUtilities
+                            .slice()
+                            .sort((a, b) => toDateMs(b.date) - toDateMs(a.date))
+                            .map((u, idx) => (
+                              <tr key={u.id} className={idx % 2 === 0 ? "bg-white dark:bg-slate-900" : "bg-slate-50 dark:bg-slate-800"}>
+                                <td className="px-4 py-2">{u.date}</td>
+                                <td className="px-4 py-2 font-medium text-slate-800 dark:text-slate-100">{u.service}</td>
+                                <td className="px-4 py-2">{u.provider || "-"}</td>
+                                <td className="px-4 py-2 text-right">{formatCurrency(u.amount)}</td>
+                                <td className="px-4 py-2 text-slate-500 dark:text-slate-400">{u.note || "-"}</td>
+                                <td className="px-4 py-2 text-right">
+                                  <div className="inline-flex gap-2">
+                                    <button
+                                      onClick={() => handleEditUtility(u)}
+                                      className="px-2 py-1 text-xs rounded bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/40 dark:text-blue-200"
+                                    >
+                                      Edit
+                                    </button>
+                                    <button
+                                      onClick={() => handleDeleteUtility(u.id)}
+                                      className="px-2 py-1 text-xs rounded bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/40 dark:text-red-300"
+                                    >
+                                      Delete
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {activityView === "draws" && (
+                <div className="rounded-lg border border-slate-300 bg-white dark:border-slate-800 dark:bg-slate-900 shadow-md flex flex-col h-full overflow-hidden">
+                  <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-slate-700">
+                    <div>
+                      <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-200">Draws</h3>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">Track lender draws and usage against the loan.</p>
+                    </div>
+                    <div className="text-sm text-slate-600 dark:text-slate-300">
+                      Total: <span className="font-semibold">{formatCurrency(selectedProjectDraws.reduce((sum, d) => sum + (d.amount || 0), 0))}</span>
+                    </div>
+                  </div>
+                  <div className="p-4 border-b border-slate-200 dark:border-slate-700">
+                    <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+                      <input
+                        type="date"
+                        value={drawForm.date}
+                        onChange={(e) => setDrawForm((prev) => ({ ...prev, date: e.target.value }))}
+                        className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-900"
+                      />
+                      <input
+                        type="text"
+                        value={drawForm.description}
+                        onChange={(e) => setDrawForm((prev) => ({ ...prev, description: e.target.value }))}
+                        placeholder="Description"
+                        className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-900 md:col-span-2"
+                      />
+                      <input
+                        type="number"
+                        value={drawForm.amount}
+                        onChange={(e) => setDrawForm((prev) => ({ ...prev, amount: e.target.value }))}
+                        placeholder="Amount"
+                        className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-right dark:border-slate-700 dark:bg-slate-900"
+                      />
+                      <input
+                        type="text"
+                        value={drawForm.note}
+                        onChange={(e) => setDrawForm((prev) => ({ ...prev, note: e.target.value }))}
+                        placeholder="Note"
+                        className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-900"
+                      />
+                    </div>
+                    <div className="flex items-center gap-2 mt-3">
+                      <button
+                        onClick={handleSaveDraw}
+                        className="px-3 py-1.5 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700"
+                      >
+                        {editingDrawId ? "Update Draw" : "Add Draw"}
+                      </button>
+                      {editingDrawId && (
+                        <button
+                          onClick={resetDrawForm}
+                          className="px-3 py-1.5 text-sm rounded-md border border-slate-300 text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                        >
+                          Cancel
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex-1 overflow-y-auto">
+                    {selectedProjectDraws.length === 0 ? (
+                      <div className="p-6 text-sm text-slate-500 dark:text-slate-400">No draws recorded yet.</div>
+                    ) : (
+                      <table className="min-w-full text-sm">
+                        <thead className="sticky top-0 bg-slate-100 dark:bg-slate-800 text-xs uppercase text-slate-500 dark:text-slate-400">
+                          <tr>
+                            <th className="px-4 py-2 text-left">Date</th>
+                            <th className="px-4 py-2 text-left">Description</th>
+                            <th className="px-4 py-2 text-right">Amount</th>
+                            <th className="px-4 py-2 text-left">Note</th>
+                            <th className="px-4 py-2 text-right">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {selectedProjectDraws
+                            .slice()
+                            .sort((a, b) => toDateMs(b.date) - toDateMs(a.date))
+                            .map((d, idx) => (
+                              <tr key={d.id} className={idx % 2 === 0 ? "bg-white dark:bg-slate-900" : "bg-slate-50 dark:bg-slate-800"}>
+                                <td className="px-4 py-2">{d.date}</td>
+                                <td className="px-4 py-2 font-medium text-slate-800 dark:text-slate-100">{d.description}</td>
+                                <td className="px-4 py-2 text-right">{formatCurrency(d.amount)}</td>
+                                <td className="px-4 py-2 text-slate-500 dark:text-slate-400">{d.note || "-"}</td>
+                                <td className="px-4 py-2 text-right">
+                                  <div className="inline-flex gap-2">
+                                    <button
+                                      onClick={() => handleEditDraw(d)}
+                                      className="px-2 py-1 text-xs rounded bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/40 dark:text-blue-200"
+                                    >
+                                      Edit
+                                    </button>
+                                    <button
+                                      onClick={() => handleDeleteDraw(d.id)}
+                                      className="px-2 py-1 text-xs rounded bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/40 dark:text-red-300"
+                                    >
+                                      Delete
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {activityView === "loans" && (
+                <div className="rounded-lg border border-slate-300 bg-white dark:border-slate-800 dark:bg-slate-900 shadow-md flex flex-col h-full overflow-hidden">
+                  <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-slate-700">
+                    <div>
+                      <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-200">Loan Balance</h3>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">Track payments, interest, principal, and balance.</p>
+                    </div>
+                    <div className="text-sm text-slate-600 dark:text-slate-300">
+                      Paid: <span className="font-semibold">{formatCurrency(selectedProjectLoans.reduce((sum, l) => sum + (l.payment || 0), 0))}</span>
+                    </div>
+                  </div>
+                  <div className="p-4 border-b border-slate-200 dark:border-slate-700">
+                    <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
+                      <input
+                        type="date"
+                        value={loanForm.date}
+                        onChange={(e) => setLoanForm((prev) => ({ ...prev, date: e.target.value }))}
+                        className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-900"
+                      />
+                      <input
+                        type="number"
+                        value={loanForm.payment}
+                        onChange={(e) => setLoanForm((prev) => ({ ...prev, payment: e.target.value }))}
+                        placeholder="Payment"
+                        className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-right dark:border-slate-700 dark:bg-slate-900"
+                      />
+                      <input
+                        type="number"
+                        value={loanForm.interest}
+                        onChange={(e) => setLoanForm((prev) => ({ ...prev, interest: e.target.value }))}
+                        placeholder="Interest"
+                        className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-right dark:border-slate-700 dark:bg-slate-900"
+                      />
+                      <input
+                        type="number"
+                        value={loanForm.principal}
+                        onChange={(e) => setLoanForm((prev) => ({ ...prev, principal: e.target.value }))}
+                        placeholder="Principal"
+                        className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-right dark:border-slate-700 dark:bg-slate-900"
+                      />
+                      <input
+                        type="number"
+                        value={loanForm.balance}
+                        onChange={(e) => setLoanForm((prev) => ({ ...prev, balance: e.target.value }))}
+                        placeholder="Balance"
+                        className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-right dark:border-slate-700 dark:bg-slate-900"
+                      />
+                      <input
+                        type="text"
+                        value={loanForm.note}
+                        onChange={(e) => setLoanForm((prev) => ({ ...prev, note: e.target.value }))}
+                        placeholder="Note"
+                        className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-900"
+                      />
+                    </div>
+                    <div className="flex items-center gap-2 mt-3">
+                      <button
+                        onClick={handleSaveLoan}
+                        className="px-3 py-1.5 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700"
+                      >
+                        {editingLoanId ? "Update Entry" : "Add Entry"}
+                      </button>
+                      {editingLoanId && (
+                        <button
+                          onClick={resetLoanForm}
+                          className="px-3 py-1.5 text-sm rounded-md border border-slate-300 text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                        >
+                          Cancel
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex-1 overflow-y-auto">
+                    {selectedProjectLoans.length === 0 ? (
+                      <div className="p-6 text-sm text-slate-500 dark:text-slate-400">No loan entries recorded yet.</div>
+                    ) : (
+                      <table className="min-w-full text-sm">
+                        <thead className="sticky top-0 bg-slate-100 dark:bg-slate-800 text-xs uppercase text-slate-500 dark:text-slate-400">
+                          <tr>
+                            <th className="px-4 py-2 text-left">Date</th>
+                            <th className="px-4 py-2 text-right">Payment</th>
+                            <th className="px-4 py-2 text-right">Interest</th>
+                            <th className="px-4 py-2 text-right">Principal</th>
+                            <th className="px-4 py-2 text-right">Balance</th>
+                            <th className="px-4 py-2 text-left">Note</th>
+                            <th className="px-4 py-2 text-right">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {selectedProjectLoans
+                            .slice()
+                            .sort((a, b) => toDateMs(b.date) - toDateMs(a.date))
+                            .map((l, idx) => (
+                              <tr key={l.id} className={idx % 2 === 0 ? "bg-white dark:bg-slate-900" : "bg-slate-50 dark:bg-slate-800"}>
+                                <td className="px-4 py-2">{l.date}</td>
+                                <td className="px-4 py-2 text-right">{formatCurrency(l.payment)}</td>
+                                <td className="px-4 py-2 text-right">{formatCurrency(l.interest)}</td>
+                                <td className="px-4 py-2 text-right">{formatCurrency(l.principal)}</td>
+                                <td className="px-4 py-2 text-right">{l.balance === null || l.balance === undefined ? "-" : formatCurrency(l.balance)}</td>
+                                <td className="px-4 py-2 text-slate-500 dark:text-slate-400">{l.note || "-"}</td>
+                                <td className="px-4 py-2 text-right">
+                                  <div className="inline-flex gap-2">
+                                    <button
+                                      onClick={() => handleEditLoan(l)}
+                                      className="px-2 py-1 text-xs rounded bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/40 dark:text-blue-200"
+                                    >
+                                      Edit
+                                    </button>
+                                    <button
+                                      onClick={() => handleDeleteLoan(l.id)}
+                                      className="px-2 py-1 text-xs rounded bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/40 dark:text-red-300"
+                                    >
+                                      Delete
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {activityView === "taxes" && (
+                <div className="rounded-lg border border-slate-300 bg-white dark:border-slate-800 dark:bg-slate-900 shadow-md flex flex-col h-full overflow-hidden">
+                  <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-slate-700">
+                    <div>
+                      <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-200">Property Taxes</h3>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">Track tax bills and paid status per project.</p>
+                    </div>
+                    <div className="text-sm text-slate-600 dark:text-slate-300">
+                      Due: <span className="font-semibold">{formatCurrency(selectedProjectTaxes.filter((t) => t.status !== "paid").reduce((sum, t) => sum + (t.amount || 0), 0))}</span>
+                    </div>
+                  </div>
+                  <div className="p-4 border-b border-slate-200 dark:border-slate-700">
+                    <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
+                      <input
+                        type="number"
+                        value={taxForm.taxYear}
+                        onChange={(e) => setTaxForm((prev) => ({ ...prev, taxYear: e.target.value }))}
+                        placeholder="Tax Year"
+                        className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-900"
+                      />
+                      <input
+                        type="date"
+                        value={taxForm.dueDate}
+                        onChange={(e) => setTaxForm((prev) => ({ ...prev, dueDate: e.target.value }))}
+                        className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-900"
+                      />
+                      <input
+                        type="number"
+                        value={taxForm.amount}
+                        onChange={(e) => setTaxForm((prev) => ({ ...prev, amount: e.target.value }))}
+                        placeholder="Amount"
+                        className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-right dark:border-slate-700 dark:bg-slate-900"
+                      />
+                      <select
+                        value={taxForm.status}
+                        onChange={(e) => setTaxForm((prev) => ({ ...prev, status: e.target.value as ProjectPropertyTax["status"] }))}
+                        className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-900"
+                      >
+                        <option value="due">Due</option>
+                        <option value="paid">Paid</option>
+                        <option value="overdue">Overdue</option>
+                      </select>
+                      <input
+                        type="date"
+                        value={taxForm.paidDate}
+                        onChange={(e) => setTaxForm((prev) => ({ ...prev, paidDate: e.target.value }))}
+                        className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-900"
+                        disabled={taxForm.status !== "paid"}
+                      />
+                      <input
+                        type="text"
+                        value={taxForm.note}
+                        onChange={(e) => setTaxForm((prev) => ({ ...prev, note: e.target.value }))}
+                        placeholder="Note"
+                        className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-900"
+                      />
+                    </div>
+                    <div className="flex items-center gap-2 mt-3">
+                      <button
+                        onClick={handleSaveTax}
+                        className="px-3 py-1.5 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700"
+                      >
+                        {editingTaxId ? "Update Tax" : "Add Tax"}
+                      </button>
+                      {editingTaxId && (
+                        <button
+                          onClick={resetTaxForm}
+                          className="px-3 py-1.5 text-sm rounded-md border border-slate-300 text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                        >
+                          Cancel
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex-1 overflow-y-auto">
+                    {selectedProjectTaxes.length === 0 ? (
+                      <div className="p-6 text-sm text-slate-500 dark:text-slate-400">No property taxes recorded yet.</div>
+                    ) : (
+                      <table className="min-w-full text-sm">
+                        <thead className="sticky top-0 bg-slate-100 dark:bg-slate-800 text-xs uppercase text-slate-500 dark:text-slate-400">
+                          <tr>
+                            <th className="px-4 py-2 text-left">Tax Year</th>
+                            <th className="px-4 py-2 text-left">Due Date</th>
+                            <th className="px-4 py-2 text-right">Amount</th>
+                            <th className="px-4 py-2 text-left">Status</th>
+                            <th className="px-4 py-2 text-left">Paid Date</th>
+                            <th className="px-4 py-2 text-left">Note</th>
+                            <th className="px-4 py-2 text-right">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {selectedProjectTaxes
+                            .slice()
+                            .sort((a, b) => toDateMs(b.dueDate) - toDateMs(a.dueDate))
+                            .map((t, idx) => (
+                              <tr key={t.id} className={idx % 2 === 0 ? "bg-white dark:bg-slate-900" : "bg-slate-50 dark:bg-slate-800"}>
+                                <td className="px-4 py-2">{t.taxYear}</td>
+                                <td className="px-4 py-2">{t.dueDate}</td>
+                                <td className="px-4 py-2 text-right">{formatCurrency(t.amount)}</td>
+                                <td className="px-4 py-2">
+                                  <span className={`inline-flex px-2 py-0.5 rounded-full text-xs ${t.status === "paid" ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200" : t.status === "overdue" ? "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300" : "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-200"}`}>
+                                    {t.status}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-2">{t.paidDate || "-"}</td>
+                                <td className="px-4 py-2 text-slate-500 dark:text-slate-400">{t.note || "-"}</td>
+                                <td className="px-4 py-2 text-right">
+                                  <div className="inline-flex gap-2">
+                                    <button
+                                      onClick={() => handleEditTax(t)}
+                                      className="px-2 py-1 text-xs rounded bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/40 dark:text-blue-200"
+                                    >
+                                      Edit
+                                    </button>
+                                    <button
+                                      onClick={() => handleDeleteTax(t.id)}
+                                      className="px-2 py-1 text-xs rounded bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/40 dark:text-red-300"
+                                    >
+                                      Delete
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
                 </div>
               )}
 
@@ -12887,6 +18365,7 @@ export default function DashboardPage() {
                 activities={projectActivities}
                 transactions={projectTransactions}
                 categories={ledgerCategories}
+                accounts={ledgerAccounts}
                 onAddTransaction={(t) => handleAddTransaction(t, activeProjectDbId ?? undefined)}
                 onUpdateTransaction={(t) => handleUpdateTransaction(t, activeProjectDbId ?? undefined)}
                 onDeleteTransaction={(id) => handleDeleteTransaction(id, activeProjectDbId ?? undefined)}
@@ -13108,6 +18587,14 @@ export default function DashboardPage() {
           onUpdate={handleUpdateLedgerCategory}
           onDelete={handleDeleteLedgerCategory}
         />
+
+        <LedgerAccountsDialog
+          open={accountsDialogOpen}
+          onClose={() => setAccountsDialogOpen(false)}
+          accounts={ledgerAccounts}
+          onSave={handleSaveLedgerAccount}
+          onDelete={handleDeleteLedgerAccount}
+        />
       </div>
     );
   }
@@ -13144,14 +18631,35 @@ export default function DashboardPage() {
 
   return (
     <div className="h-screen flex flex-col bg-slate-50 dark:bg-slate-900">
-      <TopBar title="EPS" currentMode={mode} onModeChange={setMode} currentUser={currentUser} activeUsers={activeUsers} onLogout={handleLogout} onOpenCommit={openCommitModal} commitDraftCount={commitDraftCount} />
+      <TopBar
+        title="EPS"
+        currentMode={mode}
+        onModeChange={setMode}
+        currentUser={currentUser}
+        activeUsers={activeUsers}
+        notifications={notifications}
+        onNotificationClick={handleNotificationClick}
+        onNotificationDismiss={handleNotificationDismiss}
+        onNotificationRead={handleNotificationRead}
+        onNotificationUnread={handleNotificationUnread}
+        readNotificationIds={readNotifications}
+        toastItems={toastItems}
+        closingToastIds={closingToastIds}
+        onToastClick={handleToastClick}
+        onToastDismiss={handleNotificationDismiss}
+        onLogout={handleLogout}
+        onOpenCommit={openCommitModal}
+        commitDraftCount={commitDraftCount}
+      />
       <ActionRibbon
         onOpenTaxRates={() => setTaxRateDialogOpen(true)}
         onManagePresets={() => setFormulaPresetDialogOpen(true)}
         onCreateFormula={handleCreateFormula}
         onAddPresetToProject={openPresetPicker}
+        onManageAccounts={() => setAccountsDialogOpen(true)}
         taxRateCount={taxRates.length}
         presetCount={formulaPresets.length}
+        accountCount={ledgerAccounts.length}
         hasActiveProject={!!resolveActiveProjectId()}
       />
 
@@ -13269,21 +18777,21 @@ export default function DashboardPage() {
                         <span className="text-slate-500 dark:text-slate-400">Status:</span>
                         <div className="inline-flex rounded-full bg-slate-200/60 dark:bg-slate-800/60 p-1 text-xs">
                           <button
-                            onClick={() => handleProjectStatusChange(selectedNode.id, "under_contract")}
-                            className={`px-3 py-1 rounded-full ${pipelineMeta[selectedNode.id]?.status === "under_contract" ? "bg-amber-500 text-white" : "text-slate-700 dark:text-slate-300"}`}
+                            onClick={() => selectedProjectDbId && handleProjectStatusChange(selectedProjectDbId, "under_contract")}
+                            className={`px-3 py-1 rounded-full ${selectedProjectDbId && pipelineMeta[selectedProjectDbId]?.status === "under_contract" ? "bg-amber-500 text-white" : "text-slate-700 dark:text-slate-300"}`}
                           >
                             Not Acquired
                           </button>
                           <button
-                            onClick={() => handleProjectStatusChange(selectedNode.id, "acquired")}
-                            className={`px-3 py-1 rounded-full ${pipelineMeta[selectedNode.id]?.status === "acquired" ? "bg-blue-600 text-white" : "text-slate-700 dark:text-slate-300"}`}
+                            onClick={() => selectedProjectDbId && handleProjectStatusChange(selectedProjectDbId, "acquired")}
+                            className={`px-3 py-1 rounded-full ${selectedProjectDbId && pipelineMeta[selectedProjectDbId]?.status === "acquired" ? "bg-blue-600 text-white" : "text-slate-700 dark:text-slate-300"}`}
                           >
                             Acquired
                           </button>
                         </div>
                       </div>
                       <button
-                        onClick={() => handleProjectSelect(selectedNode.id)}
+                        onClick={() => selectedProjectDbId && handleProjectSelect(selectedProjectDbId)}
                         className="mt-3 rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
                       >
                         Open Project View
@@ -13300,7 +18808,7 @@ export default function DashboardPage() {
                   projectTransactions={selectedProjectTransactions}
                   customFormulas={selectedCustomFormulas}
                   onEditFormula={(formula) => {
-                    setActiveProjectId(selectedNode.id);
+                    if (selectedProjectDbId) setActiveProjectId(selectedProjectDbId);
                     handleEditFormula(formula);
                   }}
                   onDeleteFormula={(formulaId) => {
@@ -13308,16 +18816,16 @@ export default function DashboardPage() {
                     if (confirmed) {
                       setCustomFormulas(prev => ({
                         ...prev,
-                        [selectedNode.id]: (prev[selectedNode.id] || []).filter(f => f.id !== formulaId)
+                        [selectedProjectDbId || selectedNode.id]: (prev[selectedProjectDbId || selectedNode.id] || []).filter(f => f.id !== formulaId)
                       }));
                     }
                   }}
                   onCreateFormula={() => {
-                    setActiveProjectId(selectedNode.id);
+                    if (selectedProjectDbId) setActiveProjectId(selectedProjectDbId);
                     handleCreateFormula();
                   }}
                   onAddPreset={() => {
-                    setActiveProjectId(selectedNode.id);
+                    if (selectedProjectDbId) setActiveProjectId(selectedProjectDbId);
                     setPresetPickerOpen(true);
                   }}
                   taxRates={taxRates}

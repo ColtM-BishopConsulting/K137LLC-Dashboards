@@ -68,6 +68,255 @@ export const projectDetails = pgTable("project_details", {
 });
 
 // ----------------------------
+// PROJECT UTILITIES
+// ----------------------------
+export const projectUtilities = pgTable("project_utilities", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id")
+    .notNull()
+    .references(() => projects.id, { onDelete: "cascade" }),
+  date: date("date").notNull(),
+  service: varchar("service", { length: 128 }).notNull(),
+  provider: varchar("provider", { length: 128 }).default(""),
+  amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
+  note: text("note"),
+  createdAt: timestamp("created_at", { withTimezone: true }).default(sql`now()`),
+});
+
+// ----------------------------
+// PROJECT DRAWS
+// ----------------------------
+export const projectDraws = pgTable("project_draws", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id")
+    .notNull()
+    .references(() => projects.id, { onDelete: "cascade" }),
+  date: date("date").notNull(),
+  description: varchar("description", { length: 255 }).notNull(),
+  amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
+  note: text("note"),
+  createdAt: timestamp("created_at", { withTimezone: true }).default(sql`now()`),
+});
+
+// ----------------------------
+// PROJECT LOANS
+// ----------------------------
+export const projectLoans = pgTable("project_loans", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id")
+    .notNull()
+    .references(() => projects.id, { onDelete: "cascade" }),
+  date: date("date").notNull(),
+  payment: numeric("payment", { precision: 14, scale: 2 }).notNull(),
+  interest: numeric("interest", { precision: 14, scale: 2 }).default("0"),
+  principal: numeric("principal", { precision: 14, scale: 2 }).default("0"),
+  balance: numeric("balance", { precision: 14, scale: 2 }),
+  note: text("note"),
+  createdAt: timestamp("created_at", { withTimezone: true }).default(sql`now()`),
+});
+
+// ----------------------------
+// PROJECT PROPERTY TAXES
+// ----------------------------
+export const projectPropertyTaxes = pgTable("project_property_taxes", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id")
+    .notNull()
+    .references(() => projects.id, { onDelete: "cascade" }),
+  taxYear: integer("tax_year").notNull(),
+  dueDate: date("due_date").notNull(),
+  amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
+  status: varchar("status", { length: 32 }).default("due").notNull(),
+  paidDate: date("paid_date"),
+  note: text("note"),
+  createdAt: timestamp("created_at", { withTimezone: true }).default(sql`now()`),
+});
+
+// ----------------------------
+// COST CATEGORIES (GLOBAL)
+// ----------------------------
+export const costCategories = pgTable("cost_categories", {
+  id: serial("id").primaryKey(),
+  name: varchar("name", { length: 128 }).notNull(),
+  code: varchar("code", { length: 64 }),
+  createdAt: timestamp("created_at", { withTimezone: true }).default(sql`now()`),
+});
+
+// ----------------------------
+// PROJECT COST OVERRIDES
+// ----------------------------
+export const projectCostOverrides = pgTable(
+  "project_cost_overrides",
+  {
+    id: serial("id").primaryKey(),
+    projectId: integer("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    categoryId: integer("category_id")
+      .notNull()
+      .references(() => costCategories.id, { onDelete: "cascade" }),
+    amount: numeric("amount", { precision: 14, scale: 2 }).default("0").notNull(),
+    note: text("note"),
+    createdAt: timestamp("created_at", { withTimezone: true }).default(sql`now()`),
+  },
+  (table) => ({
+    uniqueProjectCategory: uniqueIndex("project_cost_overrides_unique").on(table.projectId, table.categoryId),
+  })
+);
+
+// ----------------------------
+// BREAKDOWN PRESETS (GLOBAL)
+// ----------------------------
+export const breakdownPresets = pgTable("breakdown_presets", {
+  id: serial("id").primaryKey(),
+  name: varchar("name", { length: 128 }).notNull(),
+  description: text("description"),
+  isDefault: boolean("is_default").default(false).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).default(sql`now()`),
+});
+
+export const breakdownPresetItems = pgTable("breakdown_preset_items", {
+  id: serial("id").primaryKey(),
+  presetId: integer("preset_id")
+    .notNull()
+    .references(() => breakdownPresets.id, { onDelete: "cascade" }),
+  categoryId: integer("category_id")
+    .notNull()
+    .references(() => costCategories.id, { onDelete: "cascade" }),
+  sortOrder: integer("sort_order").default(0).notNull(),
+  include: boolean("include").default(true).notNull(),
+});
+
+export const projectBreakdownPrefs = pgTable(
+  "project_breakdown_prefs",
+  {
+    id: serial("id").primaryKey(),
+    projectId: integer("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    presetId: integer("preset_id")
+      .notNull()
+      .references(() => breakdownPresets.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).default(sql`now()`),
+  },
+  (table) => ({
+    uniqueProject: uniqueIndex("project_breakdown_prefs_unique").on(table.projectId),
+  })
+);
+
+// ----------------------------
+// KPI PRESETS (GLOBAL)
+// ----------------------------
+export const kpiPresets = pgTable("kpi_presets", {
+  id: serial("id").primaryKey(),
+  name: varchar("name", { length: 128 }).notNull(),
+  description: text("description"),
+  isDefault: boolean("is_default").default(false).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).default(sql`now()`),
+});
+
+export const kpiPresetItems = pgTable("kpi_preset_items", {
+  id: serial("id").primaryKey(),
+  presetId: integer("preset_id")
+    .notNull()
+    .references(() => kpiPresets.id, { onDelete: "cascade" }),
+  name: varchar("name", { length: 128 }).notNull(),
+  formula: text("formula").notNull(),
+  resultType: varchar("result_type", { length: 32 }).default("currency").notNull(),
+  sortOrder: integer("sort_order").default(0).notNull(),
+  enabled: boolean("enabled").default(true).notNull(),
+  scaleMin: numeric("scale_min", { precision: 14, scale: 2 }),
+  scaleMax: numeric("scale_max", { precision: 14, scale: 2 }),
+  scaleInvert: boolean("scale_invert").default(false).notNull(),
+});
+
+export const projectKpiPrefs = pgTable(
+  "project_kpi_prefs",
+  {
+    id: serial("id").primaryKey(),
+    projectId: integer("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    presetId: integer("preset_id")
+      .notNull()
+      .references(() => kpiPresets.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).default(sql`now()`),
+  },
+  (table) => ({
+    uniqueProject: uniqueIndex("project_kpi_prefs_unique").on(table.projectId),
+  })
+);
+
+export const projectKpiOverrides = pgTable(
+  "project_kpi_overrides",
+  {
+    id: serial("id").primaryKey(),
+    projectId: integer("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    itemId: integer("item_id")
+      .notNull()
+      .references(() => kpiPresetItems.id, { onDelete: "cascade" }),
+    overrideValue: numeric("override_value", { precision: 14, scale: 2 }).default("0").notNull(),
+    note: text("note"),
+    createdAt: timestamp("created_at", { withTimezone: true }).default(sql`now()`),
+  },
+  (table) => ({
+    uniqueProjectItem: uniqueIndex("project_kpi_overrides_unique").on(table.projectId, table.itemId),
+  })
+);
+
+// ----------------------------
+// PROJECT ACQUISITION + CLOSING COSTS
+// ----------------------------
+export const projectAcquisitions = pgTable("project_acquisitions", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id")
+    .notNull()
+    .references(() => projects.id, { onDelete: "cascade" }),
+  purchasePrice: numeric("purchase_price", { precision: 14, scale: 2 }).default("0"),
+  acquisitionDraw: numeric("acquisition_draw", { precision: 14, scale: 2 }).default("0"),
+  earnestMoney: numeric("earnest_money", { precision: 14, scale: 2 }).default("0"),
+  closeDate: date("close_date"),
+  note: text("note"),
+  createdAt: timestamp("created_at", { withTimezone: true }).default(sql`now()`),
+});
+
+export const projectClosingCosts = pgTable("project_closing_costs", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id")
+    .notNull()
+    .references(() => projects.id, { onDelete: "cascade" }),
+  side: varchar("side", { length: 16 }).notNull(), // purchase | sale
+  code: varchar("code", { length: 64 }),
+  label: varchar("label", { length: 128 }).notNull(),
+  amount: numeric("amount", { precision: 14, scale: 2 }).default("0").notNull(),
+  paid: boolean("paid").default(false).notNull(),
+  paidDate: date("paid_date"),
+  note: text("note"),
+  createdAt: timestamp("created_at", { withTimezone: true }).default(sql`now()`),
+});
+
+// ----------------------------
+// PROJECT DEBT SERVICE
+// ----------------------------
+export const projectDebtService = pgTable("project_debt_service", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id")
+    .notNull()
+    .references(() => projects.id, { onDelete: "cascade" }),
+  bank: varchar("bank", { length: 128 }).notNull(),
+  balance: numeric("balance", { precision: 14, scale: 2 }).default("0").notNull(),
+  payment: numeric("payment", { precision: 14, scale: 2 }).default("0").notNull(),
+  interestRate: numeric("interest_rate", { precision: 6, scale: 3 }).default("0").notNull(),
+  rateType: varchar("rate_type", { length: 16 }).default("fixed").notNull(),
+  rateAdjustDate: date("rate_adjust_date"),
+  maturityDate: date("maturity_date"),
+  note: text("note"),
+  createdAt: timestamp("created_at", { withTimezone: true }).default(sql`now()`),
+});
+
+// ----------------------------
 // PROJECT CUSTOM FORMULAS
 // ----------------------------
 export const formulas = pgTable("formulas", {
@@ -424,6 +673,15 @@ export const ledgerCategories = pgTable("ledger_categories", {
     }),
 }));
 
+export const ledgerAccounts = pgTable("ledger_accounts", {
+  id: serial("id").primaryKey(),
+  name: varchar("name", { length: 128 }).notNull(),
+  type: varchar("type", { length: 32 }).default("bank").notNull(),
+  institution: varchar("institution", { length: 128 }),
+  last4: varchar("last4", { length: 8 }),
+  createdAt: timestamp("created_at", { withTimezone: true }).default(sql`now()`),
+});
+
 export const ledgerTransactions = pgTable("ledger_transactions", {
   id: serial("id").primaryKey(),
   projectId: integer("project_id").references(() => projects.id, { onDelete: "set null" }),
@@ -433,6 +691,8 @@ export const ledgerTransactions = pgTable("ledger_transactions", {
   category: varchar("category", { length: 128 }).notNull(),
   subCategoryId: integer("sub_category_id").references(() => ledgerCategories.id, { onDelete: "set null" }),
   subCategory: varchar("sub_category", { length: 128 }),
+  accountId: integer("account_id").references(() => ledgerAccounts.id, { onDelete: "set null" }),
+  accountName: varchar("account_name", { length: 128 }),
   date: date("date").notNull(),
   amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
   description: text("description"),

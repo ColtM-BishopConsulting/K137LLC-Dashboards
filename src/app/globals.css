@@ -28,6 +28,47 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) translateX(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) translateX(0);
+  }
+}
+
+@keyframes toast-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+.toast-enter {
+  animation: toast-in 220ms ease-out;
+}
+
+.toast-exit {
+  animation: toast-out 220ms ease-in forwards;
+}
+
+@keyframes toast-progress {
+  from {
+    width: 100%;
+  }
+  to {
+    width: 0%;
+  }
+}
+
+.toast-progress {
+  animation: toast-progress 8s linear forwards;
+}
+
 /* P6-style tweaks for AG Grid */
 .ag-theme-balham.p6-grid {
   --ag-foreground-color: #1e293b;

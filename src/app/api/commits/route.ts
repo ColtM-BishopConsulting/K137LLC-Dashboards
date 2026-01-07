@@ -8,6 +8,7 @@ import {
   projects,
   activities,
   ledgerTransactions,
+  ledgerAccounts,
   rentProperties,
   rentUnits,
   rentPayments,
@@ -22,9 +23,25 @@ import {
   timeEntries,
   resources,
   projectDetails,
+  projectUtilities,
+  projectDraws,
+  projectLoans,
+  projectPropertyTaxes,
+  projectAcquisitions,
+  projectClosingCosts,
+  projectDebtService,
   formulas,
   formulaPresets,
   taxRates,
+  costCategories,
+  projectCostOverrides,
+  breakdownPresets,
+  breakdownPresetItems,
+  projectBreakdownPrefs,
+  kpiPresets,
+  kpiPresetItems,
+  projectKpiPrefs,
+  projectKpiOverrides,
 } from "@/db";
 import { getSessionFromCookieHeader, COOKIE_NAME } from "@/lib/auth";
 import { desc, eq, inArray, and } from "drizzle-orm";
@@ -42,6 +59,30 @@ const tagToMajor: Record<string, string> = {
   users: "7",
   formulas: "8",
   exports: "9",
+  utilities: "3",
+  project_utilities: "3",
+  draws: "3",
+  project_draws: "3",
+  loans: "3",
+  project_loans: "3",
+  property_taxes: "3",
+  project_property_taxes: "3",
+  acquisitions: "3",
+  project_acquisitions: "3",
+  closing_costs: "3",
+  project_closing_costs: "3",
+  debt_service: "3",
+  project_debt_service: "3",
+  cost_categories: "3",
+  project_cost_overrides: "3",
+  breakdown_presets: "3",
+  breakdown_preset_items: "3",
+  project_breakdown_prefs: "3",
+  kpi_presets: "3",
+  kpi_preset_items: "3",
+  project_kpi_prefs: "3",
+  project_kpi_overrides: "3",
+  ledger_accounts: "3",
 };
 
 const randomLetter = () => String.fromCharCode(65 + Math.floor(Math.random() * 26));
@@ -236,8 +277,42 @@ const applyCommitChanges = async (commitId: number) => {
       await applyCrud(timeEntries, ch);
     } else if (entity === "resources") {
       await applyCrud(resources, ch);
-    } else if (entity === "project_details" || entity === "projectdetails") {
+  } else if (entity === "project_details" || entity === "projectdetails") {
       await applyCrud(projectDetails, ch);
+  } else if (entity === "project_utilities" || entity === "projectutilities") {
+    await applyCrud(projectUtilities, ch);
+  } else if (entity === "project_draws" || entity === "projectdraws") {
+    await applyCrud(projectDraws, ch);
+  } else if (entity === "project_loans" || entity === "projectloans") {
+    await applyCrud(projectLoans, ch);
+  } else if (entity === "project_property_taxes" || entity === "projectpropertytaxes") {
+    await applyCrud(projectPropertyTaxes, ch);
+  } else if (entity === "project_acquisitions" || entity === "projectacquisitions") {
+    await applyCrud(projectAcquisitions, ch);
+  } else if (entity === "project_closing_costs" || entity === "projectclosingcosts") {
+    await applyCrud(projectClosingCosts, ch);
+  } else if (entity === "project_debt_service" || entity === "projectdebtservice") {
+    await applyCrud(projectDebtService, ch);
+  } else if (entity === "cost_categories" || entity === "costcategories") {
+    await applyCrud(costCategories, ch);
+  } else if (entity === "project_cost_overrides" || entity === "projectcostoverrides") {
+    await applyCrud(projectCostOverrides, ch);
+  } else if (entity === "breakdown_presets" || entity === "breakdownpresets") {
+    await applyCrud(breakdownPresets, ch);
+  } else if (entity === "breakdown_preset_items" || entity === "breakdownpresetitems") {
+    await applyCrud(breakdownPresetItems, ch);
+  } else if (entity === "project_breakdown_prefs" || entity === "projectbreakdownprefs") {
+    await applyCrud(projectBreakdownPrefs, ch);
+  } else if (entity === "kpi_presets" || entity === "kpipresets") {
+    await applyCrud(kpiPresets, ch);
+  } else if (entity === "kpi_preset_items" || entity === "kpipresetitems") {
+    await applyCrud(kpiPresetItems, ch);
+  } else if (entity === "project_kpi_prefs" || entity === "projectkpiprefs") {
+    await applyCrud(projectKpiPrefs, ch);
+  } else if (entity === "project_kpi_overrides" || entity === "projectkpioverrides") {
+    await applyCrud(projectKpiOverrides, ch);
+  } else if (entity === "ledger_accounts" || entity === "ledgeraccounts") {
+    await applyCrud(ledgerAccounts, ch);
   } else if (entity === "formulas") {
     await applyCrud(formulas, ch);
   } else if (entity === "formula_presets" || entity === "formulapresets") {

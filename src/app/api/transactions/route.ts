@@ -19,6 +19,7 @@ export async function POST(req: Request) {
       ...body,
       categoryId: body?.categoryId ? Number(body.categoryId) : null,
       subCategoryId: body?.subCategoryId ? Number(body.subCategoryId) : null,
+      accountId: body?.accountId ? Number(body.accountId) : null,
     };
     const inserted = await db.insert(ledgerTransactions).values(normalized).returning();
     return NextResponse.json({ transaction: inserted[0] });
@@ -37,6 +38,7 @@ export async function PATCH(req: Request) {
       ...rest,
       categoryId: rest?.categoryId ? Number(rest.categoryId) : null,
       subCategoryId: rest?.subCategoryId ? Number(rest.subCategoryId) : null,
+      accountId: rest?.accountId ? Number(rest.accountId) : null,
     };
     const updated = await db.update(ledgerTransactions).set(normalized).where(eq(ledgerTransactions.id, id)).returning();
     return NextResponse.json({ transaction: updated[0] });
