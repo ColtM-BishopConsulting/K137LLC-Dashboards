@@ -27,7 +27,7 @@ export async function POST(req: Request) {
     const payload = {
       projectId: Number(body?.projectId),
       categoryId: Number(body?.categoryId),
-      amount: body?.amount !== undefined ? Number(body.amount) : 0,
+      amount: body?.amount !== undefined ? String(body.amount) : "0",
       note: body?.note ? String(body.note) : null,
     };
     if (!payload.projectId || !payload.categoryId) {
@@ -46,7 +46,7 @@ export async function PATCH(req: Request) {
     const body = await req.json();
     const { id, projectId, categoryId, ...rest } = body || {};
     const payload = {
-      amount: rest?.amount !== undefined ? Number(rest.amount) : undefined,
+      amount: rest?.amount !== undefined ? String(rest.amount) : undefined,
       note: rest?.note !== undefined ? String(rest.note) : undefined,
     };
     if (id) {
