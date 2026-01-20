@@ -176,11 +176,11 @@ const authorizeRequest = (req: Request) => {
 const runReminders = async (req: Request) => {
   try {
     const webhookUrl = process.env.TENANT_RENT_REMINDER_WEBHOOK_URL || "";
-    if (!webhookUrl) {
-      return NextResponse.json({ error: "Missing TENANT_RENT_REMINDER_WEBHOOK_URL" }, { status: 400 });
-    }
     const url = new URL(req.url);
     const force = url.searchParams.get("force") === "1";
+    if (!webhookUrl && !force) {
+      return NextResponse.json({ error: "Missing TENANT_RENT_REMINDER_WEBHOOK_URL" }, { status: 400 });
+    }
     const forcedType = url.searchParams.get("type");
     const todayKey = toDateString(Date.now());
     const tenantsList = await db
@@ -289,16 +289,20 @@ const runReminders = async (req: Request) => {
           },
         };
 
-        const res = await fetch(webhookUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-        if (!res.ok) {
-          console.warn("tenant reminder webhook failed", await res.text());
-          continue;
+        let webhookOk = true;
+        if (webhookUrl) {
+          const res = await fetch(webhookUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          if (!res.ok) {
+            webhookOk = false;
+            console.warn("tenant reminder webhook failed", await res.text());
+            if (!force) continue;
+          }
         }
-        if (!force) {
+        if (webhookOk || force) {
           await db.insert(tenantActivityLogs).values({
             tenantId: tenant.id,
             rentUnitId: unit.id,
@@ -311,10 +315,11 @@ const runReminders = async (req: Request) => {
               daysUntil,
               lateFee: rollup.lateFee,
               totalDue: rollup.totalDue,
+              test: force,
             },
           });
         }
-        if (!force) {
+        if (!force && webhookOk) {
           await db.insert(tenantReminderLogs).values({
             tenantId: tenant.id,
             rentUnitId: unit.id,

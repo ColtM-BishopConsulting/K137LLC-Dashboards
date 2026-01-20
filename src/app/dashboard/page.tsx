@@ -12171,7 +12171,7 @@ export default function DashboardPage() {
       email: tenant.email,
       password: "",
       rentUnitId: tenant.rentUnitId || "",
-      emailReminders: tenant.emailReminders,
+      emailReminders: tenant.emailReminders ?? false,
     });
   };
 
@@ -13877,18 +13877,38 @@ export default function DashboardPage() {
                         <div className="text-xs text-slate-500 dark:text-slate-400">No activity yet.</div>
                       )}
                       {tenantActivities.map((activity) => {
+                        const isReminderSent = activity.eventType === "reminder_sent";
+                        const isReminderViewed = activity.eventType === "reminder_viewed";
                         const typeLabel =
-                          activity.eventType === "reminder_sent"
-                            ? "Reminder sent"
-                            : activity.eventType === "reminder_viewed"
-                              ? "Reminder viewed"
-                              : activity.eventType === "payment_click"
-                                ? "Payment link clicked"
-                                : activity.eventType;
+                          isReminderSent || isReminderViewed
+                            ? "Reminder"
+                            : activity.eventType === "payment_click"
+                              ? "Payment link clicked"
+                              : activity.eventType;
                         const meta = activity.metadata || {};
+                        const statusLabel = isReminderSent ? "Sent" : isReminderViewed ? "Opened" : null;
                         return (
-                          <div key={activity.id} className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/70 px-3 py-2 text-xs">
-                            <div className="font-semibold text-slate-800 dark:text-slate-100">{typeLabel}</div>
+                          <div key={activity.id} className="relative rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/70 px-3 py-2 text-xs">
+                            {statusLabel && (
+                              <div className="absolute inset-y-0 right-2 flex items-center">
+                                <div className="inline-flex items-center gap-1 rounded-full bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide">
+                                  {isReminderSent ? (
+                                    <svg viewBox="0 0 16 16" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="1.5">
+                                      <path d="M2 8l12-5-5 12-2-5-5-2z" />
+                                    </svg>
+                                  ) : (
+                                    <svg viewBox="0 0 16 16" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="1.5">
+                                      <path d="M1.5 8s2.5-4 6.5-4 6.5 4 6.5 4-2.5 4-6.5 4-6.5-4-6.5-4z" />
+                                      <circle cx="8" cy="8" r="2.5" />
+                                    </svg>
+                                  )}
+                                  {statusLabel}
+                                </div>
+                              </div>
+                            )}
+                            <div className="flex items-center gap-2 pr-16">
+                              <div className="font-semibold text-slate-800 dark:text-slate-100">{typeLabel}</div>
+                            </div>
                             {activity.statementId && (
                               <div className="text-[11px] text-slate-500 dark:text-slate-400">Statement {activity.statementId}</div>
                             )}
@@ -14195,17 +14215,37 @@ export default function DashboardPage() {
                         {rentRollRecentActivities.map((activity) => {
                           const entry = rentRollEntries.find((e) => e.id === activity.rentUnitId);
                           const tenant = tenants.find((t) => t.id === activity.tenantId);
+                          const isReminderSent = activity.eventType === "reminder_sent";
+                          const isReminderViewed = activity.eventType === "reminder_viewed";
                           const typeLabel =
-                            activity.eventType === "reminder_sent"
-                              ? "Reminder sent"
-                              : activity.eventType === "reminder_viewed"
-                                ? "Reminder viewed"
-                                : activity.eventType === "payment_click"
-                                  ? "Payment link clicked"
-                                  : activity.eventType;
+                            isReminderSent || isReminderViewed
+                              ? "Reminder"
+                              : activity.eventType === "payment_click"
+                                ? "Payment link clicked"
+                                : activity.eventType;
+                          const statusLabel = isReminderSent ? "Sent" : isReminderViewed ? "Opened" : null;
                           return (
-                            <div key={activity.id} className="rounded border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 px-2 py-2 text-xs">
-                              <div className="font-semibold text-slate-800 dark:text-slate-100">{typeLabel}</div>
+                          <div key={activity.id} className="relative rounded border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 px-2 py-2 text-xs">
+                              {statusLabel && (
+                                <div className="absolute inset-y-0 right-2 flex items-center">
+                                  <div className="inline-flex items-center gap-1 rounded-full bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide">
+                                    {isReminderSent ? (
+                                      <svg viewBox="0 0 16 16" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="1.5">
+                                        <path d="M2 8l12-5-5 12-2-5-5-2z" />
+                                      </svg>
+                                    ) : (
+                                      <svg viewBox="0 0 16 16" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="1.5">
+                                        <path d="M1.5 8s2.5-4 6.5-4 6.5 4 6.5 4-2.5 4-6.5 4-6.5-4-6.5-4z" />
+                                        <circle cx="8" cy="8" r="2.5" />
+                                      </svg>
+                                    )}
+                                    {statusLabel}
+                                  </div>
+                                </div>
+                              )}
+                              <div className="flex items-center gap-2 pr-16">
+                                <div className="font-semibold text-slate-800 dark:text-slate-100">{typeLabel}</div>
+                              </div>
                               <div className="text-[11px] text-slate-500 dark:text-slate-400">
                                 {tenant?.name || entry?.tenant || "Tenant"} - {entry?.unit || "Unit"}
                               </div>
