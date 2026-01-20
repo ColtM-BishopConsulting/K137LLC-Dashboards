@@ -1162,6 +1162,19 @@ const formatActivityTimestamp = (value?: string | null) => {
     day: "2-digit",
   });
 };
+const getActivityMs = (value?: string | null) => {
+  if (!value) return NaN;
+  const raw = String(value);
+  const parsedMs = Date.parse(raw);
+  if (Number.isFinite(parsedMs)) return parsedMs;
+  const dateKey = raw.slice(0, 10);
+  return toDateMs(dateKey);
+};
+const isWithinDays = (value: string | null | undefined, days: number) => {
+  const ms = getActivityMs(value);
+  if (!Number.isFinite(ms)) return false;
+  return ms >= Date.now() - days * DAY_MS;
+};
 const getMonthKey = (date: string) => {
   const ms = toDateMs(date);
   if (!Number.isFinite(ms)) {
@@ -6660,8 +6673,9 @@ export default function DashboardPage() {
       const res = await fetch(`/api/tenants/activity?rentUnitId=${Number(entryId)}`);
       if (!res.ok) throw new Error("Failed to load tenant activity");
       const data = await res.json();
+      const recent = (data.activities || []).filter((a: any) => isWithinDays(a.createdAt, 5));
       setTenantActivities(
-        (data.activities || []).map((a: any) => ({
+        recent.map((a: any) => ({
           id: String(a.id),
           tenantId: String(a.tenantId),
           rentUnitId: String(a.rentUnitId),
@@ -6682,8 +6696,9 @@ export default function DashboardPage() {
       const res = await fetch("/api/tenants/activity");
       if (!res.ok) throw new Error("Failed to load tenant activity");
       const data = await res.json();
+      const recent = (data.activities || []).filter((a: any) => isWithinDays(a.createdAt, 5));
       setRentRollRecentActivities(
-        (data.activities || []).map((a: any) => ({
+        recent.map((a: any) => ({
           id: String(a.id),
           tenantId: String(a.tenantId),
           rentUnitId: String(a.rentUnitId),
@@ -13905,13 +13920,13 @@ export default function DashboardPage() {
               )}
 
               {rentRollDetailView.type === "unit" && rentRollDetailEntry && (
-                <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-4">
-                  <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900 h-fit">
+                <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-4 items-stretch">
+                  <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900 h-full flex flex-col min-h-0">
                     <div className="flex items-center justify-between mb-3">
                       <div className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Activity</div>
                       <span className="text-[11px] text-slate-400">{tenantActivities.length} items</span>
                     </div>
-                    <div className="space-y-3 max-h-[520px] overflow-y-auto">
+                    <div className="space-y-3 flex-1 min-h-0 overflow-y-auto activity-scroll pr-2">
                       {tenantActivities.length === 0 && (
                         <div className="text-xs text-slate-500 dark:text-slate-400">No activity yet.</div>
                       )}
@@ -13963,6 +13978,23 @@ export default function DashboardPage() {
                       })}
                     </div>
                   </div>
+                  <style jsx global>{`
+                    .activity-scroll {
+                      scrollbar-color: #475569 #0f172a;
+                      scrollbar-width: thin;
+                    }
+                    .activity-scroll::-webkit-scrollbar {
+                      width: 10px;
+                    }
+                    .activity-scroll::-webkit-scrollbar-track {
+                      background: #0f172a;
+                    }
+                    .activity-scroll::-webkit-scrollbar-thumb {
+                      background: #475569;
+                      border-radius: 999px;
+                      border: 2px solid #0f172a;
+                    }
+                  `}</style>
 
                   <div className="space-y-4">
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -14232,8 +14264,8 @@ export default function DashboardPage() {
             </div>
           ) : (
               <>
-                <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-4">
-                  <div className="rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900 overflow-hidden">
+                <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-4 items-stretch">
+                  <div className="rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900 overflow-hidden h-full flex flex-col min-h-0">
                     <div className="p-3 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between gap-2">
                       <div>
                         <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-50">Tenant Activity</h3>
@@ -14247,7 +14279,7 @@ export default function DashboardPage() {
                       </button>
                     </div>
                     {!rentRollActivityCollapsed && (
-                      <div className="p-3 space-y-2 max-h-80 overflow-y-auto text-sm text-slate-700 dark:text-slate-200">
+                      <div className="p-3 space-y-2 flex-1 min-h-0 overflow-y-auto text-sm text-slate-700 dark:text-slate-200 activity-scroll pr-2">
                         {rentRollRecentActivities.length === 0 && (
                           <div className="text-xs text-slate-500 dark:text-slate-400">No tenant activity yet.</div>
                         )}
@@ -14295,6 +14327,23 @@ export default function DashboardPage() {
                       </div>
                     )}
                   </div>
+                  <style jsx global>{`
+                    .activity-scroll {
+                      scrollbar-color: #475569 #0f172a;
+                      scrollbar-width: thin;
+                    }
+                    .activity-scroll::-webkit-scrollbar {
+                      width: 10px;
+                    }
+                    .activity-scroll::-webkit-scrollbar-track {
+                      background: #0f172a;
+                    }
+                    .activity-scroll::-webkit-scrollbar-thumb {
+                      background: #475569;
+                      border-radius: 999px;
+                      border: 2px solid #0f172a;
+                    }
+                  `}</style>
 
                   <div className="space-y-4">
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
