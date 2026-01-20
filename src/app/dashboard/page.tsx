@@ -1140,6 +1140,28 @@ const toDateMs = (date: string) => {
 const toDateString = (ms: number) => {
   return new Date(ms).toISOString().slice(0, 10);
 };
+const formatActivityTimestamp = (value?: string | null) => {
+  if (!value) return null;
+  const raw = String(value);
+  const parsedMs = Date.parse(raw);
+  if (Number.isFinite(parsedMs)) {
+    return new Date(parsedMs).toLocaleString("en-US", {
+      year: "numeric",
+      month: "short",
+      day: "2-digit",
+      hour: "numeric",
+      minute: "2-digit",
+    });
+  }
+  const dateKey = raw.slice(0, 10);
+  const dateMs = toDateMs(dateKey);
+  if (!Number.isFinite(dateMs)) return null;
+  return new Date(dateMs).toLocaleString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "2-digit",
+  });
+};
 const getMonthKey = (date: string) => {
   const ms = toDateMs(date);
   if (!Number.isFinite(ms)) {
@@ -6646,7 +6668,7 @@ export default function DashboardPage() {
           statementId: a.statementId || null,
           eventType: a.eventType || "event",
           metadata: a.metadata || null,
-          createdAt: a.createdAt ? toDateString(toDateMs(a.createdAt)) : null,
+          createdAt: formatActivityTimestamp(a.createdAt),
         }))
       );
     } catch (err) {
@@ -6668,7 +6690,7 @@ export default function DashboardPage() {
           statementId: a.statementId || null,
           eventType: a.eventType || "event",
           metadata: a.metadata || null,
-          createdAt: a.createdAt ? toDateString(toDateMs(a.createdAt)) : null,
+          createdAt: formatActivityTimestamp(a.createdAt),
         }))
       );
     } catch (err) {
@@ -8132,6 +8154,23 @@ export default function DashboardPage() {
     if (rentRollDetailView) return;
     loadAllTenantActivity();
   }, [loadAllTenantActivity, mode, rentRollDetailView]);
+
+  useEffect(() => {
+    if (mode !== "RentRoll") return;
+    const pollMs = 30000;
+    const poll = () => {
+      if (rentRollDetailView?.type === "unit") {
+        loadTenantActivity(rentRollDetailView.id);
+        return;
+      }
+      if (!rentRollDetailView) {
+        loadAllTenantActivity();
+      }
+    };
+    poll();
+    const id = window.setInterval(poll, pollMs);
+    return () => window.clearInterval(id);
+  }, [loadAllTenantActivity, loadTenantActivity, mode, rentRollDetailView]);
   const rentRollDetailProperty = useMemo(() => {
     if (rentRollDetailView?.type !== "property") return null;
     return rentRollProperties.find((prop) => prop.id === rentRollDetailView.id) || null;

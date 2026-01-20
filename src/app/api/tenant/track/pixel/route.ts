@@ -32,7 +32,11 @@ export async function GET(req: Request) {
     const statementId = url.searchParams.get("statementId") || url.searchParams.get("statement_id");
     const eventType = url.searchParams.get("event") || "reminder_viewed";
 
-    const tenant = await resolveTenant(tenantId, email);
+    let tenant = await resolveTenant(tenantId, email);
+    if (!tenant && rentUnitId) {
+      const [byUnit] = await db.select().from(tenants).where(eq(tenants.rentUnitId, Number(rentUnitId))).limit(1);
+      tenant = byUnit || null;
+    }
     if (tenant && (tenant.rentUnitId || rentUnitId)) {
       await db.insert(tenantActivityLogs).values({
         tenantId: tenant.id,

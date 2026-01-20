@@ -134,7 +134,13 @@ export default function TenantPortalPage() {
   const handleTestReminder = async () => {
     setError(null);
     setStatus(null);
-    const res = await fetch(`/api/tenant/reminders/run?force=1&type=${encodeURIComponent(testReminderType)}`, { method: "POST" });
+    const params = new URLSearchParams({
+      force: "1",
+      type: testReminderType,
+    });
+    if (session?.id) params.set("tenantId", String(session.id));
+    if (session?.rentUnitId) params.set("rentUnitId", String(session.rentUnitId));
+    const res = await fetch(`/api/tenant/reminders/run?${params.toString()}`, { method: "POST" });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
       setError(data.error || "Failed to send reminder.");

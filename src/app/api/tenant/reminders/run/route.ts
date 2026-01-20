@@ -182,13 +182,32 @@ const runReminders = async (req: Request) => {
       return NextResponse.json({ error: "Missing TENANT_RENT_REMINDER_WEBHOOK_URL" }, { status: 400 });
     }
     const forcedType = url.searchParams.get("type");
+    const targetTenantId = url.searchParams.get("tenantId");
+    const targetRentUnitId = url.searchParams.get("rentUnitId");
     const todayKey = toDateString(Date.now());
-    const tenantsList = await db
+    let tenantsList = await db
       .select()
       .from(tenants)
       .where(eq(tenants.emailReminders, true));
+    if (force && targetTenantId) {
+      tenantsList = await db
+        .select()
+        .from(tenants)
+        .where(eq(tenants.id, Number(targetTenantId)));
+    } else if (force && targetRentUnitId) {
+      tenantsList = await db
+        .select()
+        .from(tenants)
+        .where(eq(tenants.rentUnitId, Number(targetRentUnitId)));
+    }
 
     const rentUnitIds = tenantsList.map((t) => t.rentUnitId).filter(Boolean) as number[];
+    if (force && targetRentUnitId) {
+      const forcedUnitId = Number(targetRentUnitId);
+      if (Number.isFinite(forcedUnitId) && !rentUnitIds.includes(forcedUnitId)) {
+        rentUnitIds.push(forcedUnitId);
+      }
+    }
     if (!rentUnitIds.length) return NextResponse.json({ sent: 0 });
 
     const units = await db
@@ -218,8 +237,9 @@ const runReminders = async (req: Request) => {
 
     let sent = 0;
     for (const tenant of tenantsList) {
-      if (!tenant.rentUnitId) continue;
-      const unit = units.find((u) => u.id === tenant.rentUnitId);
+      const resolvedUnitId = tenant.rentUnitId ?? (targetRentUnitId ? Number(targetRentUnitId) : null);
+      if (!resolvedUnitId) continue;
+      const unit = units.find((u) => u.id === resolvedUnitId);
       if (!unit) continue;
       const rollup = buildPaymentRollup(
         Number(unit.rent || 0),
