@@ -34,7 +34,7 @@ export async function POST(req: Request) {
         presetId: Number(data.presetId),
         name: String(data.name || "KPI").trim(),
         formula: String(data.formula || "").trim(),
-        resultType: data.resultType || "currency",
+        resultType: typeof data.resultType === "string" ? data.resultType : "currency",
         sortOrder: data.sortOrder !== undefined ? Number(data.sortOrder) : 0,
         enabled: data.enabled !== undefined ? Boolean(data.enabled) : true,
         scaleMin: data.scaleMin !== undefined && data.scaleMin !== "" ? String(data.scaleMin) : null,
