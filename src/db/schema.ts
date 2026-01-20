@@ -79,6 +79,8 @@ export const projectUtilities = pgTable("project_utilities", {
   service: varchar("service", { length: 128 }).notNull(),
   provider: varchar("provider", { length: 128 }).default(""),
   amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
+  accountId: integer("account_id").references(() => ledgerAccounts.id, { onDelete: "set null" }),
+  accountName: varchar("account_name", { length: 128 }),
   note: text("note"),
   createdAt: timestamp("created_at", { withTimezone: true }).default(sql`now()`),
 });
@@ -94,6 +96,8 @@ export const projectDraws = pgTable("project_draws", {
   date: date("date").notNull(),
   description: varchar("description", { length: 255 }).notNull(),
   amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
+  accountId: integer("account_id").references(() => ledgerAccounts.id, { onDelete: "set null" }),
+  accountName: varchar("account_name", { length: 128 }),
   note: text("note"),
   createdAt: timestamp("created_at", { withTimezone: true }).default(sql`now()`),
 });
@@ -107,10 +111,13 @@ export const projectLoans = pgTable("project_loans", {
     .notNull()
     .references(() => projects.id, { onDelete: "cascade" }),
   date: date("date").notNull(),
+  originationDate: date("origination_date"),
   payment: numeric("payment", { precision: 14, scale: 2 }).notNull(),
   interest: numeric("interest", { precision: 14, scale: 2 }).default("0"),
   principal: numeric("principal", { precision: 14, scale: 2 }).default("0"),
   balance: numeric("balance", { precision: 14, scale: 2 }),
+  accountId: integer("account_id").references(() => ledgerAccounts.id, { onDelete: "set null" }),
+  accountName: varchar("account_name", { length: 128 }),
   note: text("note"),
   createdAt: timestamp("created_at", { withTimezone: true }).default(sql`now()`),
 });
@@ -610,6 +617,54 @@ export const rentPayments = pgTable("rent_payments", {
   amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
   date: date("date").notNull(),
   note: text("note"),
+  createdAt: timestamp("created_at", { withTimezone: true }).default(sql`now()`),
+});
+
+export const tenants = pgTable("tenants", {
+  id: serial("id").primaryKey(),
+  rentUnitId: integer("rent_unit_id").references(() => rentUnits.id, { onDelete: "set null" }),
+  name: varchar("name", { length: 255 }).notNull(),
+  email: varchar("email", { length: 255 }).notNull(),
+  passwordHash: varchar("password_hash", { length: 255 }).notNull(),
+  emailReminders: boolean("email_reminders").default(false).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).default(sql`now()`),
+}, (table) => ({
+  emailIdx: uniqueIndex("tenants_email_idx").on(table.email),
+}));
+
+export const tenantReminderLogs = pgTable("tenant_reminder_logs", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id")
+    .notNull()
+    .references(() => tenants.id, { onDelete: "cascade" }),
+  rentUnitId: integer("rent_unit_id")
+    .notNull()
+    .references(() => rentUnits.id, { onDelete: "cascade" }),
+  reminderType: varchar("reminder_type", { length: 32 }).notNull(), // due-7 | due-3 | due-1 | late-fee
+  dueDate: date("due_date").notNull(),
+  reminderDate: date("reminder_date").notNull(),
+  lateFee: numeric("late_fee", { precision: 12, scale: 2 }).default("0").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).default(sql`now()`),
+}, (table) => ({
+  uniqueReminder: uniqueIndex("tenant_reminder_unique").on(
+    table.tenantId,
+    table.reminderType,
+    table.dueDate,
+    table.reminderDate
+  ),
+}));
+
+export const tenantActivityLogs = pgTable("tenant_activity_logs", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id")
+    .notNull()
+    .references(() => tenants.id, { onDelete: "cascade" }),
+  rentUnitId: integer("rent_unit_id")
+    .notNull()
+    .references(() => rentUnits.id, { onDelete: "cascade" }),
+  statementId: varchar("statement_id", { length: 128 }),
+  eventType: varchar("event_type", { length: 32 }).notNull(), // reminder_sent | reminder_viewed | payment_click
+  metadata: jsonb("metadata"),
   createdAt: timestamp("created_at", { withTimezone: true }).default(sql`now()`),
 });
 

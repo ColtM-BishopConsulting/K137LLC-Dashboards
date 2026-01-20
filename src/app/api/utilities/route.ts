@@ -27,9 +27,10 @@ export async function POST(req: Request) {
     const payload = {
       ...body,
       projectId: Number(body?.projectId),
-      amount: Number(body?.amount),
+      amount: body?.amount !== undefined ? String(body.amount) : "0",
+      accountId: body?.accountId ? Number(body.accountId) : null,
     };
-    if (!payload.projectId || !payload.date || !payload.service || !Number.isFinite(payload.amount)) {
+    if (!payload.projectId || !payload.date || !payload.service || !Number.isFinite(Number(payload.amount))) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
     const inserted = await db.insert(projectUtilities).values(payload).returning();
@@ -48,7 +49,8 @@ export async function PATCH(req: Request) {
     const payload = {
       ...rest,
       projectId: rest?.projectId ? Number(rest.projectId) : undefined,
-      amount: rest?.amount !== undefined ? Number(rest.amount) : undefined,
+      amount: rest?.amount !== undefined ? String(rest.amount) : undefined,
+      accountId: rest?.accountId !== undefined ? (rest.accountId ? Number(rest.accountId) : null) : undefined,
     };
     const updated = await db
       .update(projectUtilities)

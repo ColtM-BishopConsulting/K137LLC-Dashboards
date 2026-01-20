@@ -14,15 +14,20 @@ export async function GET() {
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
-    const items = Array.isArray(body?.items) ? body.items : [body];
+    const body = await req.json() as unknown;
+    const items = Array.isArray((body as { items?: unknown }).items)
+      ? ((body as { items: unknown[] }).items)
+      : [body];
     if (!items.length) return NextResponse.json({ error: "Missing items" }, { status: 400 });
-    const payload = items.map((item: any) => ({
-      name: String(item.name || "").trim(),
-      type: String(item.type || "bank").trim(),
-      institution: item.institution ? String(item.institution).trim() : null,
-      last4: item.last4 ? String(item.last4).trim() : null,
-    }));
+    const payload = items.map((item) => {
+      const data = (item ?? {}) as Record<string, unknown>;
+      return {
+        name: String(data.name || "").trim(),
+        type: String(data.type || "bank").trim(),
+        institution: data.institution ? String(data.institution).trim() : null,
+        last4: data.last4 ? String(data.last4).trim() : null,
+      };
+    });
     const inserted = await db.insert(ledgerAccounts).values(payload).returning();
     return NextResponse.json({ accounts: inserted });
   } catch (err) {
@@ -33,22 +38,28 @@ export async function POST(req: Request) {
 
 export async function PATCH(req: Request) {
   try {
-    const body = await req.json();
-    const items = Array.isArray(body?.items) ? body.items : [body];
+    const body = await req.json() as unknown;
+    const items = Array.isArray((body as { items?: unknown }).items)
+      ? ((body as { items: unknown[] }).items)
+      : [body];
     if (!items.length) return NextResponse.json({ error: "Missing items" }, { status: 400 });
-    const updated: any[] = [];
+    const updated: Array<typeof ledgerAccounts.$inferSelect> = [];
     for (const item of items) {
-      if (!item.id) continue;
+      const data = (item ?? {}) as Record<string, unknown>;
+      const rawId = data.id;
+      if (rawId === undefined || rawId === null) continue;
+      const id = Number(rawId);
+      if (!Number.isFinite(id)) continue;
       const payload = {
-        name: item.name !== undefined ? String(item.name).trim() : undefined,
-        type: item.type !== undefined ? String(item.type).trim() : undefined,
-        institution: item.institution !== undefined ? (item.institution ? String(item.institution).trim() : null) : undefined,
-        last4: item.last4 !== undefined ? (item.last4 ? String(item.last4).trim() : null) : undefined,
+        name: data.name !== undefined ? String(data.name).trim() : undefined,
+        type: data.type !== undefined ? String(data.type).trim() : undefined,
+        institution: data.institution !== undefined ? (data.institution ? String(data.institution).trim() : null) : undefined,
+        last4: data.last4 !== undefined ? (data.last4 ? String(data.last4).trim() : null) : undefined,
       };
       const rows = await db
         .update(ledgerAccounts)
         .set(payload)
-        .where(eq(ledgerAccounts.id, Number(item.id)))
+        .where(eq(ledgerAccounts.id, id))
         .returning();
       if (rows[0]) updated.push(rows[0]);
     }

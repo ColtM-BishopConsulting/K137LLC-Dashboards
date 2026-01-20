@@ -234,6 +234,25 @@ interface RentRollEntry {
   createdAt?: string;
 }
 
+interface Tenant {
+  id: string;
+  rentUnitId?: string | null;
+  name: string;
+  email: string;
+  emailReminders?: boolean;
+  createdAt?: string;
+}
+
+interface TenantActivity {
+  id: string;
+  tenantId: string;
+  rentUnitId: string;
+  statementId?: string | null;
+  eventType: string;
+  metadata?: Record<string, unknown> | null;
+  createdAt?: string | null;
+}
+
 interface RentPayment {
   id: string;
   rentRollEntryId: string;
@@ -278,6 +297,8 @@ interface ProjectUtility {
   service: string;
   provider: string;
   amount: number;
+  accountId?: string;
+  accountName?: string;
   note?: string | null;
 }
 
@@ -287,6 +308,8 @@ interface ProjectDraw {
   date: string;
   description: string;
   amount: number;
+  accountId?: string;
+  accountName?: string;
   note?: string | null;
 }
 
@@ -294,10 +317,13 @@ interface ProjectLoanEntry {
   id: string;
   projectId: number;
   date: string;
+  originationDate?: string | null;
   payment: number;
   interest: number;
   principal: number;
   balance?: number | null;
+  accountId?: string;
+  accountName?: string;
   note?: string | null;
 }
 
@@ -892,21 +918,27 @@ const calculateFinancialKPIs = (
 };
 
 const formatCurrency = (value: number) => {
-  return new Intl.NumberFormat("en-US", {
+  const formatter = new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
-  }).format(value);
+  });
+  if (Number.isNaN(value)) return formatter.format(0);
+  if (value < 0) return `(${formatter.format(Math.abs(value))})`;
+  return formatter.format(value);
 };
 
 const formatCurrencyCents = (value: number) => {
-  return new Intl.NumberFormat("en-US", {
+  const formatter = new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
-  }).format(value);
+  });
+  if (Number.isNaN(value)) return formatter.format(0);
+  if (value < 0) return `(${formatter.format(Math.abs(value))})`;
+  return formatter.format(value);
 };
 
 function getAddTarget(
@@ -1577,7 +1609,7 @@ const CustomFormulaDialog: React.FC<CustomFormulaDialogProps> = ({
                       </button>
                     ))}
                   </div>
-                </div>
+                  </div>
               )}
               {availableVariables.filter(v => v.type === "tax").length > 0 && (
                 <div className="mt-2">
@@ -1595,7 +1627,7 @@ const CustomFormulaDialog: React.FC<CustomFormulaDialogProps> = ({
                       </button>
                     ))}
                   </div>
-                </div>
+                  </div>
               )}
             </div>
           </div>
@@ -4529,7 +4561,7 @@ const TopBar: React.FC<{
                           <div className={`text-sm font-semibold ${isRead ? "text-slate-400 dark:text-slate-500" : "text-slate-800 dark:text-slate-100"}`}>{note.title}</div>
                           <div className={`text-xs ${isRead ? "text-slate-400 dark:text-slate-500" : "text-slate-500 dark:text-slate-400"}`}>{note.detail}</div>
                           <div className={`mt-1 text-[11px] ${isRead ? "text-slate-400 dark:text-slate-500" : note.level === "urgent" ? "text-red-600 dark:text-red-400" : note.level === "warning" ? "text-amber-600 dark:text-amber-400" : "text-slate-500 dark:text-slate-400"}`}>
-                            {note.daysUntil === 0 ? "Due today" : `Due in ${note.daysUntil} days`} ? {note.dueDate}
+                            {note.daysUntil === 0 ? "Due today" : `Due in ${note.daysUntil} days`} - {note.dueDate}
                           </div>
                         </button>
                         <div className="flex items-center gap-2">
@@ -4577,7 +4609,7 @@ const TopBar: React.FC<{
               <div
                 key={`${user.id}-${user.lastSeen}-${idx}`}
                 className={`h-7 w-7 rounded-full border border-white dark:border-slate-900 shadow-sm bg-slate-100 dark:bg-slate-800 overflow-hidden flex items-center justify-center text-[11px] font-semibold text-slate-600 dark:text-slate-200 ${idx === 0 ? "" : "-ml-1"}`}
-                title={`${user.name} • ${user.email}`}
+                title={`${user.name} - ${user.email}`}
               >
                 {user.avatarUrl ? (
                   <img src={user.avatarUrl} alt={user.name} className="h-full w-full object-cover" />
@@ -5957,11 +5989,21 @@ export default function DashboardPage() {
   const [resources, setResources] = useState<Resource[]>([]);
   const [rentRollProperties, setRentRollProperties] = useState<RentRollProperty[]>([]);
   const [rentRollEntries, setRentRollEntries] = useState<RentRollEntry[]>([]);
+  const [tenants, setTenants] = useState<Tenant[]>([]);
+  const [tenantForm, setTenantForm] = useState({ name: "", email: "", password: "", rentUnitId: "", emailReminders: false });
+  const [editingTenantId, setEditingTenantId] = useState<string | null>(null);
+  const [tenantStatus, setTenantStatus] = useState<string | null>(null);
+  const [tenantError, setTenantError] = useState<string | null>(null);
+  const [tenantSaving, setTenantSaving] = useState(false);
+  const [tenantActivities, setTenantActivities] = useState<TenantActivity[]>([]);
+  const [rentRollRecentActivities, setRentRollRecentActivities] = useState<TenantActivity[]>([]);
+  const [rentRollActivityCollapsed, setRentRollActivityCollapsed] = useState(false);
   const [rentRollProperty, setRentRollProperty] = useState<string>("all");
   const [rentRollForm, setRentRollForm] = useState({
     propertyName: "",
     unit: "",
     tenant: "",
+    tenantId: "",
     status: "Occupied" as RentRollStatus,
     rent: "",
     leaseEnd: "",
@@ -5989,11 +6031,20 @@ export default function DashboardPage() {
   const [rentExpenseCategories, setRentExpenseCategories] = useState<RentExpenseCategory[]>([]);
   const [rentRollDocLabel, setRentRollDocLabel] = useState("");
   const [rentRollExpenseForm, setRentRollExpenseForm] = useState({ date: toDateString(getCentralTodayMs()), categoryId: "", subCategoryId: "", description: "", amount: "" });
-  const [utilityForm, setUtilityForm] = useState({ date: toDateString(getCentralTodayMs()), service: "", provider: "", amount: "", note: "" });
+  const [utilityForm, setUtilityForm] = useState({ date: toDateString(getCentralTodayMs()), service: "", provider: "", amount: "", accountId: "", note: "" });
   const [editingUtilityId, setEditingUtilityId] = useState<string | null>(null);
-  const [drawForm, setDrawForm] = useState({ date: toDateString(getCentralTodayMs()), description: "", amount: "", note: "" });
+  const [drawForm, setDrawForm] = useState({ date: toDateString(getCentralTodayMs()), description: "", amount: "", accountId: "", note: "" });
   const [editingDrawId, setEditingDrawId] = useState<string | null>(null);
-  const [loanForm, setLoanForm] = useState({ date: toDateString(getCentralTodayMs()), payment: "", interest: "", principal: "", balance: "", note: "" });
+  const [loanForm, setLoanForm] = useState({
+    date: toDateString(getCentralTodayMs()),
+    originationDate: "",
+    payment: "",
+    interest: "",
+    principal: "",
+    balance: "",
+    accountId: "",
+    note: "",
+  });
   const [editingLoanId, setEditingLoanId] = useState<string | null>(null);
   const [taxForm, setTaxForm] = useState<{ taxYear: string; dueDate: string; amount: string; status: ProjectPropertyTax["status"]; paidDate: string; note: string }>({
     taxYear: String(new Date().getUTCFullYear()),
@@ -6186,13 +6237,14 @@ export default function DashboardPage() {
 
   const loadRentData = useCallback(async () => {
     try {
-      const [propsRes, unitsRes, payRes, docRes, expenseRes, expenseCatRes] = await Promise.all([
+      const [propsRes, unitsRes, payRes, docRes, expenseRes, expenseCatRes, tenantsRes] = await Promise.all([
         fetch("/api/rent/properties"),
         fetch("/api/rent/units"),
         fetch("/api/rent/payments"),
         fetch("/api/rent/documents"),
         fetch("/api/rent/expenses"),
         fetch("/api/rent/expense-categories"),
+        fetch("/api/tenants"),
       ]);
       if (propsRes.ok) {
         const data = await propsRes.json();
@@ -6278,6 +6330,21 @@ export default function DashboardPage() {
               createdAt: c.createdAt ? toDateString(toDateMs(c.createdAt)) : undefined,
             }))
           );
+        }
+        if (tenantsRes.ok) {
+          const data = await tenantsRes.json();
+          setTenants(
+            (data.tenants || []).map((t: any) => ({
+              id: String(t.id),
+              rentUnitId: t.rentUnitId ? String(t.rentUnitId) : null,
+              name: t.name || "Tenant",
+              email: t.email || "",
+              emailReminders: Boolean(t.emailReminders),
+              createdAt: t.createdAt ? toDateString(toDateMs(t.createdAt)) : undefined,
+            }))
+          );
+        } else {
+          setTenants([]);
         }
       } catch (err) {
         console.error("Failed to load rent data", err);
@@ -6456,6 +6523,8 @@ export default function DashboardPage() {
           service: u.service || "",
           provider: u.provider || "",
           amount: Number(u.amount || 0),
+          accountId: u.accountId ? String(u.accountId) : (u.account_id ? String(u.account_id) : undefined),
+          accountName: u.accountName || u.account_name || undefined,
           note: u.note || "",
         };
         grouped[projectId] = [...(grouped[projectId] || []), mapped];
@@ -6483,6 +6552,8 @@ export default function DashboardPage() {
           date: d.date ? toDateString(toDateMs(d.date)) : toDateString(getCentralTodayMs()),
           description: d.description || "",
           amount: Number(d.amount || 0),
+          accountId: d.accountId ? String(d.accountId) : (d.account_id ? String(d.account_id) : undefined),
+          accountName: d.accountName || d.account_name || undefined,
           note: d.note || "",
         };
         grouped[projectId] = [...(grouped[projectId] || []), mapped];
@@ -6508,10 +6579,15 @@ export default function DashboardPage() {
           id: String(l.id),
           projectId,
           date: l.date ? toDateString(toDateMs(l.date)) : toDateString(getCentralTodayMs()),
+          originationDate: l.originationDate
+            ? toDateString(toDateMs(l.originationDate))
+            : (l.origination_date ? toDateString(toDateMs(l.origination_date)) : null),
           payment: Number(l.payment || 0),
           interest: Number(l.interest || 0),
           principal: Number(l.principal || 0),
           balance: l.balance !== null && l.balance !== undefined ? Number(l.balance) : null,
+          accountId: l.accountId ? String(l.accountId) : (l.account_id ? String(l.account_id) : undefined),
+          accountName: l.accountName || l.account_name || undefined,
           note: l.note || "",
         };
         grouped[projectId] = [...(grouped[projectId] || []), mapped];
@@ -6550,6 +6626,54 @@ export default function DashboardPage() {
     } catch (err) {
       console.error("Failed to load property taxes", err);
       return {};
+    }
+  }, []);
+
+  const loadTenantActivity = useCallback(async (entryId: string | null) => {
+    if (!entryId) {
+      setTenantActivities([]);
+      return;
+    }
+    try {
+      const res = await fetch(`/api/tenants/activity?rentUnitId=${Number(entryId)}`);
+      if (!res.ok) throw new Error("Failed to load tenant activity");
+      const data = await res.json();
+      setTenantActivities(
+        (data.activities || []).map((a: any) => ({
+          id: String(a.id),
+          tenantId: String(a.tenantId),
+          rentUnitId: String(a.rentUnitId),
+          statementId: a.statementId || null,
+          eventType: a.eventType || "event",
+          metadata: a.metadata || null,
+          createdAt: a.createdAt ? toDateString(toDateMs(a.createdAt)) : null,
+        }))
+      );
+    } catch (err) {
+      console.error("Failed to load tenant activity", err);
+      setTenantActivities([]);
+    }
+  }, []);
+
+  const loadAllTenantActivity = useCallback(async () => {
+    try {
+      const res = await fetch("/api/tenants/activity");
+      if (!res.ok) throw new Error("Failed to load tenant activity");
+      const data = await res.json();
+      setRentRollRecentActivities(
+        (data.activities || []).map((a: any) => ({
+          id: String(a.id),
+          tenantId: String(a.tenantId),
+          rentUnitId: String(a.rentUnitId),
+          statementId: a.statementId || null,
+          eventType: a.eventType || "event",
+          metadata: a.metadata || null,
+          createdAt: a.createdAt ? toDateString(toDateMs(a.createdAt)) : null,
+        }))
+      );
+    } catch (err) {
+      console.error("Failed to load tenant activity", err);
+      setRentRollRecentActivities([]);
     }
   }, []);
 
@@ -7725,13 +7849,49 @@ export default function DashboardPage() {
 
   const downloadXlsx = useCallback(async (filename: string, sheets: { name: string; rows: (string | number)[][] }[]) => {
     const XLSX = await import("xlsx");
+    const getColumnWidths = (rows: (string | number)[][]) => {
+      const widths: { wch: number }[] = [];
+      const cols = rows[0]?.length || 0;
+      for (let c = 0; c < cols; c += 1) {
+        let max = 8;
+        rows.forEach((row) => {
+          const value = row[c] ?? "";
+          const len = String(value).length;
+          if (len > max) max = len;
+        });
+        widths.push({ wch: Math.min(Math.max(max + 2, 10), 40) });
+      }
+      return widths;
+    };
+    const applyHeaderStyle = (ws: any, colCount: number) => {
+      for (let c = 0; c < colCount; c += 1) {
+        const cellRef = XLSX.utils.encode_cell({ r: 0, c });
+        const cell = ws[cellRef];
+        if (!cell) continue;
+        cell.s = {
+          font: { bold: true, color: { rgb: "FFFFFF" } },
+          fill: { fgColor: { rgb: "1F2937" } },
+          alignment: { horizontal: "center", vertical: "center" },
+        };
+      }
+      ws["!rows"] = [{ hpt: 20 }];
+    };
     const wb = XLSX.utils.book_new();
     sheets.forEach(({ name, rows }) => {
       const safeName = slugify(name || "Sheet").slice(0, 31) || "Sheet";
       const ws = XLSX.utils.aoa_to_sheet(rows);
+      if (rows.length && rows[0]?.length) {
+        const ref = XLSX.utils.encode_range({
+          s: { r: 0, c: 0 },
+          e: { r: rows.length - 1, c: rows[0].length - 1 },
+        });
+        ws["!autofilter"] = { ref };
+        ws["!cols"] = getColumnWidths(rows);
+        applyHeaderStyle(ws, rows[0].length);
+      }
       XLSX.utils.book_append_sheet(wb, ws, safeName);
     });
-    const wbout = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+    const wbout = XLSX.write(wb, { bookType: "xlsx", type: "array", cellStyles: true });
     const blob = new Blob([wbout], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -7755,17 +7915,59 @@ export default function DashboardPage() {
     });
   }, []);
 
+  const buildUtilitiesRows = (entries: ProjectUtility[], includeProject: boolean) => {
+    const header = includeProject
+      ? ["Date", "Service", "Provider", "Amount", "Account", "Note", "Project"]
+      : ["Date", "Service", "Provider", "Amount", "Account", "Note"];
+    const rows: (string | number)[][] = [header];
+    entries.forEach((u) => {
+      const projectName = includeProject ? epsProjectNameById(u.projectId) || `Project ${u.projectId}` : "";
+      rows.push([
+        u.date,
+        u.service,
+        u.provider || "",
+        u.amount,
+        u.accountName || ledgerAccounts.find((acct) => acct.id === u.accountId)?.name || "",
+        u.note || "",
+        ...(includeProject ? [projectName] : []),
+      ]);
+    });
+    return rows;
+  };
+
+  const buildLoanRows = (entries: ProjectLoanEntry[], includeProject: boolean) => {
+    const header = includeProject
+      ? ["Date", "Origination Date", "Payment", "Interest", "Principal", "Balance", "Account", "Note", "Project"]
+      : ["Date", "Origination Date", "Payment", "Interest", "Principal", "Balance", "Account", "Note"];
+    const rows: (string | number)[][] = [header];
+    entries.forEach((l) => {
+      const projectName = includeProject ? epsProjectNameById(l.projectId) || `Project ${l.projectId}` : "";
+      rows.push([
+        l.date,
+        l.originationDate || "",
+        l.payment,
+        l.interest,
+        l.principal,
+        l.balance ?? "",
+        l.accountName || ledgerAccounts.find((acct) => acct.id === l.accountId)?.name || "",
+        l.note || "",
+        ...(includeProject ? [projectName] : []),
+      ]);
+    });
+    return rows;
+  };
+
   const exportMainLedger = (fmt?: "csv" | "xlsx") => {
     const format = fmt ?? exportFormat;
     const rows: (string | number)[][] = [
-      ["Date", "Type", "Amount", "Description", "Source", "Property/Project", "Category", "Subcategory", "Account"],
+      ["Date", "Type", "Amount", "Description", "Source", "Property/Project", "Category", "Subcategory", "Account", "Activity"],
     ];
     // Rent payments
     rentPayments.forEach((p) => {
       const entry = rentRollEntries.find((e) => e.id === p.rentRollEntryId);
       const propertyName = entry ? rentRollPropertyMap[entry.propertyId]?.name || "Unlinked Property" : "Unlinked Property";
       const desc = entry ? `Rent payment - ${entry.unit}` : "Rent payment";
-      rows.push([p.date, "Income", p.amount, desc, "Rent Payment", propertyName, "Rent", p.note || "", ""]);
+      rows.push([p.date, "Income", p.amount, desc, "Rent Payment", propertyName, "Rent", p.note || "", "", ""]);
     });
     // Project transactions
     Object.entries(transactions).forEach(([projIdStr, txns]) => {
@@ -7782,6 +7984,7 @@ export default function DashboardPage() {
           resolveLedgerCategoryName(t),
           resolveLedgerSubCategoryName(t),
           resolveLedgerAccountName(t),
+          t.activityId || "",
         ]);
       });
     });
@@ -7790,7 +7993,13 @@ export default function DashboardPage() {
       downloadCsv("main-ledger.csv", rows);
       logExport("Main Ledger", "CSV", "main-ledger.csv");
     } else {
-      downloadXlsx("main-ledger.xlsx", [{ name: "Main Ledger", rows }]);
+      const utilitiesRows = buildUtilitiesRows(Object.values(projectUtilities).flat(), true);
+      const loansRows = buildLoanRows(Object.values(projectLoans).flat(), true);
+      downloadXlsx("main-ledger.xlsx", [
+        { name: "Main Ledger", rows },
+        { name: "Utilities", rows: utilitiesRows },
+        { name: "Loans", rows: loansRows },
+      ]);
       logExport("Main Ledger", "XLSX", "main-ledger.xlsx");
     }
   };
@@ -7801,10 +8010,10 @@ export default function DashboardPage() {
 
     if (format === "csv") {
       projectIds.forEach((pid) => {
-        const rows: (string | number)[][] = [["Date", "Type", "Amount", "Description", "Source", "Category", "Subcategory", "Account"]];
+        const rows: (string | number)[][] = [["Date", "Type", "Amount", "Description", "Source", "Category", "Subcategory", "Account", "Activity"]];
         const projTxns = (transactions[pid] || []).slice().sort((a, b) => toDateMs(b.date) - toDateMs(a.date));
         projTxns.forEach((t) => {
-          rows.push([t.date, t.type, t.amount, t.description, "Project", resolveLedgerCategoryName(t), resolveLedgerSubCategoryName(t), resolveLedgerAccountName(t)]);
+          rows.push([t.date, t.type, t.amount, t.description, "Project", resolveLedgerCategoryName(t), resolveLedgerSubCategoryName(t), resolveLedgerAccountName(t), t.activityId || ""]);
         });
         const projName = epsProjectNameById(pid) || `Project-${pid}`;
         const filename = `project-ledger-${slugify(projName)}.csv`;
@@ -7812,12 +8021,18 @@ export default function DashboardPage() {
         logExport(`Project Ledger (${projName})`, "CSV", filename);
       });
     } else {
-      const sheets = projectIds.map((pid) => {
-        const rows: (string | number)[][] = [["Date", "Type", "Amount", "Description", "Source", "Category", "Subcategory", "Account"]];
+      const sheets = projectIds.flatMap((pid) => {
+        const rows: (string | number)[][] = [["Date", "Type", "Amount", "Description", "Source", "Category", "Subcategory", "Account", "Activity"]];
         const projTxns = (transactions[pid] || []).slice().sort((a, b) => toDateMs(b.date) - toDateMs(a.date));
-        projTxns.forEach((t) => rows.push([t.date, t.type, t.amount, t.description, "Project", resolveLedgerCategoryName(t), resolveLedgerSubCategoryName(t), resolveLedgerAccountName(t)]));
+        projTxns.forEach((t) => rows.push([t.date, t.type, t.amount, t.description, "Project", resolveLedgerCategoryName(t), resolveLedgerSubCategoryName(t), resolveLedgerAccountName(t), t.activityId || ""]));
         const projName = epsProjectNameById(pid) || `Project-${pid}`;
-        return { name: projName.slice(0, 28) || `Project-${pid}`, rows };
+        const utilitiesRows = buildUtilitiesRows(projectUtilities[pid] || [], false);
+        const loansRows = buildLoanRows(projectLoans[pid] || [], false);
+        return [
+          { name: projName.slice(0, 28) || `Project-${pid}`, rows },
+          { name: `Utilities ${projName}`.slice(0, 31), rows: utilitiesRows },
+          { name: `Loans ${projName}`.slice(0, 31), rows: loansRows },
+        ];
       });
       downloadXlsx("project-ledgers.xlsx", sheets);
       logExport("Project Ledgers", "XLSX", "project-ledgers.xlsx");
@@ -7829,7 +8044,7 @@ export default function DashboardPage() {
 
     if (format === "csv") {
       rentRollProperties.forEach((prop) => {
-        const rows: (string | number)[][] = [["Date", "Tenant/Unit", "Amount", "Note"]];
+        const rows: (string | number)[][] = [["Date", "Tenant/Unit", "Amount", "Note", "Account"]];
         rentRollEntries
           .filter((e) => e.propertyId === prop.id)
           .forEach((entry) => {
@@ -7837,7 +8052,7 @@ export default function DashboardPage() {
               .filter((p) => p.rentRollEntryId === entry.id)
               .sort((a, b) => toDateMs(b.date) - toDateMs(a.date))
               .forEach((p) => {
-                rows.push([p.date, `${entry.unit} - ${entry.tenant || "Vacant"}`, p.amount, p.note || ""]);
+                rows.push([p.date, `${entry.unit} - ${entry.tenant || "Vacant"}`, p.amount, p.note || "", ""]);
               });
           });
         const filename = `rent-roll-${slugify(prop.name)}.csv`;
@@ -7846,7 +8061,7 @@ export default function DashboardPage() {
       });
     } else {
       const sheets = rentRollProperties.map((prop) => {
-        const rows: (string | number)[][] = [["Date", "Tenant/Unit", "Amount", "Note"]];
+        const rows: (string | number)[][] = [["Date", "Tenant/Unit", "Amount", "Note", "Account"]];
         rentRollEntries
           .filter((e) => e.propertyId === prop.id)
           .forEach((entry) => {
@@ -7854,7 +8069,7 @@ export default function DashboardPage() {
               .filter((p) => p.rentRollEntryId === entry.id)
               .sort((a, b) => toDateMs(b.date) - toDateMs(a.date))
               .forEach((p) => {
-                rows.push([p.date, `${entry.unit} - ${entry.tenant || "Vacant"}`, p.amount, p.note || ""]);
+                rows.push([p.date, `${entry.unit} - ${entry.tenant || "Vacant"}`, p.amount, p.note || "", ""]);
               });
           });
         return { name: prop.name.slice(0, 28), rows };
@@ -7902,6 +8117,21 @@ export default function DashboardPage() {
     if (rentRollDetailView?.type !== "unit") return null;
     return rentRollEntries.find((entry) => entry.id === rentRollDetailView.id) || null;
   }, [rentRollDetailView, rentRollEntries]);
+
+  useEffect(() => {
+    if (mode !== "RentRoll") return;
+    if (rentRollDetailView?.type === "unit") {
+      loadTenantActivity(rentRollDetailView.id);
+    } else {
+      setTenantActivities([]);
+    }
+  }, [loadTenantActivity, mode, rentRollDetailView]);
+
+  useEffect(() => {
+    if (mode !== "RentRoll") return;
+    if (rentRollDetailView) return;
+    loadAllTenantActivity();
+  }, [loadAllTenantActivity, mode, rentRollDetailView]);
   const rentRollDetailProperty = useMemo(() => {
     if (rentRollDetailView?.type !== "property") return null;
     return rentRollProperties.find((prop) => prop.id === rentRollDetailView.id) || null;
@@ -8924,7 +9154,7 @@ export default function DashboardPage() {
   };
 
   const resetUtilityForm = () => {
-    setUtilityForm({ date: toDateString(getCentralTodayMs()), service: "", provider: "", amount: "", note: "" });
+    setUtilityForm({ date: toDateString(getCentralTodayMs()), service: "", provider: "", amount: "", accountId: "", note: "" });
     setEditingUtilityId(null);
   };
 
@@ -8940,6 +9170,10 @@ export default function DashboardPage() {
       service,
       provider: utilityForm.provider.trim(),
       amount,
+      accountId: utilityForm.accountId || undefined,
+      accountName: utilityForm.accountId
+        ? (ledgerAccounts.find((a) => a.id === utilityForm.accountId)?.name || "")
+        : "",
       note: utilityForm.note.trim() || null,
     };
     if (!currentUser || currentUser.role !== "admin") {
@@ -8968,7 +9202,11 @@ export default function DashboardPage() {
       const res = await fetch("/api/utilities", {
         method,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(editingUtilityId ? { id: Number(editingUtilityId), ...payload } : payload),
+        body: JSON.stringify(
+          editingUtilityId
+            ? { id: Number(editingUtilityId), ...payload, accountId: payload.accountId ? Number(payload.accountId) : null }
+            : { ...payload, accountId: payload.accountId ? Number(payload.accountId) : null }
+        ),
       });
       if (!res.ok) throw new Error("Failed to save utility");
       const data = await res.json();
@@ -8982,6 +9220,8 @@ export default function DashboardPage() {
           service: saved.service || payload.service,
           provider: saved.provider || payload.provider,
           amount: Number(saved.amount ?? payload.amount),
+          accountId: saved.accountId ? String(saved.accountId) : (payload.accountId ? String(payload.accountId) : undefined),
+          accountName: saved.accountName || payload.accountName || "",
           note: saved.note || payload.note || "",
         };
         const next = editingUtilityId
@@ -8996,11 +9236,16 @@ export default function DashboardPage() {
   };
 
   const handleEditUtility = (utility: ProjectUtility) => {
+    const resolvedAccountId =
+      utility.accountId ||
+      ledgerAccounts.find((acct) => acct.name === utility.accountName)?.id ||
+      "";
     setUtilityForm({
       date: utility.date,
       service: utility.service,
       provider: utility.provider,
       amount: utility.amount.toString(),
+      accountId: resolvedAccountId,
       note: utility.note || "",
     });
     setEditingUtilityId(utility.id);
@@ -9035,7 +9280,7 @@ export default function DashboardPage() {
   };
 
   const resetDrawForm = () => {
-    setDrawForm({ date: toDateString(getCentralTodayMs()), description: "", amount: "", note: "" });
+    setDrawForm({ date: toDateString(getCentralTodayMs()), description: "", amount: "", accountId: "", note: "" });
     setEditingDrawId(null);
   };
 
@@ -9050,6 +9295,10 @@ export default function DashboardPage() {
       date: drawForm.date,
       description,
       amount,
+      accountId: drawForm.accountId || undefined,
+      accountName: drawForm.accountId
+        ? (ledgerAccounts.find((a) => a.id === drawForm.accountId)?.name || "")
+        : "",
       note: drawForm.note.trim() || null,
     };
     if (!currentUser || currentUser.role !== "admin") {
@@ -9066,7 +9315,7 @@ export default function DashboardPage() {
       setProjectDraws((prev) => {
         const list = prev[projectKey] || [];
         const next = editingDrawId
-          ? list.map((d) => (d.id === editingDrawId ? { ...d, ...payload, id: tempId } : d))
+          ? list.map((d) => (d.id === editingDrawId ? { ...d, ...payload, accountName: payload.accountName || d.accountName, id: tempId } : d))
           : [...list, { id: tempId, ...payload }];
         return { ...prev, [projectKey]: next };
       });
@@ -9078,21 +9327,27 @@ export default function DashboardPage() {
       const res = await fetch("/api/draws", {
         method,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(editingDrawId ? { id: Number(editingDrawId), ...payload } : payload),
+        body: JSON.stringify(
+          editingDrawId
+            ? { id: Number(editingDrawId), ...payload, accountId: payload.accountId ? Number(payload.accountId) : null }
+            : { ...payload, accountId: payload.accountId ? Number(payload.accountId) : null }
+        ),
       });
       if (!res.ok) throw new Error("Failed to save draw");
       const data = await res.json();
       const saved = data.draw || {};
       setProjectDraws((prev) => {
         const list = prev[projectKey] || [];
-        const mapped: ProjectDraw = {
-          id: String(saved.id || editingDrawId || `DRAW-${Date.now().toString(36)}`),
-          projectId: Number(saved.projectId || payload.projectId),
-          date: saved.date ? toDateString(toDateMs(saved.date)) : payload.date,
-          description: saved.description || payload.description,
-          amount: Number(saved.amount ?? payload.amount),
-          note: saved.note || payload.note || "",
-        };
+      const mapped: ProjectDraw = {
+        id: String(saved.id || editingDrawId || `DRAW-${Date.now().toString(36)}`),
+        projectId: Number(saved.projectId || payload.projectId),
+        date: saved.date ? toDateString(toDateMs(saved.date)) : payload.date,
+        description: saved.description || payload.description,
+        amount: Number(saved.amount ?? payload.amount),
+        accountId: saved.accountId ? String(saved.accountId) : (payload.accountId ? String(payload.accountId) : undefined),
+        accountName: saved.accountName || payload.accountName || "",
+        note: saved.note || payload.note || "",
+      };
         const next = editingDrawId
           ? list.map((d) => (d.id === editingDrawId ? mapped : d))
           : [...list, mapped];
@@ -9105,10 +9360,15 @@ export default function DashboardPage() {
   };
 
   const handleEditDraw = (draw: ProjectDraw) => {
+    const resolvedAccountId =
+      draw.accountId ||
+      ledgerAccounts.find((acct) => acct.name === draw.accountName)?.id ||
+      "";
     setDrawForm({
       date: draw.date,
       description: draw.description,
       amount: draw.amount.toString(),
+      accountId: resolvedAccountId,
       note: draw.note || "",
     });
     setEditingDrawId(draw.id);
@@ -9143,7 +9403,16 @@ export default function DashboardPage() {
   };
 
   const resetLoanForm = () => {
-    setLoanForm({ date: toDateString(getCentralTodayMs()), payment: "", interest: "", principal: "", balance: "", note: "" });
+    setLoanForm({
+      date: toDateString(getCentralTodayMs()),
+      originationDate: "",
+      payment: "",
+      interest: "",
+      principal: "",
+      balance: "",
+      accountId: "",
+      note: "",
+    });
     setEditingLoanId(null);
   };
 
@@ -9152,13 +9421,29 @@ export default function DashboardPage() {
     if (!projectKey) return;
     const payment = parseFloat(loanForm.payment);
     if (!loanForm.date || !Number.isFinite(payment)) return;
+    const currentBalance = loanForm.balance !== "" ? Number(loanForm.balance) : null;
+    const isFirstPayment = loanFormBreakdown.isFirstPayment;
+    const computedPrincipal = loanFormBreakdown.principal;
+    const computedInterest = loanFormBreakdown.interest;
+    if (!isFirstPayment && (!Number.isFinite(currentBalance ?? NaN) || computedPrincipal === null || computedInterest === null)) {
+      return;
+    }
     const payload = {
       projectId: projectKey,
       date: loanForm.date,
+      originationDate: loanForm.originationDate || null,
       payment,
-      interest: loanForm.interest !== "" ? Number(loanForm.interest) : 0,
-      principal: loanForm.principal !== "" ? Number(loanForm.principal) : 0,
-      balance: loanForm.balance !== "" ? Number(loanForm.balance) : null,
+      interest: isFirstPayment
+        ? (loanForm.interest !== "" ? Number(loanForm.interest) : 0)
+        : (computedInterest ?? 0),
+      principal: isFirstPayment
+        ? (loanForm.principal !== "" ? Number(loanForm.principal) : 0)
+        : (computedPrincipal ?? 0),
+      balance: currentBalance,
+      accountId: loanForm.accountId || undefined,
+      accountName: loanForm.accountId
+        ? (ledgerAccounts.find((a) => a.id === loanForm.accountId)?.name || "")
+        : "",
       note: loanForm.note.trim() || null,
     };
     if (!currentUser || currentUser.role !== "admin") {
@@ -9187,7 +9472,11 @@ export default function DashboardPage() {
       const res = await fetch("/api/loans", {
         method,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(editingLoanId ? { id: Number(editingLoanId), ...payload } : payload),
+        body: JSON.stringify(
+          editingLoanId
+            ? { id: Number(editingLoanId), ...payload, accountId: payload.accountId ? Number(payload.accountId) : null }
+            : { ...payload, accountId: payload.accountId ? Number(payload.accountId) : null }
+        ),
       });
       if (!res.ok) throw new Error("Failed to save loan entry");
       const data = await res.json();
@@ -9198,10 +9487,15 @@ export default function DashboardPage() {
           id: String(saved.id || editingLoanId || `LOAN-${Date.now().toString(36)}`),
           projectId: Number(saved.projectId || payload.projectId),
           date: saved.date ? toDateString(toDateMs(saved.date)) : payload.date,
+          originationDate: saved.originationDate
+            ? toDateString(toDateMs(saved.originationDate))
+            : payload.originationDate,
           payment: Number(saved.payment ?? payload.payment),
           interest: Number(saved.interest ?? payload.interest),
           principal: Number(saved.principal ?? payload.principal),
           balance: saved.balance !== null && saved.balance !== undefined ? Number(saved.balance) : payload.balance,
+          accountId: saved.accountId ? String(saved.accountId) : (payload.accountId ? String(payload.accountId) : undefined),
+          accountName: saved.accountName || payload.accountName || "",
           note: saved.note || payload.note || "",
         };
         const next = editingLoanId
@@ -9216,12 +9510,18 @@ export default function DashboardPage() {
   };
 
   const handleEditLoan = (entry: ProjectLoanEntry) => {
+    const resolvedAccountId =
+      entry.accountId ||
+      ledgerAccounts.find((acct) => acct.name === entry.accountName)?.id ||
+      "";
     setLoanForm({
       date: entry.date,
+      originationDate: entry.originationDate || "",
       payment: entry.payment.toString(),
       interest: entry.interest?.toString() ?? "",
       principal: entry.principal?.toString() ?? "",
       balance: entry.balance !== null && entry.balance !== undefined ? String(entry.balance) : "",
+      accountId: resolvedAccountId,
       note: entry.note || "",
     });
     setEditingLoanId(entry.id);
@@ -11538,6 +11838,8 @@ export default function DashboardPage() {
   const bathrooms = parseInt(rentRollForm.bathrooms || "0", 10) || 0;
   const initialDueMonthDay = rentRollForm.initialDueMonthDay || "01-01";
   const lastPaymentDate = rentRollForm.lastPaymentDate || null;
+  const selectedTenant = rentRollForm.tenantId ? tenants.find((t) => t.id === rentRollForm.tenantId) : null;
+  const tenantName = selectedTenant?.name || rentRollForm.tenant.trim() || "Vacant";
   const lastPaymentPaidOnDate = lastPaymentDate ? rentRollForm.lastPaymentPaidStatus === "on_time" : null;
   const lastPaymentPaidDate = lastPaymentDate
     ? rentRollForm.lastPaymentPaidStatus === "on_time"
@@ -11553,7 +11855,7 @@ export default function DashboardPage() {
           ...existing,
           propertyId,
           unit: rentRollForm.unit.trim(),
-          tenant: rentRollForm.tenant.trim() || "Vacant",
+          tenant: tenantName,
           status: rentRollForm.status,
           rent,
           leaseEnd: rentRollForm.leaseEnd || "TBD",
@@ -11567,7 +11869,7 @@ export default function DashboardPage() {
           id: editingRentRollId,
           propertyId,
           unit: rentRollForm.unit.trim(),
-          tenant: rentRollForm.tenant.trim() || "Vacant",
+          tenant: tenantName,
           status: rentRollForm.status,
           rent,
           balance: 0,
@@ -11598,7 +11900,7 @@ export default function DashboardPage() {
         id: tempId,
         propertyId,
         unit: rentRollForm.unit.trim(),
-        tenant: rentRollForm.tenant.trim() || "Vacant",
+        tenant: tenantName,
         status: rentRollForm.status,
         rent,
         balance: 0,
@@ -11632,7 +11934,7 @@ export default function DashboardPage() {
               id: Number(editingRentRollId),
               propertyId: Number(propertyId),
               unit: rentRollForm.unit.trim(),
-              tenant: rentRollForm.tenant.trim() || "Vacant",
+              tenant: tenantName,
               status: rentRollForm.status,
               rent,
               leaseEnd: rentRollForm.leaseEnd || "TBD",
@@ -11647,6 +11949,23 @@ export default function DashboardPage() {
         if (!res.ok) throw new Error("Failed to update unit");
         const data = await res.json();
         const unit = data.unit || {};
+        const linkedTenant = tenants.find((t) => t.rentUnitId === editingRentRollId);
+        const unlink = linkedTenant && linkedTenant.id !== rentRollForm.tenantId;
+        const link = rentRollForm.tenantId && rentRollForm.tenantId !== linkedTenant?.id;
+        if (unlink) {
+          fetch("/api/tenants", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: Number(linkedTenant.id), rentUnitId: null }),
+          }).catch((err) => console.error("Failed to unlink tenant", err));
+        }
+        if (link) {
+          fetch("/api/tenants", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: Number(rentRollForm.tenantId), rentUnitId: Number(editingRentRollId) }),
+          }).catch((err) => console.error("Failed to link tenant", err));
+        }
         setRentRollEntries((prev) =>
           prev.map((entry) =>
             entry.id === editingRentRollId
@@ -11654,7 +11973,7 @@ export default function DashboardPage() {
                   ...entry,
                   propertyId,
                   unit: unit.unit || rentRollForm.unit.trim(),
-                  tenant: unit.tenant || rentRollForm.tenant.trim() || "Vacant",
+                  tenant: unit.tenant || tenantName,
                     status: (unit.status as RentRollStatus) || rentRollForm.status,
                     rent: Number(unit.rent ?? rent),
                     leaseEnd: unit.leaseEnd || rentRollForm.leaseEnd || "TBD",
@@ -11681,7 +12000,7 @@ export default function DashboardPage() {
             body: JSON.stringify({
               propertyId: Number(propertyId),
               unit: rentRollForm.unit.trim(),
-              tenant: rentRollForm.tenant.trim() || "Vacant",
+              tenant: tenantName,
               status: rentRollForm.status,
               rent,
               leaseEnd: rentRollForm.leaseEnd || "TBD",
@@ -11696,12 +12015,19 @@ export default function DashboardPage() {
         if (!res.ok) throw new Error("Failed to create unit");
         const data = await res.json();
         const unit = data.unit || {};
+        if (rentRollForm.tenantId) {
+          fetch("/api/tenants", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: Number(rentRollForm.tenantId), rentUnitId: Number(unit.id) }),
+          }).catch((err) => console.error("Failed to link tenant", err));
+        }
         const now = toDateString(getCentralTodayMs());
         const newEntry: RentRollEntry = {
           id: String(unit.id || `RR${Date.now().toString(36)}`),
           propertyId,
           unit: unit.unit || rentRollForm.unit.trim(),
-          tenant: unit.tenant || rentRollForm.tenant.trim() || "Vacant",
+          tenant: unit.tenant || tenantName,
             status: (unit.status as RentRollStatus) || rentRollForm.status,
             rent: Number(unit.rent ?? rent),
             balance: 0,
@@ -11727,6 +12053,7 @@ export default function DashboardPage() {
       propertyName: "",
       unit: "",
       tenant: "",
+      tenantId: "",
       status: "Occupied" as RentRollStatus,
       rent: "",
       leaseEnd: "",
@@ -11739,6 +12066,159 @@ export default function DashboardPage() {
     });
   };
 
+  const resetTenantForm = () => {
+    setTenantForm({ name: "", email: "", password: "", rentUnitId: "", emailReminders: false });
+    setEditingTenantId(null);
+  };
+
+  const handleSaveTenantAccount = async () => {
+    if (!currentUser || currentUser.role !== "admin") return;
+    setTenantError(null);
+    setTenantStatus(null);
+    const name = tenantForm.name.trim();
+    const email = tenantForm.email.trim().toLowerCase();
+    const password = tenantForm.password;
+    if (!name || !email || (!editingTenantId && !password)) {
+      setTenantError(editingTenantId ? "Name and email are required." : "Name, email, and password are required.");
+      return;
+    }
+    setTenantSaving(true);
+    try {
+      const rentUnitId = tenantForm.rentUnitId ? Number(tenantForm.rentUnitId) : null;
+      if (editingTenantId) {
+        const payload: Record<string, unknown> = {
+          id: Number(editingTenantId),
+          name,
+          email,
+          rentUnitId,
+          emailReminders: tenantForm.emailReminders,
+        };
+        if (password) payload.password = password;
+        const res = await fetch("/api/tenants", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error || "Failed to update tenant.");
+        }
+        setTenants((prev) =>
+          prev.map((t) =>
+            t.id === editingTenantId
+              ? { ...t, name, email, rentUnitId: rentUnitId ? String(rentUnitId) : null, emailReminders: tenantForm.emailReminders }
+              : t
+          )
+        );
+        setTenantStatus("Tenant account updated.");
+      } else {
+        const res = await fetch("/api/tenants", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name,
+            email,
+            password,
+            rentUnitId,
+            emailReminders: tenantForm.emailReminders,
+          }),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error || "Failed to create tenant.");
+        }
+        const data = await res.json();
+        const created = data.tenant || {};
+        setTenants((prev) => [
+          ...prev,
+          {
+            id: String(created.id || `TEN-${Date.now()}`),
+            rentUnitId: created.rentUnitId ? String(created.rentUnitId) : (tenantForm.rentUnitId || null),
+            name: created.name || name,
+            email: created.email || email,
+            emailReminders: Boolean(created.emailReminders ?? tenantForm.emailReminders),
+            createdAt: created.createdAt ? toDateString(toDateMs(created.createdAt)) : toDateString(getCentralTodayMs()),
+          },
+        ]);
+        setTenantStatus("Tenant account created.");
+      }
+      if (tenantForm.rentUnitId) {
+        const unitId = tenantForm.rentUnitId;
+        fetch("/api/rent/units", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: Number(unitId), tenant: name }),
+        }).catch((err) => console.error("Failed to update rent unit tenant name", err));
+        setRentRollEntries((prev) =>
+          prev.map((entry) => (entry.id === unitId ? { ...entry, tenant: name } : entry))
+        );
+      }
+      resetTenantForm();
+    } catch (err) {
+      console.error("Failed to save tenant account", err);
+      setTenantError("Failed to save tenant account.");
+    } finally {
+      setTenantSaving(false);
+    }
+  };
+
+  const handleEditTenantAccount = (tenant: Tenant) => {
+    setTenantError(null);
+    setTenantStatus(null);
+    setEditingTenantId(tenant.id);
+    setTenantForm({
+      name: tenant.name,
+      email: tenant.email,
+      password: "",
+      rentUnitId: tenant.rentUnitId || "",
+      emailReminders: tenant.emailReminders,
+    });
+  };
+
+  const handleDeleteTenantAccount = async (tenantId: string) => {
+    if (!currentUser || currentUser.role !== "admin") return;
+    const confirmed = window.confirm("Delete this tenant account? This cannot be undone.");
+    if (!confirmed) return;
+    setTenantError(null);
+    setTenantStatus(null);
+    try {
+      const res = await fetch(`/api/tenants?id=${encodeURIComponent(tenantId)}`, { method: "DELETE" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to delete tenant.");
+      }
+      setTenants((prev) => prev.filter((t) => t.id !== tenantId));
+      if (editingTenantId === tenantId) resetTenantForm();
+      setTenantStatus("Tenant account deleted.");
+    } catch (err) {
+      console.error("Failed to delete tenant account", err);
+      setTenantError("Failed to delete tenant account.");
+    }
+  };
+
+  const handleResetTenantPassword = async (tenant: Tenant) => {
+    if (!currentUser || currentUser.role !== "admin") return;
+    const nextPassword = window.prompt(`Set a new temporary password for ${tenant.name}:`);
+    if (!nextPassword) return;
+    setTenantError(null);
+    setTenantStatus(null);
+    try {
+      const res = await fetch("/api/tenants", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: Number(tenant.id), password: nextPassword }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to reset password.");
+      }
+      setTenantStatus("Tenant password updated.");
+    } catch (err) {
+      console.error("Failed to reset tenant password", err);
+      setTenantError("Failed to reset tenant password.");
+    }
+  };
+
   const handleEditRentRoll = (entry: RentRollEntry) => {
     const propertyName = rentRollPropertyMap[entry.propertyId]?.name || "";
     const lastPaymentPaidStatus = entry.lastPaymentPaidOnDate
@@ -11746,10 +12226,12 @@ export default function DashboardPage() {
       : entry.lastPaymentPaidDate
         ? "different_day"
         : "late";
+    const linkedTenant = tenants.find((t) => t.rentUnitId === entry.id);
     setRentRollForm({
       propertyName,
       unit: entry.unit,
       tenant: entry.tenant === "Vacant" ? "" : entry.tenant,
+      tenantId: linkedTenant?.id || "",
       status: entry.status,
       rent: entry.rent.toString(),
       leaseEnd: entry.leaseEnd === "TBD" ? "" : entry.leaseEnd,
@@ -12782,6 +13264,38 @@ export default function DashboardPage() {
   const utilitiesTotal = selectedProjectUtilities.reduce((sum, u) => sum + (u.amount || 0), 0);
   const drawsTotal = selectedProjectDraws.reduce((sum, d) => sum + (d.amount || 0), 0);
   const loansPaidTotal = selectedProjectLoans.reduce((sum, l) => sum + (l.payment || 0), 0);
+  const loanFormBreakdown = useMemo(() => {
+    const projectKey = selectedProjectDbId;
+    if (!projectKey) {
+      return { isFirstPayment: true, principal: null as number | null, interest: null as number | null };
+    }
+    const accountKey = loanForm.accountId || "";
+    const candidates = (projectLoans[projectKey] || [])
+      .filter((l) => (l.accountId || "") === accountKey)
+      .filter((l) => l.id !== editingLoanId);
+    if (!candidates.length) {
+      return { isFirstPayment: true, principal: null as number | null, interest: null as number | null };
+    }
+    const currentDateMs = toDateMs(loanForm.date);
+    const priorByDate = Number.isFinite(currentDateMs)
+      ? candidates
+          .filter((l) => toDateMs(l.date) < currentDateMs)
+          .sort((a, b) => toDateMs(b.date) - toDateMs(a.date))[0]
+      : undefined;
+    const latest = candidates.sort((a, b) => toDateMs(b.date) - toDateMs(a.date))[0];
+    const previous = priorByDate || latest || null;
+    if (!previous || previous.balance === null || previous.balance === undefined) {
+      return { isFirstPayment: true, principal: null as number | null, interest: null as number | null };
+    }
+    const payment = loanForm.payment !== "" ? Number(loanForm.payment) : NaN;
+    const currentBalance = loanForm.balance !== "" ? Number(loanForm.balance) : NaN;
+    if (!Number.isFinite(payment) || !Number.isFinite(currentBalance)) {
+      return { isFirstPayment: false, principal: null as number | null, interest: null as number | null };
+    }
+    const principal = previous.balance - currentBalance;
+    const interest = payment - principal;
+    return { isFirstPayment: false, principal, interest };
+  }, [editingLoanId, loanForm.accountId, loanForm.balance, loanForm.date, loanForm.payment, projectLoans, selectedProjectDbId]);
   const closingCostsPurchaseTotal = selectedProjectClosingCosts
     .filter((c) => c.side === "purchase")
     .reduce((sum, c) => sum + (c.amount || 0), 0);
@@ -13171,7 +13685,7 @@ export default function DashboardPage() {
                   onChange={(e) => setLoginForm((prev) => ({ ...prev, password: e.target.value }))}
                   onKeyDown={(e) => { if (e.key === "Enter") handleLogin(); }}
                   className="w-full rounded border border-slate-300 bg-white px-3 py-2 pr-16 text-sm text-slate-900 outline-none focus:border-blue-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-50"
-                  placeholder="••••••••"
+                  placeholder="--------"
                 />
                 <button
                   type="button"
@@ -13255,7 +13769,7 @@ export default function DashboardPage() {
                   ))}
                 </select>
                 <button
-                  onClick={() => { setRentRollModalOpen(true); setEditingRentRollId(null); setRentRollForm({ propertyName: "", unit: "", tenant: "", status: "Occupied", rent: "", leaseEnd: "", initialDueMonthDay: "", bedrooms: "", bathrooms: "", lastPaymentDate: "", lastPaymentPaidStatus: "on_time", lastPaymentPaidDate: "" }); }}
+                  onClick={() => { setRentRollModalOpen(true); setEditingRentRollId(null); setRentRollForm({ propertyName: "", unit: "", tenant: "", tenantId: "", status: "Occupied", rent: "", leaseEnd: "", initialDueMonthDay: "", bedrooms: "", bathrooms: "", lastPaymentDate: "", lastPaymentPaidStatus: "on_time", lastPaymentPaidDate: "" }); }}
                   className="px-4 py-2 rounded-md bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700"
                 >
                   + New Rental
@@ -13264,7 +13778,7 @@ export default function DashboardPage() {
             </div>
 
             {rentRollDetailView ? (
-            <div className="space-y-4">
+              <div className="space-y-4">
               <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
@@ -13352,8 +13866,47 @@ export default function DashboardPage() {
               )}
 
               {rentRollDetailView.type === "unit" && rentRollDetailEntry && (
-                <div className="space-y-4">
-                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-4">
+                  <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900 h-fit">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Activity</div>
+                      <span className="text-[11px] text-slate-400">{tenantActivities.length} items</span>
+                    </div>
+                    <div className="space-y-3 max-h-[520px] overflow-y-auto">
+                      {tenantActivities.length === 0 && (
+                        <div className="text-xs text-slate-500 dark:text-slate-400">No activity yet.</div>
+                      )}
+                      {tenantActivities.map((activity) => {
+                        const typeLabel =
+                          activity.eventType === "reminder_sent"
+                            ? "Reminder sent"
+                            : activity.eventType === "reminder_viewed"
+                              ? "Reminder viewed"
+                              : activity.eventType === "payment_click"
+                                ? "Payment link clicked"
+                                : activity.eventType;
+                        const meta = activity.metadata || {};
+                        return (
+                          <div key={activity.id} className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/70 px-3 py-2 text-xs">
+                            <div className="font-semibold text-slate-800 dark:text-slate-100">{typeLabel}</div>
+                            {activity.statementId && (
+                              <div className="text-[11px] text-slate-500 dark:text-slate-400">Statement {activity.statementId}</div>
+                            )}
+                            {"dueDate" in meta && (
+                              <div className="text-[11px] text-slate-500 dark:text-slate-400">Due {String(meta.dueDate)}</div>
+                            )}
+                            {"lateFee" in meta && (
+                              <div className="text-[11px] text-slate-500 dark:text-slate-400">Late fee {formatCurrency(Number((meta as any).lateFee || 0))}</div>
+                            )}
+                            <div className="text-[11px] text-slate-400">{activity.createdAt || ""}</div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                     <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
                       <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">Tenant</div>
                       <div className="text-lg font-semibold text-slate-900 dark:text-slate-50">{rentRollDetailEntry.tenant}</div>
@@ -13367,7 +13920,6 @@ export default function DashboardPage() {
                       <div className="text-lg font-semibold text-slate-900 dark:text-slate-50">{formatCurrency(rentRollDetailEntry.rent)}</div>
                     </div>
                   </div>
-
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                     <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
                       <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-200 mb-3">Payment Snapshot</h4>
@@ -13427,7 +13979,7 @@ export default function DashboardPage() {
                             <div key={doc.id} className="flex items-center justify-between rounded border border-slate-200 dark:border-slate-700 px-3 py-2 text-xs">
                               <div>
                                 <div className="font-semibold text-slate-800 dark:text-slate-100">{doc.label}</div>
-                                <div className="text-[11px] text-slate-500 dark:text-slate-400">{doc.fileName} • {(doc.size / 1024).toFixed(1)} KB</div>
+                                <div className="text-[11px] text-slate-500 dark:text-slate-400">{doc.fileName} - {(doc.size / 1024).toFixed(1)} KB</div>
                               </div>
                               <div className="flex items-center gap-2">
                                 <a
@@ -13615,76 +14167,250 @@ export default function DashboardPage() {
                       </table>
                     </div>
                   </div>
+                  </div>
                 </div>
               )}
             </div>
-            ) : (
+          ) : (
               <>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
-                <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">Occupancy</div>
-                <div className="text-2xl font-bold text-slate-900 dark:text-slate-50">{rentRollSummary.occupancyRate}%</div>
-                <div className="text-xs text-slate-500 dark:text-slate-400">Occupied {rentRollSummary.occupiedUnits} / {rentRollSummary.totalUnits}</div>
-              </div>
-            <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
-              <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">Potential Monthly Rent</div>
-              <div className="text-xl font-bold text-green-700 dark:text-green-300">{formatCurrency(rentRollSummary.potential)}</div>
-              <div className="text-xs text-slate-500 dark:text-slate-400">Gross scheduled, before concessions</div>
-            </div>
-            <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
-              <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">Collected</div>
-              <div className="text-xl font-bold text-blue-700 dark:text-blue-300">{formatCurrency(rentRollSummary.collected)}</div>
-              <div className="text-xs text-slate-500 dark:text-slate-400">Based on payments recorded this month</div>
-            </div>
-              <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
-                <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">Delinquent Balance</div>
-                <div className="text-xl font-bold text-red-600 dark:text-red-400">{formatCurrency(rentRollSummary.delinquent)}</div>
-                <div className="text-xs text-slate-500 dark:text-slate-400">Outstanding against current period</div>
-              </div>
-            </div>
-
-              <div className="rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900 overflow-hidden">
-                <div className="p-4 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
-                  <div>
-                    <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-50">Unit Ledger</h3>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">Lease exposure, balances, and expirations.</p>
+                <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-4">
+                  <div className="rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900 overflow-hidden">
+                    <div className="p-3 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between gap-2">
+                      <div>
+                        <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-50">Tenant Activity</h3>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400">Recent email opens and reminder events.</p>
+                      </div>
+                      <button
+                        onClick={() => setRentRollActivityCollapsed((prev) => !prev)}
+                        className="px-2 py-1 rounded border border-slate-300 text-[11px] text-slate-600 hover:text-slate-800 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+                      >
+                        {rentRollActivityCollapsed ? "Show" : "Hide"}
+                      </button>
+                    </div>
+                    {!rentRollActivityCollapsed && (
+                      <div className="p-3 space-y-2 max-h-80 overflow-y-auto text-sm text-slate-700 dark:text-slate-200">
+                        {rentRollRecentActivities.length === 0 && (
+                          <div className="text-xs text-slate-500 dark:text-slate-400">No tenant activity yet.</div>
+                        )}
+                        {rentRollRecentActivities.map((activity) => {
+                          const entry = rentRollEntries.find((e) => e.id === activity.rentUnitId);
+                          const tenant = tenants.find((t) => t.id === activity.tenantId);
+                          const typeLabel =
+                            activity.eventType === "reminder_sent"
+                              ? "Reminder sent"
+                              : activity.eventType === "reminder_viewed"
+                                ? "Reminder viewed"
+                                : activity.eventType === "payment_click"
+                                  ? "Payment link clicked"
+                                  : activity.eventType;
+                          return (
+                            <div key={activity.id} className="rounded border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 px-2 py-2 text-xs">
+                              <div className="font-semibold text-slate-800 dark:text-slate-100">{typeLabel}</div>
+                              <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                                {tenant?.name || entry?.tenant || "Tenant"} - {entry?.unit || "Unit"}
+                              </div>
+                              <div className="text-[11px] text-slate-400">{activity.createdAt || ""}</div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
-                  <span className="text-xs text-slate-500 dark:text-slate-400">
-                    Showing {rentRollProperty === "all" ? "all properties" : selectedRentPropertyName}
-                  </span>
-                </div>
-                <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-slate-50 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 uppercase text-[11px]">
-                  <tr>
-                    <th className="px-4 py-2 text-left">Property</th>
-                    <th className="px-4 py-2 text-left">Unit</th>
-                    <th className="px-4 py-2 text-left">Tenant</th>
-                    <th className="px-4 py-2 text-left">Status</th>
-                    <th className="px-4 py-2 text-left">Beds/Baths</th>
-                    <th className="px-4 py-2 text-left">Rent</th>
-                    <th className="px-4 py-2 text-left">Balance</th>
-                    <th className="px-4 py-2 text-left">Late Fee</th>
-                    <th className="px-4 py-2 text-left">Rent Due</th>
-                    <th className="px-4 py-2 text-left">Lease End</th>
-                    <th className="px-4 py-2 text-left">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredRentRoll.map((entry, idx) => {
-                    const propertyName = rentRollPropertyMap[entry.propertyId]?.name || "Unlinked Property";
-                      const rowBg = idx % 2 === 0 ? "" : "bg-slate-50 dark:bg-slate-800/60";
-                      const rowClass = `${rowBg} cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800/70`;
-                    const statusClass = entry.status === "Occupied"
-                      ? "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-200"
-                      : entry.status === "Vacant"
-                        ? "bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-200"
-                        : "bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-200";
-                    const paymentInfo = paymentRollup[entry.id];
-                    const balanceVal = paymentInfo?.balance ?? entry.balance;
-                    const paidVal = paymentInfo?.paid ?? 0;
-                    const lateFeeVal = paymentInfo?.lateFee ?? 0;
-                    const balanceClass = balanceVal > 0 ? "text-red-600 dark:text-red-400" : "text-green-700 dark:text-green-300";
+
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                      <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+                        <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">Occupancy</div>
+                        <div className="text-2xl font-bold text-slate-900 dark:text-slate-50">{rentRollSummary.occupancyRate}%</div>
+                        <div className="text-xs text-slate-500 dark:text-slate-400">
+                          Occupied {rentRollSummary.occupiedUnits} / {rentRollSummary.totalUnits}
+                        </div>
+                      </div>
+                      <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+                        <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">Potential Monthly Rent</div>
+                        <div className="text-xl font-bold text-green-700 dark:text-green-300">{formatCurrency(rentRollSummary.potential)}</div>
+                        <div className="text-xs text-slate-500 dark:text-slate-400">Gross scheduled, before concessions</div>
+                      </div>
+                      <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+                        <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">Collected</div>
+                        <div className="text-xl font-bold text-blue-700 dark:text-blue-300">{formatCurrency(rentRollSummary.collected)}</div>
+                        <div className="text-xs text-slate-500 dark:text-slate-400">Based on payments recorded this month</div>
+                      </div>
+                      <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+                        <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">Delinquent Balance</div>
+                        <div className="text-xl font-bold text-red-600 dark:text-red-400">{formatCurrency(rentRollSummary.delinquent)}</div>
+                        <div className="text-xs text-slate-500 dark:text-slate-400">Outstanding against current period</div>
+                      </div>
+                    </div>
+
+                    {currentUser?.role === "admin" && (
+                      <div className="rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900 overflow-hidden">
+                        <div className="p-4 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
+                          <div>
+                            <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-50">Tenant Accounts</h3>
+                            <p className="text-xs text-slate-500 dark:text-slate-400">Create tenant logins and link to units.</p>
+                          </div>
+                          <div className="text-xs text-slate-500 dark:text-slate-400">
+                            {tenants.length} accounts
+                          </div>
+                        </div>
+                        <div className="p-4 grid grid-cols-1 md:grid-cols-5 gap-3">
+                          <input
+                            value={tenantForm.name}
+                            onChange={(e) => setTenantForm((prev) => ({ ...prev, name: e.target.value }))}
+                            className="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm"
+                            placeholder="Name"
+                          />
+                          <input
+                            value={tenantForm.email}
+                            onChange={(e) => setTenantForm((prev) => ({ ...prev, email: e.target.value }))}
+                            className="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm"
+                            placeholder="Email"
+                          />
+                          <input
+                            type="password"
+                            value={tenantForm.password}
+                            onChange={(e) => setTenantForm((prev) => ({ ...prev, password: e.target.value }))}
+                            className="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm"
+                            placeholder={editingTenantId ? "New password (optional)" : "Temporary password"}
+                          />
+                          <select
+                            value={tenantForm.rentUnitId}
+                            onChange={(e) => setTenantForm((prev) => ({ ...prev, rentUnitId: e.target.value }))}
+                            className="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm"
+                          >
+                            <option value="">Link to unit (optional)</option>
+                            {rentRollEntries.map((entry) => (
+                              <option key={entry.id} value={entry.id}>
+                                {rentRollPropertyMap[entry.propertyId]?.name || "Property"} - {entry.unit}
+                              </option>
+                            ))}
+                          </select>
+                          <div className="flex items-center gap-2">
+                            <label className="inline-flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                              <input
+                                type="checkbox"
+                                checked={tenantForm.emailReminders}
+                                onChange={(e) => setTenantForm((prev) => ({ ...prev, emailReminders: e.target.checked }))}
+                                className="h-4 w-4 rounded border-slate-300 dark:border-slate-700"
+                              />
+                              Reminders
+                            </label>
+                            {editingTenantId && (
+                              <button
+                                onClick={resetTenantForm}
+                                disabled={tenantSaving}
+                                className="px-3 py-2 rounded-md border border-slate-300 text-slate-600 text-xs font-semibold hover:bg-slate-100 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800 disabled:opacity-60"
+                              >
+                                Cancel
+                              </button>
+                            )}
+                            <button
+                              onClick={handleSaveTenantAccount}
+                              disabled={tenantSaving}
+                              className="ml-auto px-3 py-2 rounded-md bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 disabled:opacity-60"
+                            >
+                              {tenantSaving ? "Saving..." : (editingTenantId ? "Update Tenant" : "Create Tenant")}
+                            </button>
+                          </div>
+                        </div>
+                        {(tenantError || tenantStatus) && (
+                          <div className="px-4 pb-4 text-xs">
+                            {tenantError && <div className="text-red-500">{tenantError}</div>}
+                            {tenantStatus && <div className="text-emerald-500">{tenantStatus}</div>}
+                          </div>
+                        )}
+                        {tenants.length > 0 && (
+                          <div className="px-4 pb-4">
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs text-slate-500 dark:text-slate-400">
+                              {tenants
+                                .slice()
+                                .sort((a, b) => a.name.localeCompare(b.name))
+                                .map((tenant) => {
+                                  const unit = tenant.rentUnitId
+                                    ? rentRollEntries.find((entry) => entry.id === tenant.rentUnitId)
+                                    : null;
+                                  return (
+                                    <div key={tenant.id} className="rounded border border-slate-200 dark:border-slate-700 px-3 py-2 bg-slate-50 dark:bg-slate-800/60">
+                                      <div className="text-slate-900 dark:text-slate-100 font-semibold">{tenant.name}</div>
+                                      <div>{tenant.email}</div>
+                                      <div>
+                                        {unit
+                                          ? `${rentRollPropertyMap[unit.propertyId]?.name || "Property"} - ${unit.unit}`
+                                          : "Not linked"}
+                                      </div>
+                                      <div>{tenant.emailReminders ? "Reminders on" : "Reminders off"}</div>
+                                      <div className="mt-2 flex flex-wrap gap-2 text-[11px]">
+                                        <button
+                                          onClick={() => handleEditTenantAccount(tenant)}
+                                          className="px-2 py-1 rounded border border-slate-300 text-slate-600 hover:text-slate-800 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+                                        >
+                                          Edit
+                                        </button>
+                                        <button
+                                          onClick={() => handleResetTenantPassword(tenant)}
+                                          className="px-2 py-1 rounded border border-amber-200 text-amber-700 hover:bg-amber-100 dark:border-amber-800 dark:text-amber-200 dark:hover:bg-amber-900/30"
+                                        >
+                                          Reset Password
+                                        </button>
+                                        <button
+                                          onClick={() => handleDeleteTenantAccount(tenant.id)}
+                                          className="px-2 py-1 rounded border border-red-200 text-red-600 hover:bg-red-100 dark:border-red-800 dark:text-red-300 dark:hover:bg-red-900/30"
+                                        >
+                                          Delete
+                                        </button>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900 overflow-hidden">
+                      <div className="p-4 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
+                        <div>
+                          <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-50">Unit Ledger</h3>
+                          <p className="text-xs text-slate-500 dark:text-slate-400">Lease exposure, balances, and expirations.</p>
+                        </div>
+                        <span className="text-xs text-slate-500 dark:text-slate-400">
+                          Showing {rentRollProperty === "all" ? "all properties" : selectedRentPropertyName}
+                        </span>
+                      </div>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead className="bg-slate-50 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 uppercase text-[11px]">
+                            <tr>
+                              <th className="px-4 py-2 text-left">Property</th>
+                              <th className="px-4 py-2 text-left">Unit</th>
+                              <th className="px-4 py-2 text-left">Tenant</th>
+                              <th className="px-4 py-2 text-left">Status</th>
+                              <th className="px-4 py-2 text-left">Beds/Baths</th>
+                              <th className="px-4 py-2 text-left">Rent</th>
+                              <th className="px-4 py-2 text-left">Balance</th>
+                              <th className="px-4 py-2 text-left">Late Fee</th>
+                              <th className="px-4 py-2 text-left">Rent Due</th>
+                              <th className="px-4 py-2 text-left">Lease End</th>
+                              <th className="px-4 py-2 text-left">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                        {filteredRentRoll.map((entry, idx) => {
+                          const propertyName = rentRollPropertyMap[entry.propertyId]?.name || "Unlinked Property";
+                          const rowBg = idx % 2 === 0 ? "" : "bg-slate-50 dark:bg-slate-800/60";
+                          const rowClass = `${rowBg} cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800/70`;
+                          const statusClass = entry.status === "Occupied"
+                            ? "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-200"
+                            : entry.status === "Vacant"
+                              ? "bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                              : "bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-200";
+                          const paymentInfo = paymentRollup[entry.id];
+                          const balanceVal = paymentInfo?.balance ?? entry.balance;
+                          const paidVal = paymentInfo?.paid ?? 0;
+                          const lateFeeVal = paymentInfo?.lateFee ?? 0;
+                          const balanceClass = balanceVal > 0 ? "text-red-600 dark:text-red-400" : "text-green-700 dark:text-green-300";
                     const lateFeeClass = lateFeeVal > 0 ? "text-amber-700 dark:text-amber-300 font-semibold" : "text-slate-600 dark:text-slate-300";
                     const dueDate = paymentInfo?.dueDate;
                     const dueInDays = dueDate ? daysUntil(dueDate) : null;
@@ -13799,6 +14525,8 @@ export default function DashboardPage() {
               </table>
             </div>
           </div>
+                </div>
+                </div>
               </>
             )}
 
@@ -13841,6 +14569,29 @@ export default function DashboardPage() {
                     className="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm"
                     placeholder="Name or Vacant"
                   />
+                </div>
+                <div>
+                  <label className="text-xs text-slate-500 dark:text-slate-400">Tenant Account</label>
+                  <select
+                    value={rentRollForm.tenantId}
+                    onChange={(e) => {
+                      const nextId = e.target.value;
+                      const linked = tenants.find((t) => t.id === nextId);
+                      setRentRollForm((prev) => ({
+                        ...prev,
+                        tenantId: nextId,
+                        tenant: linked?.name || prev.tenant,
+                      }));
+                    }}
+                    className="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm"
+                  >
+                    <option value="">Not linked</option>
+                    {tenants.map((tenant) => (
+                      <option key={tenant.id} value={tenant.id}>
+                        {tenant.name} ({tenant.email})
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <div>
                   <label className="text-xs text-slate-500 dark:text-slate-400">Status</label>
@@ -15240,11 +15991,11 @@ export default function DashboardPage() {
                     </div>
                     <div className="flex items-center gap-2 mt-2 text-[11px] text-slate-500 dark:text-slate-400">
                       <span>{c.authorName || "Unknown"} </span>
-                      <span>•</span>
+                      <span>-</span>
                       <span>{c.createdAt ? new Date(c.createdAt).toLocaleString() : "—"}</span>
                       {c.tags?.length > 0 && (
                         <>
-                          <span>•</span>
+                          <span>-</span>
                           <span className="flex flex-wrap gap-1">{c.tags.map((t) => (
                             <span key={t} className="px-2 py-0.5 rounded bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-200">{t}</span>
                           ))}</span>
@@ -15267,7 +16018,7 @@ export default function DashboardPage() {
                   <div>
                     <div className="text-xl font-bold text-slate-900 dark:text-slate-50">{selectedCommit.serial}</div>
                     <div className="text-sm text-slate-600 dark:text-slate-300">
-                      {selectedCommit.authorName || "Unknown"} • {selectedCommit.createdAt ? new Date(selectedCommit.createdAt).toLocaleString() : "—"}
+                      {selectedCommit.authorName || "Unknown"} - {selectedCommit.createdAt ? new Date(selectedCommit.createdAt).toLocaleString() : "—"}
                     </div>
                   </div>
                   {currentUser?.role === "admin" && (
@@ -15954,7 +16705,7 @@ export default function DashboardPage() {
                     return (
                       <div key={pc.id} className="flex items-center justify-between rounded bg-slate-50 dark:bg-slate-800/60 px-3 py-2">
                         <div className="space-y-1">
-                          <div>{emp?.name || pc.employeeId} • Week of {pc.weekStart}</div>
+                          <div>{emp?.name || pc.employeeId} - Week of {pc.weekStart}</div>
                           <div className="text-xs text-slate-500 dark:text-slate-400">Check #{pc.checkNumber}</div>
                         </div>
                         <div className="flex items-center gap-2">
@@ -17640,41 +18391,69 @@ export default function DashboardPage() {
                     </div>
                   </div>
                   <div className="p-4 border-b border-slate-200 dark:border-slate-700">
-                    <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
-                      <input
-                        type="date"
-                        value={utilityForm.date}
-                        onChange={(e) => setUtilityForm((prev) => ({ ...prev, date: e.target.value }))}
-                        className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-900"
-                      />
-                      <input
-                        type="text"
-                        value={utilityForm.service}
-                        onChange={(e) => setUtilityForm((prev) => ({ ...prev, service: e.target.value }))}
-                        placeholder="Service (Water, Electric)"
-                        className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-900"
-                      />
-                      <input
-                        type="text"
-                        value={utilityForm.provider}
-                        onChange={(e) => setUtilityForm((prev) => ({ ...prev, provider: e.target.value }))}
-                        placeholder="Provider"
-                        className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-900"
-                      />
-                      <input
-                        type="number"
-                        value={utilityForm.amount}
-                        onChange={(e) => setUtilityForm((prev) => ({ ...prev, amount: e.target.value }))}
-                        placeholder="Amount"
-                        className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-right dark:border-slate-700 dark:bg-slate-900"
-                      />
-                      <input
-                        type="text"
-                        value={utilityForm.note}
-                        onChange={(e) => setUtilityForm((prev) => ({ ...prev, note: e.target.value }))}
-                        placeholder="Note"
-                        className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-900 md:col-span-2"
-                      />
+                    <div className="grid grid-cols-1 md:grid-cols-7 gap-3">
+                      <label className="text-xs text-slate-500 dark:text-slate-400">
+                        Date
+                        <input
+                          type="date"
+                          value={utilityForm.date}
+                          onChange={(e) => setUtilityForm((prev) => ({ ...prev, date: e.target.value }))}
+                          className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                        />
+                      </label>
+                      <label className="text-xs text-slate-500 dark:text-slate-400">
+                        Service
+                        <input
+                          type="text"
+                          value={utilityForm.service}
+                          onChange={(e) => setUtilityForm((prev) => ({ ...prev, service: e.target.value }))}
+                          placeholder="Water, Electric"
+                          className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                        />
+                      </label>
+                      <label className="text-xs text-slate-500 dark:text-slate-400">
+                        Provider
+                        <input
+                          type="text"
+                          value={utilityForm.provider}
+                          onChange={(e) => setUtilityForm((prev) => ({ ...prev, provider: e.target.value }))}
+                          placeholder="Provider"
+                          className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                        />
+                      </label>
+                      <label className="text-xs text-slate-500 dark:text-slate-400">
+                        Account
+                        <select
+                          value={utilityForm.accountId}
+                          onChange={(e) => setUtilityForm((prev) => ({ ...prev, accountId: e.target.value }))}
+                          className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                        >
+                          <option value="">Select</option>
+                          {ledgerAccounts.map((acct) => (
+                            <option key={acct.id} value={acct.id}>{acct.name}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="text-xs text-slate-500 dark:text-slate-400 text-right">
+                        Amount
+                        <input
+                          type="number"
+                          value={utilityForm.amount}
+                          onChange={(e) => setUtilityForm((prev) => ({ ...prev, amount: e.target.value }))}
+                          placeholder="0.00"
+                          className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-right text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                        />
+                      </label>
+                      <label className="text-xs text-slate-500 dark:text-slate-400 md:col-span-2">
+                        Note
+                        <input
+                          type="text"
+                          value={utilityForm.note}
+                          onChange={(e) => setUtilityForm((prev) => ({ ...prev, note: e.target.value }))}
+                          placeholder="Note"
+                          className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                        />
+                      </label>
                     </div>
                     <div className="flex items-center gap-2 mt-3">
                       <button
@@ -17703,6 +18482,7 @@ export default function DashboardPage() {
                             <th className="px-4 py-2 text-left">Date</th>
                             <th className="px-4 py-2 text-left">Service</th>
                             <th className="px-4 py-2 text-left">Provider</th>
+                            <th className="px-4 py-2 text-left">Account</th>
                             <th className="px-4 py-2 text-right">Amount</th>
                             <th className="px-4 py-2 text-left">Note</th>
                             <th className="px-4 py-2 text-right">Actions</th>
@@ -17717,6 +18497,9 @@ export default function DashboardPage() {
                                 <td className="px-4 py-2">{u.date}</td>
                                 <td className="px-4 py-2 font-medium text-slate-800 dark:text-slate-100">{u.service}</td>
                                 <td className="px-4 py-2">{u.provider || "-"}</td>
+                                <td className="px-4 py-2 text-slate-600 dark:text-slate-400">
+                                  {u.accountName || ledgerAccounts.find((acct) => acct.id === u.accountId)?.name || "-"}
+                                </td>
                                 <td className="px-4 py-2 text-right">{formatCurrency(u.amount)}</td>
                                 <td className="px-4 py-2 text-slate-500 dark:text-slate-400">{u.note || "-"}</td>
                                 <td className="px-4 py-2 text-right">
@@ -17756,34 +18539,59 @@ export default function DashboardPage() {
                     </div>
                   </div>
                   <div className="p-4 border-b border-slate-200 dark:border-slate-700">
-                    <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
-                      <input
-                        type="date"
-                        value={drawForm.date}
-                        onChange={(e) => setDrawForm((prev) => ({ ...prev, date: e.target.value }))}
-                        className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-900"
-                      />
-                      <input
-                        type="text"
-                        value={drawForm.description}
-                        onChange={(e) => setDrawForm((prev) => ({ ...prev, description: e.target.value }))}
-                        placeholder="Description"
-                        className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-900 md:col-span-2"
-                      />
-                      <input
-                        type="number"
-                        value={drawForm.amount}
-                        onChange={(e) => setDrawForm((prev) => ({ ...prev, amount: e.target.value }))}
-                        placeholder="Amount"
-                        className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-right dark:border-slate-700 dark:bg-slate-900"
-                      />
-                      <input
-                        type="text"
-                        value={drawForm.note}
-                        onChange={(e) => setDrawForm((prev) => ({ ...prev, note: e.target.value }))}
-                        placeholder="Note"
-                        className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-900"
-                      />
+                    <div className="grid grid-cols-1 md:grid-cols-7 gap-3">
+                      <label className="text-xs text-slate-500 dark:text-slate-400">
+                        Date
+                        <input
+                          type="date"
+                          value={drawForm.date}
+                          onChange={(e) => setDrawForm((prev) => ({ ...prev, date: e.target.value }))}
+                          className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                        />
+                      </label>
+                      <label className="text-xs text-slate-500 dark:text-slate-400 md:col-span-2">
+                        Description
+                        <input
+                          type="text"
+                          value={drawForm.description}
+                          onChange={(e) => setDrawForm((prev) => ({ ...prev, description: e.target.value }))}
+                          placeholder="Description"
+                          className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                        />
+                      </label>
+                      <label className="text-xs text-slate-500 dark:text-slate-400">
+                        Account
+                        <select
+                          value={drawForm.accountId}
+                          onChange={(e) => setDrawForm((prev) => ({ ...prev, accountId: e.target.value }))}
+                          className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                        >
+                          <option value="">Select</option>
+                          {ledgerAccounts.map((acct) => (
+                            <option key={acct.id} value={acct.id}>{acct.name}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="text-xs text-slate-500 dark:text-slate-400 text-right">
+                        Amount
+                        <input
+                          type="number"
+                          value={drawForm.amount}
+                          onChange={(e) => setDrawForm((prev) => ({ ...prev, amount: e.target.value }))}
+                          placeholder="0.00"
+                          className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-right text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                        />
+                      </label>
+                      <label className="text-xs text-slate-500 dark:text-slate-400 md:col-span-2">
+                        Note
+                        <input
+                          type="text"
+                          value={drawForm.note}
+                          onChange={(e) => setDrawForm((prev) => ({ ...prev, note: e.target.value }))}
+                          placeholder="Note"
+                          className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                        />
+                      </label>
                     </div>
                     <div className="flex items-center gap-2 mt-3">
                       <button
@@ -17811,6 +18619,7 @@ export default function DashboardPage() {
                           <tr>
                             <th className="px-4 py-2 text-left">Date</th>
                             <th className="px-4 py-2 text-left">Description</th>
+                            <th className="px-4 py-2 text-left">Account</th>
                             <th className="px-4 py-2 text-right">Amount</th>
                             <th className="px-4 py-2 text-left">Note</th>
                             <th className="px-4 py-2 text-right">Actions</th>
@@ -17824,6 +18633,9 @@ export default function DashboardPage() {
                               <tr key={d.id} className={idx % 2 === 0 ? "bg-white dark:bg-slate-900" : "bg-slate-50 dark:bg-slate-800"}>
                                 <td className="px-4 py-2">{d.date}</td>
                                 <td className="px-4 py-2 font-medium text-slate-800 dark:text-slate-100">{d.description}</td>
+                                <td className="px-4 py-2 text-slate-600 dark:text-slate-400">
+                                  {d.accountName || ledgerAccounts.find((acct) => acct.id === d.accountId)?.name || "-"}
+                                </td>
                                 <td className="px-4 py-2 text-right">{formatCurrency(d.amount)}</td>
                                 <td className="px-4 py-2 text-slate-500 dark:text-slate-400">{d.note || "-"}</td>
                                 <td className="px-4 py-2 text-right">
@@ -17863,48 +18675,109 @@ export default function DashboardPage() {
                     </div>
                   </div>
                   <div className="p-4 border-b border-slate-200 dark:border-slate-700">
-                    <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
-                      <input
-                        type="date"
-                        value={loanForm.date}
-                        onChange={(e) => setLoanForm((prev) => ({ ...prev, date: e.target.value }))}
-                        className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-900"
-                      />
-                      <input
-                        type="number"
-                        value={loanForm.payment}
-                        onChange={(e) => setLoanForm((prev) => ({ ...prev, payment: e.target.value }))}
-                        placeholder="Payment"
-                        className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-right dark:border-slate-700 dark:bg-slate-900"
-                      />
-                      <input
-                        type="number"
-                        value={loanForm.interest}
-                        onChange={(e) => setLoanForm((prev) => ({ ...prev, interest: e.target.value }))}
-                        placeholder="Interest"
-                        className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-right dark:border-slate-700 dark:bg-slate-900"
-                      />
-                      <input
-                        type="number"
-                        value={loanForm.principal}
-                        onChange={(e) => setLoanForm((prev) => ({ ...prev, principal: e.target.value }))}
-                        placeholder="Principal"
-                        className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-right dark:border-slate-700 dark:bg-slate-900"
-                      />
-                      <input
-                        type="number"
-                        value={loanForm.balance}
-                        onChange={(e) => setLoanForm((prev) => ({ ...prev, balance: e.target.value }))}
-                        placeholder="Balance"
-                        className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-right dark:border-slate-700 dark:bg-slate-900"
-                      />
-                      <input
-                        type="text"
-                        value={loanForm.note}
-                        onChange={(e) => setLoanForm((prev) => ({ ...prev, note: e.target.value }))}
-                        placeholder="Note"
-                        className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-900"
-                      />
+                    <div className="grid grid-cols-1 md:grid-cols-7 gap-3">
+                      <label className="text-xs text-slate-500 dark:text-slate-400">
+                        Date
+                        <input
+                          type="date"
+                          value={loanForm.date}
+                          onChange={(e) => setLoanForm((prev) => ({ ...prev, date: e.target.value }))}
+                          className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                        />
+                      </label>
+                      <label className="text-xs text-slate-500 dark:text-slate-400">
+                        Origination
+                        <input
+                          type="date"
+                          value={loanForm.originationDate}
+                          onChange={(e) => setLoanForm((prev) => ({ ...prev, originationDate: e.target.value }))}
+                          className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                        />
+                      </label>
+                      <label className="text-xs text-slate-500 dark:text-slate-400 text-right">
+                        Payment
+                        <input
+                          type="number"
+                          value={loanForm.payment}
+                          onChange={(e) => setLoanForm((prev) => ({ ...prev, payment: e.target.value }))}
+                          placeholder="0.00"
+                          className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-right text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                        />
+                      </label>
+                      <label className="text-xs text-slate-500 dark:text-slate-400 text-right">
+                        Interest
+                        <input
+                          type="number"
+                          value={
+                            loanFormBreakdown.isFirstPayment
+                              ? loanForm.interest
+                              : (loanFormBreakdown.interest !== null ? String(loanFormBreakdown.interest) : "")
+                          }
+                          onChange={
+                            loanFormBreakdown.isFirstPayment
+                              ? (e) => setLoanForm((prev) => ({ ...prev, interest: e.target.value }))
+                              : undefined
+                          }
+                          placeholder={loanFormBreakdown.isFirstPayment ? "0.00" : "Auto"}
+                          readOnly={!loanFormBreakdown.isFirstPayment}
+                          className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-right text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                        />
+                      </label>
+                      <label className="text-xs text-slate-500 dark:text-slate-400 text-right">
+                        Principal
+                        <input
+                          type="number"
+                          value={
+                            loanFormBreakdown.isFirstPayment
+                              ? loanForm.principal
+                              : (loanFormBreakdown.principal !== null ? String(loanFormBreakdown.principal) : "")
+                          }
+                          onChange={
+                            loanFormBreakdown.isFirstPayment
+                              ? (e) => setLoanForm((prev) => ({ ...prev, principal: e.target.value }))
+                              : undefined
+                          }
+                          placeholder={loanFormBreakdown.isFirstPayment ? "0.00" : "Auto"}
+                          readOnly={!loanFormBreakdown.isFirstPayment}
+                          className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-right text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                        />
+                      </label>
+                      <label className="text-xs text-slate-500 dark:text-slate-400">
+                        Account
+                        <select
+                          value={loanForm.accountId}
+                          onChange={(e) => setLoanForm((prev) => ({ ...prev, accountId: e.target.value }))}
+                          className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                        >
+                          <option value="">Select</option>
+                          {ledgerAccounts.map((acct) => (
+                            <option key={acct.id} value={acct.id}>{acct.name}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="text-xs text-slate-500 dark:text-slate-400 text-right">
+                        Balance
+                        <input
+                          type="number"
+                          value={loanForm.balance}
+                          onChange={(e) => setLoanForm((prev) => ({ ...prev, balance: e.target.value }))}
+                          placeholder="0.00"
+                          className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-right text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                        />
+                      </label>
+                      <label className="text-xs text-slate-500 dark:text-slate-400 md:col-span-2">
+                        Note
+                        <input
+                          type="text"
+                          value={loanForm.note}
+                          onChange={(e) => setLoanForm((prev) => ({ ...prev, note: e.target.value }))}
+                          placeholder="Note"
+                          className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                        />
+                      </label>
+                    </div>
+                    <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                      Interest and principal auto-calculate from the prior balance for the selected account.
                     </div>
                     <div className="flex items-center gap-2 mt-3">
                       <button
@@ -17931,9 +18804,11 @@ export default function DashboardPage() {
                         <thead className="sticky top-0 bg-slate-100 dark:bg-slate-800 text-xs uppercase text-slate-500 dark:text-slate-400">
                           <tr>
                             <th className="px-4 py-2 text-left">Date</th>
+                            <th className="px-4 py-2 text-left">Origination</th>
                             <th className="px-4 py-2 text-right">Payment</th>
                             <th className="px-4 py-2 text-right">Interest</th>
                             <th className="px-4 py-2 text-right">Principal</th>
+                            <th className="px-4 py-2 text-left">Account</th>
                             <th className="px-4 py-2 text-right">Balance</th>
                             <th className="px-4 py-2 text-left">Note</th>
                             <th className="px-4 py-2 text-right">Actions</th>
@@ -17946,9 +18821,13 @@ export default function DashboardPage() {
                             .map((l, idx) => (
                               <tr key={l.id} className={idx % 2 === 0 ? "bg-white dark:bg-slate-900" : "bg-slate-50 dark:bg-slate-800"}>
                                 <td className="px-4 py-2">{l.date}</td>
+                                <td className="px-4 py-2">{l.originationDate || "-"}</td>
                                 <td className="px-4 py-2 text-right">{formatCurrency(l.payment)}</td>
                                 <td className="px-4 py-2 text-right">{formatCurrency(l.interest)}</td>
                                 <td className="px-4 py-2 text-right">{formatCurrency(l.principal)}</td>
+                                <td className="px-4 py-2 text-slate-600 dark:text-slate-400">
+                                  {l.accountName || ledgerAccounts.find((acct) => acct.id === l.accountId)?.name || "-"}
+                                </td>
                                 <td className="px-4 py-2 text-right">{l.balance === null || l.balance === undefined ? "-" : formatCurrency(l.balance)}</td>
                                 <td className="px-4 py-2 text-slate-500 dark:text-slate-400">{l.note || "-"}</td>
                                 <td className="px-4 py-2 text-right">
@@ -17989,49 +18868,67 @@ export default function DashboardPage() {
                   </div>
                   <div className="p-4 border-b border-slate-200 dark:border-slate-700">
                     <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
-                      <input
-                        type="number"
-                        value={taxForm.taxYear}
-                        onChange={(e) => setTaxForm((prev) => ({ ...prev, taxYear: e.target.value }))}
-                        placeholder="Tax Year"
-                        className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-900"
-                      />
-                      <input
-                        type="date"
-                        value={taxForm.dueDate}
-                        onChange={(e) => setTaxForm((prev) => ({ ...prev, dueDate: e.target.value }))}
-                        className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-900"
-                      />
-                      <input
-                        type="number"
-                        value={taxForm.amount}
-                        onChange={(e) => setTaxForm((prev) => ({ ...prev, amount: e.target.value }))}
-                        placeholder="Amount"
-                        className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-right dark:border-slate-700 dark:bg-slate-900"
-                      />
-                      <select
-                        value={taxForm.status}
-                        onChange={(e) => setTaxForm((prev) => ({ ...prev, status: e.target.value as ProjectPropertyTax["status"] }))}
-                        className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-900"
-                      >
-                        <option value="due">Due</option>
-                        <option value="paid">Paid</option>
-                        <option value="overdue">Overdue</option>
-                      </select>
-                      <input
-                        type="date"
-                        value={taxForm.paidDate}
-                        onChange={(e) => setTaxForm((prev) => ({ ...prev, paidDate: e.target.value }))}
-                        className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-900"
-                        disabled={taxForm.status !== "paid"}
-                      />
-                      <input
-                        type="text"
-                        value={taxForm.note}
-                        onChange={(e) => setTaxForm((prev) => ({ ...prev, note: e.target.value }))}
-                        placeholder="Note"
-                        className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-900"
-                      />
+                      <label className="text-xs text-slate-500 dark:text-slate-400">
+                        Tax Year
+                        <input
+                          type="number"
+                          value={taxForm.taxYear}
+                          onChange={(e) => setTaxForm((prev) => ({ ...prev, taxYear: e.target.value }))}
+                          placeholder="YYYY"
+                          className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                        />
+                      </label>
+                      <label className="text-xs text-slate-500 dark:text-slate-400">
+                        Due Date
+                        <input
+                          type="date"
+                          value={taxForm.dueDate}
+                          onChange={(e) => setTaxForm((prev) => ({ ...prev, dueDate: e.target.value }))}
+                          className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                        />
+                      </label>
+                      <label className="text-xs text-slate-500 dark:text-slate-400 text-right">
+                        Amount
+                        <input
+                          type="number"
+                          value={taxForm.amount}
+                          onChange={(e) => setTaxForm((prev) => ({ ...prev, amount: e.target.value }))}
+                          placeholder="0.00"
+                          className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-right text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                        />
+                      </label>
+                      <label className="text-xs text-slate-500 dark:text-slate-400">
+                        Status
+                        <select
+                          value={taxForm.status}
+                          onChange={(e) => setTaxForm((prev) => ({ ...prev, status: e.target.value as ProjectPropertyTax["status"] }))}
+                          className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                        >
+                          <option value="due">Due</option>
+                          <option value="paid">Paid</option>
+                          <option value="overdue">Overdue</option>
+                        </select>
+                      </label>
+                      <label className="text-xs text-slate-500 dark:text-slate-400">
+                        Paid Date
+                        <input
+                          type="date"
+                          value={taxForm.paidDate}
+                          onChange={(e) => setTaxForm((prev) => ({ ...prev, paidDate: e.target.value }))}
+                          className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                          disabled={taxForm.status !== "paid"}
+                        />
+                      </label>
+                      <label className="text-xs text-slate-500 dark:text-slate-400">
+                        Note
+                        <input
+                          type="text"
+                          value={taxForm.note}
+                          onChange={(e) => setTaxForm((prev) => ({ ...prev, note: e.target.value }))}
+                          placeholder="Note"
+                          className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                        />
+                      </label>
                     </div>
                     <div className="flex items-center gap-2 mt-3">
                       <button
@@ -19143,3 +20040,5 @@ export default function DashboardPage() {
     </div>
   );
 }
+
+

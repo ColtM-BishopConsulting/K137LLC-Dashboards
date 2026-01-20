@@ -23,20 +23,25 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
-    const items = Array.isArray(body?.items) ? body.items : [body];
+    const body = await req.json() as unknown;
+    const items = Array.isArray((body as { items?: unknown }).items)
+      ? ((body as { items: unknown[] }).items)
+      : [body];
     if (!items.length) return NextResponse.json({ error: "Missing items" }, { status: 400 });
-    const payload = items.map((item: any) => ({
-      presetId: Number(item.presetId),
-      name: String(item.name || "KPI").trim(),
-      formula: String(item.formula || "").trim(),
-      resultType: item.resultType || "currency",
-      sortOrder: item.sortOrder !== undefined ? Number(item.sortOrder) : 0,
-      enabled: item.enabled !== undefined ? Boolean(item.enabled) : true,
-      scaleMin: item.scaleMin !== undefined && item.scaleMin !== "" ? String(item.scaleMin) : null,
-      scaleMax: item.scaleMax !== undefined && item.scaleMax !== "" ? String(item.scaleMax) : null,
-      scaleInvert: item.scaleInvert !== undefined ? Boolean(item.scaleInvert) : false,
-    }));
+    const payload = items.map((item) => {
+      const data = (item ?? {}) as Record<string, unknown>;
+      return {
+        presetId: Number(data.presetId),
+        name: String(data.name || "KPI").trim(),
+        formula: String(data.formula || "").trim(),
+        resultType: data.resultType || "currency",
+        sortOrder: data.sortOrder !== undefined ? Number(data.sortOrder) : 0,
+        enabled: data.enabled !== undefined ? Boolean(data.enabled) : true,
+        scaleMin: data.scaleMin !== undefined && data.scaleMin !== "" ? String(data.scaleMin) : null,
+        scaleMax: data.scaleMax !== undefined && data.scaleMax !== "" ? String(data.scaleMax) : null,
+        scaleInvert: data.scaleInvert !== undefined ? Boolean(data.scaleInvert) : false,
+      };
+    });
     const inserted = await db.insert(kpiPresetItems).values(payload).returning();
     return NextResponse.json({ items: inserted });
   } catch (err) {
@@ -47,26 +52,32 @@ export async function POST(req: Request) {
 
 export async function PATCH(req: Request) {
   try {
-    const body = await req.json();
-    const items = Array.isArray(body?.items) ? body.items : [body];
+    const body = await req.json() as unknown;
+    const items = Array.isArray((body as { items?: unknown }).items)
+      ? ((body as { items: unknown[] }).items)
+      : [body];
     if (!items.length) return NextResponse.json({ error: "Missing items" }, { status: 400 });
-    const updated: any[] = [];
+    const updated: Array<typeof kpiPresetItems.$inferSelect> = [];
     for (const item of items) {
-      if (!item.id) continue;
+      const data = (item ?? {}) as Record<string, unknown>;
+      const rawId = data.id;
+      if (rawId === undefined || rawId === null) continue;
+      const id = Number(rawId);
+      if (!Number.isFinite(id)) continue;
       const payload = {
-        name: item.name !== undefined ? String(item.name).trim() : undefined,
-        formula: item.formula !== undefined ? String(item.formula).trim() : undefined,
-        resultType: item.resultType !== undefined ? String(item.resultType) : undefined,
-        sortOrder: item.sortOrder !== undefined ? Number(item.sortOrder) : undefined,
-        enabled: item.enabled !== undefined ? Boolean(item.enabled) : undefined,
-        scaleMin: item.scaleMin !== undefined ? (item.scaleMin === "" ? null : String(item.scaleMin)) : undefined,
-        scaleMax: item.scaleMax !== undefined ? (item.scaleMax === "" ? null : String(item.scaleMax)) : undefined,
-        scaleInvert: item.scaleInvert !== undefined ? Boolean(item.scaleInvert) : undefined,
+        name: data.name !== undefined ? String(data.name).trim() : undefined,
+        formula: data.formula !== undefined ? String(data.formula).trim() : undefined,
+        resultType: data.resultType !== undefined ? String(data.resultType) : undefined,
+        sortOrder: data.sortOrder !== undefined ? Number(data.sortOrder) : undefined,
+        enabled: data.enabled !== undefined ? Boolean(data.enabled) : undefined,
+        scaleMin: data.scaleMin !== undefined ? (data.scaleMin === "" ? null : String(data.scaleMin)) : undefined,
+        scaleMax: data.scaleMax !== undefined ? (data.scaleMax === "" ? null : String(data.scaleMax)) : undefined,
+        scaleInvert: data.scaleInvert !== undefined ? Boolean(data.scaleInvert) : undefined,
       };
       const rows = await db
         .update(kpiPresetItems)
         .set(payload)
-        .where(eq(kpiPresetItems.id, Number(item.id)))
+        .where(eq(kpiPresetItems.id, id))
         .returning();
       if (rows[0]) updated.push(rows[0]);
     }

@@ -23,15 +23,20 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
-    const items = Array.isArray(body?.items) ? body.items : [body];
+    const body = await req.json() as unknown;
+    const items = Array.isArray((body as { items?: unknown }).items)
+      ? ((body as { items: unknown[] }).items)
+      : [body];
     if (!items.length) return NextResponse.json({ error: "Missing items" }, { status: 400 });
-    const payload = items.map((item: any) => ({
-      presetId: Number(item.presetId),
-      categoryId: Number(item.categoryId),
-      sortOrder: item.sortOrder !== undefined ? Number(item.sortOrder) : 0,
-      include: item.include !== undefined ? Boolean(item.include) : true,
-    }));
+    const payload = items.map((item) => {
+      const data = (item ?? {}) as Record<string, unknown>;
+      return {
+        presetId: Number(data.presetId),
+        categoryId: Number(data.categoryId),
+        sortOrder: data.sortOrder !== undefined ? Number(data.sortOrder) : 0,
+        include: data.include !== undefined ? Boolean(data.include) : true,
+      };
+    });
     const inserted = await db.insert(breakdownPresetItems).values(payload).returning();
     return NextResponse.json({ items: inserted });
   } catch (err) {
@@ -42,20 +47,26 @@ export async function POST(req: Request) {
 
 export async function PATCH(req: Request) {
   try {
-    const body = await req.json();
-    const items = Array.isArray(body?.items) ? body.items : [body];
+    const body = await req.json() as unknown;
+    const items = Array.isArray((body as { items?: unknown }).items)
+      ? ((body as { items: unknown[] }).items)
+      : [body];
     if (!items.length) return NextResponse.json({ error: "Missing items" }, { status: 400 });
-    const updated: any[] = [];
+    const updated: Array<typeof breakdownPresetItems.$inferSelect> = [];
     for (const item of items) {
-      if (!item.id) continue;
+      const data = (item ?? {}) as Record<string, unknown>;
+      const rawId = data.id;
+      if (rawId === undefined || rawId === null) continue;
+      const id = Number(rawId);
+      if (!Number.isFinite(id)) continue;
       const payload = {
-        sortOrder: item.sortOrder !== undefined ? Number(item.sortOrder) : undefined,
-        include: item.include !== undefined ? Boolean(item.include) : undefined,
+        sortOrder: data.sortOrder !== undefined ? Number(data.sortOrder) : undefined,
+        include: data.include !== undefined ? Boolean(data.include) : undefined,
       };
       const rows = await db
         .update(breakdownPresetItems)
         .set(payload)
-        .where(eq(breakdownPresetItems.id, Number(item.id)))
+        .where(eq(breakdownPresetItems.id, id))
         .returning();
       if (rows[0]) updated.push(rows[0]);
     }

@@ -1,16 +1,11 @@
+import "server-only";
+import { webcrypto as nodeWebCrypto, timingSafeEqual as nodeTimingSafeEqual, pbkdf2Sync, randomBytes } from "crypto";
+
 const TOKEN_EXP_HOURS = 24;
 export const COOKIE_NAME = "auth_token";
 
 const enc = new TextEncoder();
-const subtle = globalThis.crypto?.subtle;
-// Optional Node crypto fallback for server runtimes
-let nodeCrypto: any = null;
-try {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  nodeCrypto = require("crypto");
-} catch {
-  nodeCrypto = null;
-}
+const subtle = globalThis.crypto?.subtle ?? nodeWebCrypto?.subtle;
 
 const toHex = (bytes: Uint8Array) => Array.from(bytes).map((b) => b.toString(16).padStart(2, "0")).join("");
 const fromHex = (hex: string) => {
@@ -38,9 +33,9 @@ const fromStringToBytes = (str: string) => enc.encode(str);
 
 const constantTimeEquals = (a: Uint8Array, b: Uint8Array) => {
   if (a.length !== b.length) return false;
-  if (nodeCrypto?.timingSafeEqual) {
+  if (nodeTimingSafeEqual) {
     try {
-      return nodeCrypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
+      return nodeTimingSafeEqual(Buffer.from(a), Buffer.from(b));
     } catch {
       // fall back below
     }
@@ -58,7 +53,7 @@ const getSecret = () => {
 };
 
 const ensureCrypto = () => {
-  if (!subtle && !nodeCrypto) {
+  if (!subtle && !pbkdf2Sync) {
     throw new Error("WebCrypto not available");
   }
 };
@@ -82,7 +77,7 @@ const pbkdf2 = async (password: string, salt: Uint8Array) => {
     return new Uint8Array(bits);
   }
   // Node fallback
-  const buf = nodeCrypto.pbkdf2Sync(password, Buffer.from(salt), 10000, 64, "sha512");
+  const buf = pbkdf2Sync(password, Buffer.from(salt), 10000, 64, "sha512");
   return new Uint8Array(buf);
 };
 
@@ -90,8 +85,8 @@ export const hashPassword = async (password: string) => {
   const salt = new Uint8Array(16);
   if (globalThis.crypto?.getRandomValues) {
     globalThis.crypto.getRandomValues(salt);
-  } else if (nodeCrypto?.randomBytes) {
-    const buf = nodeCrypto.randomBytes(16);
+  } else if (randomBytes) {
+    const buf = randomBytes(16);
     buf.copy(Buffer.from(salt));
   } else {
     throw new Error("No secure random available");
@@ -114,13 +109,11 @@ export const verifyPassword = async (password: string, stored: string) => {
   } catch {
     // fall through to node fallback
   }
-  if (nodeCrypto?.pbkdf2Sync) {
-    try {
-      const derivedBuf = nodeCrypto.pbkdf2Sync(password, Buffer.from(saltBytes), 10000, expected.length, "sha512");
-      return constantTimeEquals(new Uint8Array(derivedBuf), expected);
-    } catch {
-      return false;
-    }
+  try {
+    const derivedBuf = pbkdf2Sync(password, Buffer.from(saltBytes), 10000, expected.length, "sha512");
+    return constantTimeEquals(new Uint8Array(derivedBuf), expected);
+  } catch {
+    return false;
   }
   return false;
 };

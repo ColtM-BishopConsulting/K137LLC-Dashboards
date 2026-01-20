@@ -27,12 +27,14 @@ export async function POST(req: Request) {
     const payload = {
       ...body,
       projectId: Number(body?.projectId),
-      payment: Number(body?.payment),
-      interest: body?.interest !== undefined ? Number(body.interest) : 0,
-      principal: body?.principal !== undefined ? Number(body.principal) : 0,
-      balance: body?.balance !== undefined && body.balance !== "" ? Number(body.balance) : null,
+      originationDate: body?.originationDate ? String(body.originationDate) : null,
+      payment: body?.payment !== undefined ? String(body.payment) : "0",
+      interest: body?.interest !== undefined ? String(body.interest) : "0",
+      principal: body?.principal !== undefined ? String(body.principal) : "0",
+      balance: body?.balance !== undefined && body.balance !== "" ? String(body.balance) : null,
+      accountId: body?.accountId ? Number(body.accountId) : null,
     };
-    if (!payload.projectId || !payload.date || !Number.isFinite(payload.payment)) {
+    if (!payload.projectId || !payload.date || !Number.isFinite(Number(payload.payment))) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
     const inserted = await db.insert(projectLoans).values(payload).returning();
@@ -51,10 +53,12 @@ export async function PATCH(req: Request) {
     const payload = {
       ...rest,
       projectId: rest?.projectId ? Number(rest.projectId) : undefined,
-      payment: rest?.payment !== undefined ? Number(rest.payment) : undefined,
-      interest: rest?.interest !== undefined ? Number(rest.interest) : undefined,
-      principal: rest?.principal !== undefined ? Number(rest.principal) : undefined,
-      balance: rest?.balance !== undefined && rest.balance !== "" ? Number(rest.balance) : null,
+      originationDate: rest?.originationDate !== undefined ? (rest.originationDate ? String(rest.originationDate) : null) : undefined,
+      payment: rest?.payment !== undefined ? String(rest.payment) : undefined,
+      interest: rest?.interest !== undefined ? String(rest.interest) : undefined,
+      principal: rest?.principal !== undefined ? String(rest.principal) : undefined,
+      balance: rest?.balance !== undefined && rest.balance !== "" ? String(rest.balance) : null,
+      accountId: rest?.accountId !== undefined ? (rest.accountId ? Number(rest.accountId) : null) : undefined,
     };
     const updated = await db
       .update(projectLoans)

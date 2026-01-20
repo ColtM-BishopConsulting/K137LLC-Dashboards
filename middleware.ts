@@ -1,8 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSessionFromCookieHeader, COOKIE_NAME } from "@/lib/auth";
+import { getSessionFromCookieHeader, COOKIE_NAME } from "@/lib/auth-edge";
 
 const ALLOW_NON_ADMIN = ["/api/commits"];
-const ALLOW_ALL = ["/api/auth/login", "/api/auth/logout", "/api/auth/me"];
+const ALLOW_ALL = [
+  "/api/auth/login",
+  "/api/auth/logout",
+  "/api/auth/me",
+  "/api/tenant/auth/login",
+  "/api/tenant/auth/logout",
+  "/api/tenant/auth/me",
+  "/api/tenant/settings",
+  "/api/tenant/password",
+  "/api/tenant/dashboard",
+];
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
