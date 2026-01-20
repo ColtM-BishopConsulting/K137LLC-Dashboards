@@ -326,7 +326,7 @@ const runReminders = async (req: Request) => {
             reminderType,
             dueDate,
             reminderDate: todayKey,
-            lateFee: rollup.lateFee,
+            lateFee: String(rollup.lateFee ?? 0),
           });
         }
         sent += 1;
